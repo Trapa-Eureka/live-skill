@@ -80,9 +80,10 @@
 
 ### A. 파일시스템 경계 — High
 
-#### A1 — LLM slug 경로 탈출 차단 · 상태: TODO · 원본: 001-001, SEC-001, AUD-001
+#### A1 — LLM slug 경로 탈출 차단 · 상태: DONE(2026-09-06) · 원본: 001-001, SEC-001, AUD-001
 - 목표: `skillPlanSchema.slug`를 단일 경로 구성요소(소문자·숫자·하이픈)로 제한하고 `/`·`\`·`.`·`..`·절대 경로를 거부. `resolveTargetDir`/`tempSkillDir` 결과가 고정 루트 안인지 결합 후 재검증. 임시 디렉터리는 신뢰된 접두사 + `mkdtemp`.
-- 완료 기준: [ ] `../../outside` slug → `outline_invalid` 거부 테스트 [ ] 타깃·임시 경로 경계 테스트 [ ] check 통과
+- 완료(2026-09-06, PR #17): 두 겹 방어 — (1) `core/schemas.ts`의 `slugSchema`(`^[a-z0-9]+(-[a-z0-9]+)*$`, ≤64자)로 outline 단계에서 `outline_invalid`; (2) `adapters/fsTargets.ts`가 스키마와 무관하게 `resolveTargetDir`/`tempSkillDir`에서 같은 형식을 재검사(`unsafe_slug`)하고 결합 경로가 루트의 직계 하위인지 확인(`escapes_out_dir`). `tempSkillDir`는 `mkdtemp`로 빈 디렉터리를 새로 만들어 돌려주므로 게이트 미달 경로의 `force: true` 특례와 `timestamp` 의존성을 제거. DESIGN §2·§6 갱신.
+- 완료 기준: [x] `../../outside` slug → `outline_invalid` 거부 테스트(pipeline) [x] 타깃·임시 경로 경계 테스트(fsTargets 8종 × 2 + schemas 14종) [x] check 통과(219 tests)
 
 #### A2 — 심볼릭 링크·입력 순회 경계 · 상태: TODO · 원본: 001-002/014, SEC-002, AUD-002
 - 목표: `collectInputFiles`는 `lstat`으로 링크·비정규 파일을 기본 거부하고 방문 집합으로 사이클 방지. `writeSkill`/`readSkillDir`은 각 경로 구성요소를 `lstat`으로 검사해 링크를 따라 밖으로 쓰거나 읽지 않고, `realpath` 기준으로 출력 루트 내부인지 검증.

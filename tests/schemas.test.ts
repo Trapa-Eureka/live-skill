@@ -53,6 +53,33 @@ describe("skillPlanSchema", () => {
   it("rejects a plan with zero chapters", () => {
     expect(() => skillPlanSchema.parse({ ...valid, chapters: [] })).toThrow();
   });
+
+  // A1 (001-001·SEC-001·AUD-001): slug는 디렉터리 이름이 되므로 경로 구성요소 하나여야 한다.
+  it.each([
+    ["../../outside", "parent traversal"],
+    ["a/b", "path separator"],
+    ["a\\b", "backslash"],
+    [".", "dot"],
+    ["..", "dot-dot"],
+    ["/abs", "absolute"],
+    ["Manual", "uppercase"],
+    ["-a", "leading hyphen"],
+    ["a-", "trailing hyphen"],
+    ["a--b", "double hyphen"],
+    ["a.b", "dot inside"],
+    ["a b", "space"],
+    ["", "empty"],
+    ["a".repeat(65), "over 64 chars"],
+  ])("rejects slug %j (%s)", (slug) => {
+    expect(() => skillPlanSchema.parse({ ...valid, slug })).toThrow();
+  });
+
+  it.each(["manual", "linkbox-r7", "a", "x200-field-manual-v2", "a".repeat(64)])(
+    "accepts slug %j",
+    (slug) => {
+      expect(skillPlanSchema.parse({ ...valid, slug }).slug).toBe(slug);
+    },
+  );
 });
 
 describe("goldenQaSchema", () => {

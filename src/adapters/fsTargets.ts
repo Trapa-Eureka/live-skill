@@ -2,13 +2,19 @@
 // AssembledFile[]만 돌려주고 여기서 실제 IO를 한다. §6 T8 결정: 타깃 디렉터리 해석·임시 디렉터리·
 // 스킬 디렉터리 읽기(validate/eval/report용)도 여기(어댑터)가 맡는다 — core는 여전히 IO 0.
 import { homedir, tmpdir } from "node:os";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
-import { manifestSchema, type AssembledFile, type Manifest } from "../core/index.js";
+import {
+  SLUG_MAX_LENGTH,
+  SLUG_PATTERN,
+  manifestSchema,
+  type AssembledFile,
+  type Manifest,
+} from "../core/index.js";
 import type { SourceFile } from "../core/pipeline.js";
 import type { SkillFile } from "../core/validator.js";
 
-export type FsTargetErrorKind = "already_exists" | "escapes_out_dir";
+export type FsTargetErrorKind = "already_exists" | "escapes_out_dir" | "unsafe_slug";
 
 export class FsTargetError extends Error {
   readonly kind: FsTargetErrorKind;
@@ -118,13 +124,43 @@ export async function readManifest(dir: string): Promise<Manifest> {
   return manifestSchema.parse(JSON.parse(raw) as unknown);
 }
 
-/** `--out` 없이 `--target`만 줬을 때의 기본 타깃(DESIGN §6 T8 결정). */
-export function resolveTargetDir(target: "claude" | "agents", slug: string): string {
-  const base = target === "agents" ? ".agents" : ".claude";
-  return join(homedir(), base, "skills", slug);
+/** slug는 outline(LLM)이 준 값이라 스키마(core/schemas.ts)를 통과했더라도 여기서 다시 검사한다 — 어댑터는
+ * 경로를 실제로 만드는 마지막 관문이다(DESIGN §6 A1, 가드레일 5). */
+function assertSafeSlug(slug: string): void {
+  if (slug.length > SLUG_MAX_LENGTH || !SLUG_PATTERN.test(slug)) {
+    throw new FsTargetError(
+      "unsafe_slug",
+      `refusing slug ${JSON.stringify(slug)} — it must be lowercase letters, digits and single hyphens (max ${String(SLUG_MAX_LENGTH)} chars), and it decides a directory name. Fix: re-run compile; if it repeats, the outline model is returning a bad slug.`,
+    );
+  }
 }
 
-/** 게이트 미달 시 산출물을 남기는 임시 디렉터리(DESIGN §6 T8 결정, 완료 기준) — 매번 새 경로라 --force 불필요. */
-export function tempSkillDir(slug: string, timestamp: string): string {
-  return join(tmpdir(), `live-skill-${slug}-${timestamp}`);
+/** 결합한 경로가 root 바로 아래의 한 단계 하위인지 확인한다 — slug 검사와 별개인 두 번째 방어선. */
+function assertDirectChildOf(root: string, target: string): void {
+  const rel = relative(root, target);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel) || rel.includes(sep)) {
+    throw new FsTargetError(
+      "escapes_out_dir",
+      `refusing "${target}" — it resolves outside the skill root "${root}".`,
+    );
+  }
+}
+
+/** `--out` 없이 `--target`만 줬을 때의 기본 타깃(DESIGN §6 T8 결정). slug 형식과 루트 경계를 검사한다(A1). */
+export function resolveTargetDir(target: "claude" | "agents", slug: string): string {
+  assertSafeSlug(slug);
+  const root = join(homedir(), target === "agents" ? ".agents" : ".claude", "skills");
+  const dir = normalize(join(root, slug));
+  assertDirectChildOf(root, dir);
+  return dir;
+}
+
+/** 게이트 미달 시 산출물을 남기는 임시 디렉터리(DESIGN §6 T8·A1) — mkdtemp가 신뢰된 접두사로 새로 만든
+ * 빈 디렉터리라 --force가 필요 없고, 무작위 접미사가 유일성을 보장한다. */
+export async function tempSkillDir(slug: string): Promise<string> {
+  assertSafeSlug(slug);
+  const root = tmpdir();
+  const dir = await mkdtemp(join(root, `live-skill-${slug}-`));
+  assertDirectChildOf(root, dir);
+  return dir;
 }

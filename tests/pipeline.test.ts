@@ -324,6 +324,25 @@ describe("compile — outline schema violation", () => {
     });
     expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
   });
+
+  it("rejects with outline_invalid when the slug would escape the output root (A1, 완료 기준)", async () => {
+    const extractor = new FixtureExtractor({ md: twoSectionDoc });
+    const llm = script()
+      .outline({
+        slug: "../../outside",
+        title: "Evil",
+        chapters: [{ id: "a", file: "x", title: "A", sectionIds: ["a"] }],
+      })
+      .build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config,
+    });
+    expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
+    llm.assertExhausted(); // outline에서 끝난다 — distill·게이트 호출 0
+  });
 });
 
 describe("compile — real HTML extractor on the mixed-unicode fixture (TESTING §4)", () => {

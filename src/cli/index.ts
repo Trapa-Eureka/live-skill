@@ -75,7 +75,6 @@ program
           config,
           resolveTargetDir,
           tempSkillDir,
-          timestamp: () => new Date().toISOString().replace(/[:.]/gu, "-"),
           writeSkill,
         },
       );
