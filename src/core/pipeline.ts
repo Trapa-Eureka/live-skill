@@ -3,6 +3,7 @@
 import { extractAnchors } from "./anchors.js";
 import { assembleSkill, chapterFilePath, type AssembledFile } from "./assembler.js";
 import type { Config } from "./config.js";
+import { LlmCallCapError, trackCost } from "./costTracker.js";
 import { estimateGateCalls, runGate, type GateChapter } from "./gate.js";
 import { sha256Hex } from "./hash.js";
 import {
@@ -45,7 +46,15 @@ export type PipelineError =
   | { kind: "empty_input"; message: string }
   | { kind: "input_too_large"; estimatedTokens: number; limit: number; message: string }
   | { kind: "outline_invalid"; detail: string; message: string }
-  | { kind: "call_cap_exceeded"; estimated: number; limit: number; message: string }
+  | {
+      kind: "call_cap_exceeded";
+      /** preflight: 사전 추정이 상한을 넘음(호출 전). runtime: 실행 중 실제 호출 수가 상한에 닿음(D1). */
+      stage: "preflight" | "runtime";
+      /** preflight면 추정 상한선, runtime이면 상한에 닿기까지 실제로 일어난 호출 수. */
+      estimated: number;
+      limit: number;
+      message: string;
+    }
   | { kind: "assemble_failed"; detail: string; message: string };
 
 export interface CompileResult {
@@ -54,6 +63,8 @@ export interface CompileResult {
   validation: ValidationReport;
   /** outline이 만든 슬러그 — --out 없이 --target만 줬을 때 CLI가 타깃 경로를 계산하는 데 쓴다(DESIGN §5.1 T8 결정). */
   slug: string;
+  /** 이번 컴파일이 실제로 한 LLM 호출 수(D1) — 사전 추정이 아니라 실측. */
+  llmCalls: number;
 }
 
 interface PerFileSections {
@@ -162,8 +173,27 @@ export async function compile(
     });
   }
 
-  const outlineReq = outlinePrompt({ sections });
-  const outlineRaw = await deps.llm.complete(outlineReq);
+  // D1(가드레일 6): 사전 추정과 별개로 실제 호출 수를 세고, 상한을 넘기는 호출은 일어나기 전에 막는다.
+  const tracked = trackCost(deps.llm, { maxCalls: deps.config.maxLlmCalls });
+  const llm = tracked.llm;
+  async function guarded<T>(work: () => Promise<T>): Promise<Result<T, PipelineError>> {
+    try {
+      return ok(await work());
+    } catch (e) {
+      if (!(e instanceof LlmCallCapError)) throw e;
+      return err({
+        kind: "call_cap_exceeded",
+        stage: "runtime",
+        estimated: e.calls,
+        limit: e.limit,
+        message: `stopped mid-run: ${String(e.calls)} LLM calls were made and the next one would exceed the MAX_LLM_CALLS cap of ${String(e.limit)}. Nothing was written. Fix: split the source, pass --no-gate, or raise MAX_LLM_CALLS.`,
+      });
+    }
+  }
+
+  const outlineRes = await guarded(() => llm.complete(outlinePrompt({ sections })));
+  if (!outlineRes.ok) return outlineRes;
+  const outlineRaw = outlineRes.value;
   let plan: SkillPlan;
   try {
     plan = skillPlanSchema.parse(JSON.parse(outlineRaw) as unknown);
@@ -195,23 +225,27 @@ export async function compile(
   if (totalCalls > deps.config.maxLlmCalls) {
     return err({
       kind: "call_cap_exceeded",
+      stage: "preflight",
       estimated: totalCalls,
       limit: deps.config.maxLlmCalls,
-      message: `compiling would take up to ~${String(totalCalls)} LLM calls (1 outline + ${String(plan.chapters.length)} chapters + up to ${String(gateCallEstimate)} for the quality gate), over the MAX_LLM_CALLS cap of ${String(deps.config.maxLlmCalls)}. Fix: split the source, pass --no-gate, or raise MAX_LLM_CALLS.`,
+      message: `compiling would take up to ~${String(totalCalls)} LLM calls (1 outline + ${String(plan.chapters.length)} chapters + up to ${String(gateCallEstimate)} for the quality gate, counting one qaGen retry per section), over the MAX_LLM_CALLS cap of ${String(deps.config.maxLlmCalls)}. Fix: split the source, pass --no-gate, or raise MAX_LLM_CALLS.`,
     });
   }
 
   const byId = new Map(sections.map((s) => [s.id, s]));
   const distilled: DistilledChapter[] = [];
-  for (const chapter of plan.chapters) {
-    const chapterSections = chapter.sectionIds
-      .map((id) => byId.get(id))
-      .filter((s): s is NamedSection => s !== undefined);
-    const req = distillPrompt(chapter, chapterSections, deps.config.budgets.chapter);
-    // C1: 증류 본문은 파일에 그대로 쓰이는 모델 출력 — 개행·탭 외 제어문자는 여기서 지운다.
-    const body = stripControlChars(await deps.llm.complete(req));
-    distilled.push({ id: chapter.id, file: "", body, anchors: extractAnchors(body) });
-  }
+  const distillRes = await guarded(async () => {
+    for (const chapter of plan.chapters) {
+      const chapterSections = chapter.sectionIds
+        .map((id) => byId.get(id))
+        .filter((s): s is NamedSection => s !== undefined);
+      const req = distillPrompt(chapter, chapterSections, deps.config.budgets.chapter);
+      // C1: 증류 본문은 파일에 그대로 쓰이는 모델 출력 — 개행·탭 외 제어문자는 여기서 지운다.
+      const body = stripControlChars(await llm.complete(req));
+      distilled.push({ id: chapter.id, file: "", body, anchors: extractAnchors(body) });
+    }
+  });
+  if (!distillRes.ok) return distillRes;
 
   function assemble(verified: boolean): Result<AssembledFile[], PipelineError> {
     try {
@@ -233,10 +267,14 @@ export async function compile(
       file: chapterFilePath(i, c.title),
       sectionIds: c.sectionIds,
     }));
-    const outcome = await runGate(
-      { files: firstAssembly.value, chapters: gateChapters, sections },
-      { llm: deps.llm, k: deps.config.qaPerSection, threshold: deps.config.gateThreshold },
+    const outcomeRes = await guarded(() =>
+      runGate(
+        { files: firstAssembly.value, chapters: gateChapters, sections },
+        { llm, k: deps.config.qaPerSection, threshold: deps.config.gateThreshold },
+      ),
     );
+    if (!outcomeRes.ok) return outcomeRes;
+    const outcome = outcomeRes.value;
     gate = outcome.report;
     goldenQa = outcome.goldenQa;
     // 순수 함수라 verified 값이 확정된 뒤 한 번 더 조립해도 비용이 없다 — SKILL.md의 unverified 표시를
@@ -271,5 +309,5 @@ export async function compile(
     goldenQa,
   };
 
-  return ok({ manifest, files, validation, slug: plan.slug });
+  return ok({ manifest, files, validation, slug: plan.slug, llmCalls: tracked.summary().calls });
 }

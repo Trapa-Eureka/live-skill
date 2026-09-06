@@ -70,9 +70,10 @@ export function missingChapterFiles(
   return chapters.map((c) => c.file).filter((file) => !onDisk.has(file));
 }
 
-/** 게이트가 예상 소비할 LLM 호출 수 상한선(DESIGN §4 T7 결정). 조기 종료가 있으면 실제는 이보다 적다. */
+/** 게이트가 소비할 수 있는 LLM 호출 수의 진짜 상한선(DESIGN §4 T7·D1): 섹션마다 qaGen 최대 2회(최초 + 재생성 1회)
+ * + 문항마다 선택·답변·채점 3회. 조기 종료(not_found·anchor_missing)나 재생성 불필요면 실제는 이보다 적다. */
 export function estimateGateCalls(sectionCount: number, k: number): number {
-  return sectionCount * 1 + sectionCount * k * 3;
+  return sectionCount * 2 + sectionCount * k * 3;
 }
 
 function parseQaGenItems(

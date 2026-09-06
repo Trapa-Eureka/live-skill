@@ -68,7 +68,7 @@ export async function runCompile(opts: CompileOptions, deps: CompileDeps): Promi
     return 1;
   }
 
-  const { manifest, files, slug } = result.value;
+  const { manifest, files, slug, llmCalls } = result.value;
   const gate = manifest.gate;
   const gateFailed = "passed" in gate && !gate.passed;
 
@@ -97,7 +97,7 @@ export async function runCompile(opts: CompileOptions, deps: CompileDeps): Promi
     return 1;
   }
 
-  deps.out(`컴파일 완료: ${outDir}`);
+  deps.out(`컴파일 완료: ${outDir} (LLM 호출 ${String(llmCalls)}회)`);
   deps.out("passed" in gate ? formatGateReport(gate) : formatSkippedGate());
   return 0;
 }
