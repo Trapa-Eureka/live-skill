@@ -17,7 +17,9 @@ export interface AssembleOptions {
   verified: boolean;
 }
 
-function chapterFilePath(index: number, title: string): string {
+/** chapters/chNN-slug.md 경로를 결정론으로 계산한다 — pipeline.ts가 manifest의 chapterFile을 같은
+ * 방식으로 다시 구할 때도 이 함수를 그대로 쓴다(DESIGN §5.1), 로직 중복 없이. */
+export function chapterFilePath(index: number, title: string): string {
   const n = String(index + 1).padStart(2, "0");
   return `chapters/ch${n}-${slugifyHeading(title)}.md`;
 }
