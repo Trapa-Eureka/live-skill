@@ -1,0 +1,61 @@
+{
+  "name": "live-skill",
+  "version": "0.1.0",
+  "description": "Compile documents into verified Agent Skills, with a semantic quality gate over the compiled output (문서를 검증된 에이전트 스킬로 컴파일)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "live-skill": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "cli": "tsx src/cli/index.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "prepublishOnly": "npm run check && npm run build && npm run check:tarball",
+    "check:tarball": "sh scripts/check-tarball.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^5.0.0",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "commander": "^15.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Trapa-Eureka/live-skill.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Trapa-Eureka/live-skill/issues"
+  },
+  "homepage": "https://github.com/Trapa-Eureka/live-skill#readme",
+  "author": "Trapa-Eureka",
+  "keywords": [
+    "agent-skills",
+    "claude",
+    "skill-compiler",
+    "docs-to-skill",
+    "cli"
+  ]
+}
