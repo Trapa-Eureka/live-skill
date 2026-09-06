@@ -14,3 +14,4 @@ export * from "./validator.js";
 export * from "./hash.js";
 export * from "./anchors.js";
 export * from "./pipeline.js";
+export * from "./gate.js";

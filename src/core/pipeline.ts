@@ -1,9 +1,9 @@
-// 컴파일 파이프라인 — extract → outline → distill → assemble → validate (DESIGN §1, §5.1).
-// 게이트(§4)는 아직 연결하지 않는다(T7이 붙인다) — manifest.gate는 항상 {skipped:true}.
+// 컴파일 파이프라인 — extract → outline → distill → assemble → validate → gate (DESIGN §1, §5.1).
 // 순수 오케스트레이션: 실제 파일 읽기/쓰기는 호출자(어댑터)가 SourceFile[]로 넘기고 반환값을 받아간다.
 import { extractAnchors } from "./anchors.js";
 import { assembleSkill, chapterFilePath, type AssembledFile } from "./assembler.js";
 import type { Config } from "./config.js";
+import { estimateGateCalls, runGate, type GateChapter } from "./gate.js";
 import { sha256Hex } from "./hash.js";
 import { distillPrompt, outlinePrompt } from "./prompts.js";
 import { err, ok, type Result } from "./result.js";
@@ -15,6 +15,7 @@ import type {
   DistilledChapter,
   DocumentExtractor,
   ExtractError,
+  GateReport,
   LlmProvider,
   Manifest,
   Section,
@@ -113,9 +114,11 @@ export interface PipelineDeps {
   llm: LlmProvider;
   clock: Clock;
   config: Config;
+  /** 기본 "run". "skip"은 `--no-gate`에 대응 — manifest.gate = {skipped:true}, SKILL.md에 unverified 표시. */
+  gate?: "run" | "skip";
 }
 
-/** DESIGN §5.1의 전체 파이프라인. LLM은 outline 1회 + 챕터당 distill 1회만 부른다(게이트 제외). */
+/** DESIGN §5.1의 전체 파이프라인: extract→outline→distill→assemble→validate→gate. */
 export async function compile(
   sources: readonly SourceFile[],
   deps: PipelineDeps,
@@ -162,13 +165,17 @@ export async function compile(
     });
   }
 
-  const totalCalls = 1 + plan.chapters.length;
+  const runsGate = (deps.gate ?? "run") === "run";
+  const gateCallEstimate = runsGate
+    ? estimateGateCalls(sections.length, deps.config.qaPerSection)
+    : 0;
+  const totalCalls = 1 + plan.chapters.length + gateCallEstimate;
   if (totalCalls > deps.config.maxLlmCalls) {
     return err({
       kind: "call_cap_exceeded",
       estimated: totalCalls,
       limit: deps.config.maxLlmCalls,
-      message: `compiling would take ~${String(totalCalls)} LLM calls (1 outline + ${String(plan.chapters.length)} chapters), over the MAX_LLM_CALLS cap of ${String(deps.config.maxLlmCalls)}. Fix: split the source so it plans into fewer chapters, or raise MAX_LLM_CALLS.`,
+      message: `compiling would take up to ~${String(totalCalls)} LLM calls (1 outline + ${String(plan.chapters.length)} chapters + up to ${String(gateCallEstimate)} for the quality gate), over the MAX_LLM_CALLS cap of ${String(deps.config.maxLlmCalls)}. Fix: split the source, pass --no-gate, or raise MAX_LLM_CALLS.`,
     });
   }
 
@@ -183,12 +190,38 @@ export async function compile(
     distilled.push({ id: chapter.id, file: "", body, anchors: extractAnchors(body) });
   }
 
+  function assemble(verified: boolean): Result<AssembledFile[], PipelineError> {
+    try {
+      return ok(assembleSkill(plan, distilled, { verified }));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "assembly failed for an unknown reason.";
+      return err({ kind: "assemble_failed", detail: message, message });
+    }
+  }
+
+  const firstAssembly = assemble(false); // 게이트가 읽을 조립본 — verified 값은 게이트 판정에 영향 없음
+  if (!firstAssembly.ok) return firstAssembly;
+
+  let gate: GateReport | { skipped: true };
   let files: AssembledFile[];
-  try {
-    files = assembleSkill(plan, distilled, { verified: false });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "assembly failed for an unknown reason.";
-    return err({ kind: "assemble_failed", detail: message, message });
+  if (runsGate) {
+    const gateChapters: GateChapter[] = plan.chapters.map((c, i) => ({
+      file: chapterFilePath(i, c.title),
+      sectionIds: c.sectionIds,
+    }));
+    const report = await runGate(
+      { files: firstAssembly.value, chapters: gateChapters, sections },
+      { llm: deps.llm, k: deps.config.qaPerSection, threshold: deps.config.gateThreshold },
+    );
+    gate = report;
+    // 순수 함수라 verified 값이 확정된 뒤 한 번 더 조립해도 비용이 없다 — SKILL.md의 unverified 표시를
+    // 실제 게이트 결과와 맞춘다(DESIGN §5.1).
+    const finalAssembly = assemble(report.passed);
+    if (!finalAssembly.ok) return finalAssembly;
+    files = finalAssembly.value;
+  } else {
+    gate = { skipped: true };
+    files = firstAssembly.value;
   }
 
   const validation = validateSkill(files, deps.config.budgets);
@@ -208,7 +241,7 @@ export async function compile(
     sourceFiles: sourceHashes,
     sections: manifestSections,
     outputs: files.map((f) => f.path),
-    gate: { skipped: true },
+    gate,
   };
 
   return ok({ manifest, files, validation });

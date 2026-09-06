@@ -101,6 +101,12 @@ export class ScriptBuilder {
     return this;
   }
 
+  /** qaGen 큐에 원시 문자열을 그대로 넣는다(스키마를 깨뜨리는 잘못된 응답을 흉내낼 때 씀). */
+  qaRaw(raw: string, label?: string): this {
+    this.queues.qaGen.push({ label, value: raw });
+    return this;
+  }
+
   selectChapter(file: string, label?: string): this {
     this.queues.answerer.push({ label, value: file });
     return this;

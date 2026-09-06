@@ -47,6 +47,13 @@ export const gateReportSchema = z.object({
       reason: gateFailureReasonSchema,
     }),
   ),
+  loadHistory: z.array(
+    z.object({
+      qaId: z.string().min(1),
+      selectedFile: z.string(),
+      loadedFiles: z.array(z.string()),
+    }),
+  ),
 });
 
 /** Manifest — 컴파일 산출 manifest.json, 파일 IO 경계에서 파싱한다. */

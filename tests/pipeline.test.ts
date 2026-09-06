@@ -41,6 +41,7 @@ describe("compile — e2e with a normal script, gate excluded (완료 기준)", 
       llm,
       clock,
       config,
+      gate: "skip", // 이 스위트는 게이트가 아니라 추출~조립~manifest를 검증한다(게이트는 tests/gate.test.ts)
     });
 
     expect(result.ok).toBe(true);
@@ -69,6 +70,7 @@ describe("compile — manifest determinism (TESTING §3)", () => {
         llm,
         clock,
         config,
+        gate: "skip",
       });
       if (!r.ok) throw new Error("expected success");
       return r.value;
@@ -109,7 +111,7 @@ describe("compile — multi-source section-id namespacing (DESIGN §5.1)", () =>
         { path: "a.md", bytes: nameAsBytes("a.md") },
         { path: "b.txt", bytes: nameAsBytes("b.txt") },
       ],
-      { extractors: [extractor, extractorB], llm, clock, config },
+      { extractors: [extractor, extractorB], llm, clock, config, gate: "skip" },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected success");
@@ -189,7 +191,7 @@ describe("compile — oversized input (TESTING §4, 우회 없음)", () => {
 });
 
 describe("compile — MAX_LLM_CALLS cap (TESTING §4, 비용 누수 가드)", () => {
-  it("aborts before any distill call once outline + chapters would exceed the cap", async () => {
+  it("aborts before any distill call once outline + chapters would exceed the cap (gate skip)", async () => {
     const tightConfig = loadConfig({ MAX_LLM_CALLS: "2" }); // outline(1) + 챕터 2개 = 3 > 2
     const extractor = new FixtureExtractor({ md: twoSectionDoc });
     const llm = script().outline(twoChapterPlan).build(); // distill 대본은 아예 안 줌
@@ -198,12 +200,115 @@ describe("compile — MAX_LLM_CALLS cap (TESTING §4, 비용 누수 가드)", ()
       llm,
       clock,
       config: tightConfig,
+      gate: "skip",
     });
     expect(result).toMatchObject({
       ok: false,
       error: { kind: "call_cap_exceeded", estimated: 3, limit: 2 },
     });
     expect(llm.calls.filter((c) => c.role === "distill")).toEqual([]);
+  });
+
+  it("counts the gate's own upper-bound cost when gate runs (default), aborting before any distill or gate call", async () => {
+    // outline(1) + 챕터 2개(distill) + 게이트 상한선(섹션 2개 * (1+3*3)=20, DESIGN §4 T7 산식) = 23 > 10
+    const tightConfig = loadConfig({ MAX_LLM_CALLS: "10" });
+    const extractor = new FixtureExtractor({ md: twoSectionDoc });
+    const llm = script().outline(twoChapterPlan).build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config: tightConfig,
+      // gate 기본값("run")
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { kind: "call_cap_exceeded", estimated: 23, limit: 10 },
+    });
+    expect(llm.calls.filter((c) => c.role !== "outline")).toEqual([]);
+  });
+});
+
+describe("compile — gate integration (T7, 게이트 판별력 5/5 포함)", () => {
+  const oneQuestionConfig = loadConfig({ QA_PER_SECTION: "1" }); // qaGen이 한 번에 1개만 요청하게
+
+  function scriptWithGate(verdict: "correct" | "wrong") {
+    return script()
+      .outline(twoChapterPlan)
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .distill("b", "Check the fault LED. [§b]")
+      .qa([
+        {
+          question: "Where do you mount the unit?",
+          refAnswer: "on a flat surface",
+          anchorQuote: "flat surface",
+        },
+      ])
+      .qa([
+        { question: "What do you check?", refAnswer: "the fault LED", anchorQuote: "fault LED" },
+      ])
+      .selectChapter("chapters/ch01-installation.md")
+      .answer("On a flat surface.")
+      .grade(verdict)
+      .selectChapter("chapters/ch02-troubleshooting.md")
+      .answer("The fault LED.")
+      .grade(verdict)
+      .build();
+  }
+
+  it("runs the gate by default: passes -> verified SKILL.md, real GateReport in manifest", async () => {
+    const extractor = new FixtureExtractor({ md: twoSectionDoc });
+    const llm = scriptWithGate("correct");
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config: oneQuestionConfig,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.value.manifest.gate).toMatchObject({ passed: true, passRate: 1 });
+    const skillMd = result.value.files.find((f) => f.path === "SKILL.md");
+    expect(skillMd?.content).not.toContain("unverified");
+    llm.assertExhausted();
+  });
+
+  it("runs the gate by default: fails -> unverified SKILL.md, failing GateReport in manifest", async () => {
+    const extractor = new FixtureExtractor({ md: twoSectionDoc });
+    const llm = scriptWithGate("wrong");
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config: oneQuestionConfig,
+    });
+    expect(result.ok).toBe(true); // 게이트 미달은 컴파일 자체의 실패가 아니다 — 산출물은 나오되 unverified
+    if (!result.ok) throw new Error("expected success");
+    expect(result.value.manifest.gate).toMatchObject({ passed: false, passRate: 0 });
+    const skillMd = result.value.files.find((f) => f.path === "SKILL.md");
+    expect(skillMd?.content).toContain("unverified");
+  });
+
+  it("--no-gate (gate: 'skip') deploys unverified with manifest.gate = skipped (게이트 판별력 5/5)", async () => {
+    const extractor = new FixtureExtractor({ md: twoSectionDoc });
+    const llm = script()
+      .outline(twoChapterPlan)
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .distill("b", "Check the fault LED. [§b]")
+      .build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config,
+      gate: "skip",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.value.manifest.gate).toEqual({ skipped: true });
+    const skillMd = result.value.files.find((f) => f.path === "SKILL.md");
+    expect(skillMd?.content).toContain("unverified");
+    llm.assertExhausted(); // qaGen/answerer/grader는 단 한 번도 호출되지 않았다
   });
 });
 
@@ -253,6 +358,7 @@ describe("compile — real HTML extractor on the mixed-unicode fixture (TESTING 
       llm,
       clock,
       config,
+      gate: "skip",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected success");
