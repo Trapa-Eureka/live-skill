@@ -79,6 +79,9 @@ export interface GateReport {
   passed: boolean;
   perChapter: { file: string; asked: number; correct: number }[];
   failures: { qaId: string; reason: GateFailureReason }[];
+  /** answerer 격리 감사 로그(DESIGN §2 T7 결정) — selectedFile은 LLM이 실제로 답한 원시 문자열(무효한
+   * 경로여도 그대로), loadedFiles는 실제로 읽어 들인 파일(선택이 무효하면 빈 배열). */
+  loadHistory: { qaId: string; selectedFile: string; loadedFiles: string[] }[];
 }
 
 /** 컴파일 산출 manifest — 스킬 디렉터리에 기록, v0.2 증분 재컴파일의 키(DESIGN §5). 파일 IO 경계이므로 zod 파싱. */

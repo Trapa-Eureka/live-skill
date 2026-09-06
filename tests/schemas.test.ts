@@ -80,6 +80,13 @@ describe("gateReportSchema", () => {
     passed: true,
     perChapter: [{ file: "chapters/ch01-installation.md", asked: 3, correct: 3 }],
     failures: [],
+    loadHistory: [
+      {
+        qaId: "qa-1",
+        selectedFile: "chapters/ch01-installation.md",
+        loadedFiles: ["chapters/ch01-installation.md"],
+      },
+    ],
   };
 
   it("round-trips a valid GateReport", () => {
@@ -114,7 +121,14 @@ describe("manifestSchema", () => {
   it("round-trips a valid Manifest with a real GateReport", () => {
     const withGate: Manifest = {
       ...valid,
-      gate: { passRate: 1, threshold: 0.9, passed: true, perChapter: [], failures: [] },
+      gate: {
+        passRate: 1,
+        threshold: 0.9,
+        passed: true,
+        perChapter: [],
+        failures: [],
+        loadHistory: [],
+      },
     };
     expect(manifestSchema.parse(withGate)).toEqual(withGate);
   });

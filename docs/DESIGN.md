@@ -42,6 +42,7 @@ export interface GateReport {
   passRate: number; threshold: number; passed: boolean;
   perChapter: { file: string; asked: number; correct: number }[];
   failures: { qaId: string; reason: "wrong" | "not_found" | "anchor_missing" }[];
+  loadHistory: { qaId: string; selectedFile: string; loadedFiles: string[] }[];   // T7 결정: answerer 격리 감사 로그(§4-2, 완료 기준 "로드 이력") — selectedFile은 LLM이 실제로 답한 원시 문자열(존재하지 않는 경로여도 그대로 기록), loadedFiles는 그중 실제로 읽어 들인 파일(선택이 무효면 빈 배열)
 }
 export interface Manifest {
   version: 1; createdAt: string; sourceFiles: { path: string; sha256: string }[];
@@ -95,26 +96,33 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 
 ## 4. 품질 게이트 (core/gate.ts) — 제품의 심장
 
-1. **qaGen**: 섹션당 k개(기본 3) 골든 Q&A 생성. 각 항목은 원문 인용(`anchorQuote`) 필수 — 인용이 원문에 실존하는지 문자열 검사(결정론)로 확인, 불합격 문항은 폐기 후 재생성 1회.
-2. **answerer (격리 시뮬레이터)**: 실제 에이전트의 점진 로딩을 재현한다 — 컨텍스트에 `SKILL.md`만 주고 챕터 선택을 시키고, 선택된 챕터 파일만 추가 로드해 답하게 한다. **원문·미선택 챕터는 절대 주입하지 않는다** (CLAUDE.md 가드레일 2). 로드 이력은 리포트에 기록.
+1. **qaGen**: 섹션당 k개(기본 3) 골든 Q&A 생성. 각 항목은 원문 인용(`anchorQuote`) 필수 — 인용이 원문에 실존하는지 문자열 검사(결정론)로 확인, 불합격 문항은 폐기 후 재생성 1회. 재생성 후에도 실패하면 그 문항은 제외(집계에도 안 들어간다).
+2. **answerer (격리 시뮬레이터)**: 실제 에이전트의 점진 로딩을 재현한다 — 컨텍스트에 `SKILL.md`만 주고 챕터 선택을 시키고, 선택된 챕터 파일만 추가 로드해 답하게 한다. **원문·미선택 챕터는 절대 주입하지 않는다** (CLAUDE.md 가드레일 2). 로드 이력은 리포트에 기록(`GateReport.loadHistory`, §2).
 3. **grader**: 이중 채점 — (a) 루브릭 LLM 채점(정답 요지 일치) AND (b) 답변이 refAnswer의 앵커 사실과 모순되지 않는지. 판정은 보수적으로: 불확실하면 오답 처리.
 4. **판정**: passRate ≥ threshold(기본 0.9) → 배포. 미달 → 산출물은 임시 디렉터리에 남기고 약한 챕터 지목 리포트 반환(`report` 명령으로 재열람).
 
-비용 가드: 게이트 총 호출 수 = 섹션수×k×(1 qaGen + 1 answer + 1 grade) 상한을 config로, 초과 예상 시 사전 고지 후 k 자동 축소 제안.
+**T7 결정(2026-09-06) — 문항별 처리 순서와 `GateFailureReason` 매핑**: 골든 QA 하나마다 아래 순서로 진행하고, 실패하면 그 시점에서 멈춘다(뒤 단계는 부르지 않는다 — 비용도 아끼고 원인도 명확해진다):
+
+1. `chapterSelectionPrompt`로 챕터 선택 → 선택된 파일이 실제로 조립된 챕터 목록에 없으면 **`not_found`**(챕터 누락 주입 테스트가 정확히 이 경로를 잡는다).
+2. 선택된 챕터 파일의 본문에 `anchorQuote`가 실제로 있는지 확인(결정론, 문자열 포함 검사) → 없으면 **`anchor_missing`**(distill이 증류하며 그 사실을 놓치거나 바꿔 썼다는 신호 — qaGen 시점 검사와 별개로, "조립된 산출물"에도 앵커가 살아있는지 한 번 더 본다). 그레이더는 부르지 않는다.
+3. 위 둘을 통과하면 `answerPrompt`로 선택된 챕터 **하나만** 로드해 답변 생성 → `gradePrompt`(이중 채점을 한 번의 호출로 묻는다, `core/prompts.ts` T3 결정)로 채점 → WRONG이면 **`wrong`**.
+
+**비용 가드(정정)**: DESIGN 초안의 산식은 answerer가 1회 호출이라고 가정했지만, T3에서 answerer는 항상 2회(선택 1 + 답변 1)로 확정됐다. 정확한 게이트 호출 수 = **섹션수×1(qaGen, 섹션당 한 번에 k개) + 섹션수×k×3(선택+답변+채점, 단 `not_found`/`anchor_missing`으로 조기 종료되면 그만큼 덜 든다 — 이 산식은 상한선)**. `core/pipeline.ts`(T6)는 outline 응답으로 챕터·섹션 수를 안 직후, distill을 시작하기 전에 **컴파일 호출 수 + 이 게이트 상한선**을 합쳐 `MAX_LLM_CALLS`와 비교한다(§5.1 갱신) — k 자동 축소 제안은 v0.2로 미루고, v0.1은 초과 시 즉시 중단 안내로 충분하다(우회 없음, 가드레일 6).
 
 ## 5. Manifest와 v0.2 준비
 
 - 모든 컴파일은 `manifest.json`을 스킬 디렉터리에 남긴다 (§2 스키마).
 - v0.2 `update`는 소스 재해시 → 변한 섹션만 distill·해당 챕터만 재조립·해당 문항만 재평가하는 설계가 되도록, **섹션 id는 안정적**(헤딩 경로 기반 슬러그)이어야 한다. v0.1에서 이 안정성까지 구현·테스트한다.
 
-### 5.1 파이프라인 (`core/pipeline.ts`) — T6 결정 (2026-09-06)
+### 5.1 파이프라인 (`core/pipeline.ts`) — T6 결정 (2026-09-06), T7이 게이트 연결(2026-09-06)
 
-`extract → outline → distill → assemble → validate`를 오케스트레이션한다. **게이트(§4)는 아직 연결하지 않는다** — T7이 아직 없어서다. 그래서 T6가 만드는 manifest는 항상 `gate: { skipped: true }`이고, T7이 이 파이프라인에 게이트 단계를 추가하며 이 필드를 실제 결과로 바꾼다.
+`extract → outline → distill → assemble → validate → gate`를 오케스트레이션한다.
 
 - **소스 여러 개일 때 섹션 id 충돌 방지**: 폴더 컴파일(SPEC §5 시나리오 2, 마크다운 30개)처럼 소스 파일이 2개 이상이면, 각 파일의 섹션 id 앞에 그 파일명 기반 슬러그를 붙인다(`{파일슬러그}/{sectionId}`) — 서로 다른 파일에 같은 이름의 섹션(둘 다 "Overview" 등)이 있어도 manifest에서 충돌하지 않게. 소스가 1개면 접두어를 붙이지 않는다(단일 문서 시나리오의 id를 불필요하게 바꾸지 않기 위해).
-- **비용 상한(MAX_LLM_CALLS)**: 컴파일 단계의 호출 수 = 1(outline) + 챕터 수(distill 1회씩). outline 응답으로 챕터 수를 알게 된 직후, distill을 시작하기 전에 이 합이 `config.maxLlmCalls`를 넘으면 즉시 중단하고 챕터 수를 줄이거나 상한을 올리라는 안내와 함께 실패한다(우회 플래그 없음, 가드레일 6). 게이트 단계 자체의 호출 수 산식(§4)은 T7이 이 값 위에 더한다.
+- **비용 상한(MAX_LLM_CALLS, T7이 게이트 비용 포함하도록 갱신)**: outline 응답으로 챕터·섹션 수를 알게 된 직후, distill을 시작하기 전에 `1(outline) + 챕터 수(distill) + 게이트 상한선(§4 T7 결정 산식)`의 합을 `config.maxLlmCalls`와 비교한다. 넘으면 즉시 중단하고 문서를 나누거나 상한을 올리라는 안내와 함께 실패한다(우회 플래그 없음, 가드레일 6). `--no-gate`(파이프라인 `gate: "skip"`)면 게이트 상한선은 0으로 친다.
 - **거대 입력 가드**: outline을 부르기 전에, 추출된 전체 섹션 텍스트의 `estimateTokens` 합이 `MAX_INPUT_TOKENS`(기본 30,000 — 산출 예산 합계의 몇 배 수준으로 넉넉히 잡은 상수)를 넘으면 LLM 호출 0회로 즉시 거절하고 문서를 나눠서 다시 컴파일하라고 안내한다.
 - **앵커 추출**: distill 응답(마크다운 본문) 안의 `[§sectionId]`를 정규식으로 스캔해 `DistilledChapter.anchors`를 만든다 — 결정론, LLM에게 별도로 묻지 않는다.
+- **게이트 연결(T7)**: assemble을 `verified:false`로 한 번 조립해 게이트(§4)에 넘긴다(게이트의 answerer는 이 조립본의 SKILL.md·챕터 파일을 읽는다). 게이트가 끝나면 `verified: report.passed`로 **다시 조립**(순수 함수라 한 번 더 불러도 비용이 없다)해 최종 SKILL.md의 unverified 표시를 정확하게 맞춘다. `gate: "skip"`이면 이 단계 전체를 건너뛰고 `manifest.gate = { skipped: true }`, `verified:false`로 고정(기존 T6 동작 그대로).
 - **출력 쓰기는 파이프라인 밖**: `core/pipeline.ts`는 `AssembledFile[]` + `Manifest`만 반환한다. 실제 디스크 쓰기(`--force`/out 경계 포함)는 `adapters/fsTargets.ts`가 한다 — core는 여전히 외부 IO가 없다.
 
 ## 6. CLI (src/cli/)
