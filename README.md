@@ -1,51 +1,66 @@
 # live-skill
 
-문서·폴더·URL을 **검증된 에이전트 스킬로 컴파일하고, 소스가 바뀌면 자동으로 갱신하는** TS/npm 스킬 컴파일러.
+Compile documents, folders, or docsets into **verified** [Agent Skills](https://agentskills.io) — and back that verification with a semantic quality gate, not just a template pass.
 
-한 줄 포지셔닝: **"book-to-skill = 스냅샷, live-skill = 구독. 생성이 아니라 검증된 생성."**
+**One-line positioning:** *book-to-skill is a snapshot; live-skill is a subscription — verified generation, not just generation.*
 
-네 개의 층으로 구성된다 (0은 전제, 1~3이 차별화):
+[한국어 문서](README.ko.md) · [License: MIT](LICENSE)
 
-- **0 컴파일(기본기)** — 문서 → Agent Skills 표준 산출물(SKILL.md 인덱스 + 챕터 + 용어집 + 패턴 + 치트시트). book-to-skill이 하는 일과 동급이며, 제품 성립의 전제.
-- **2 품질 게이트 (v0.1)** — 컴파일 시 원문에서 골든 Q&A를 추출하고, **생성된 스킬 파일만으로** 그 질문에 옳게 답해야 배포를 통과. 스킬 생태계에 없는 신뢰 계층이자 이 제품의 심장.
-- **1 자동 재컴파일 (v0.2)** — 소스(폴더·URL·드라이브) 워처가 변경분을 감지해 해당 섹션만 증분 재컴파일. v0.1부터 manifest에 소스 해시를 남겨 이 층의 씨앗을 심는다.
-- **3 이중 서빙 (v0.3)** — 같은 산출물을 스킬 폴더(파일)로도, MCP 서버(도구)로도 서빙.
+## Why this exists
 
-**4번(PH 비즈니스 스킬 팩)은 이 레포의 기능이 아니라, 이 엔진으로 찍어내는 첫 콘텐츠 상품**이다 — 자매 레포(가칭 ph-skill-pack)로 분리하며 v0.2부터 병행한다. 엔진은 글로벌 공개 포트폴리오, 팩은 PH 로컬 수익원.
+Turning documents into [Agent Skills](https://agentskills.io) is an established category now — several tools already do the mechanical conversion (PDF/DOCX/Markdown/HTML → `SKILL.md` + supporting files). None of the ones we surveyed check whether the result is actually *correct*: whether an agent that loads only the compiled skill can answer real questions about the source material.
 
-## 문서 맵
+live-skill's compiler is built around a **quality gate**: after compiling, it generates golden question/answer pairs from your source sections, answers each one using *only* the compiled skill files (the same way an agent would load them — index first, then the relevant chapter), grades the answers against the source, and refuses to ship the skill if the pass rate falls under a threshold (90% by default). A failing run doesn't get silently deployed — it's written to a temp directory with a report pointing at exactly which chapter is weak.
 
-| 문서 | 내용 | 읽는 시점 |
+## What's here (v0.1)
+
+| Layer | What it does | Status |
 |---|---|---|
-| `CLAUDE.md` | 에이전트 스티어링 — 스택, 명령어, 규칙, 가드레일 | 모든 에이전트 세션 시작 시 (자동 로드) |
-| `docs/SPEC.md` | 제품 스펙 — 경쟁 구도, 방어력 순서, 목표/비목표, 로드맵 | 기능 논의·범위 판단 전 |
-| `docs/DESIGN.md` | 기술 설계 — 파이프라인, 스킬 산출 구조, 품질 게이트, manifest | 구현 전 필독 |
-| `docs/TESTING.md` | 테스트 전략 — 가짜 LLM 대본, 게이트 검증, 픽스처 규칙 | 테스트 작성 전 |
-| `docs/TASKS.md` | 태스크 백로그 — 에이전트 실행 단위, 완료 기준 | 작업 배정 시 |
-| `docs/WORKFLOW.md` | AI-native 개발 규칙 (공통 + 이 레포 특이사항) | 최초 1회 + 운영 중 참조 |
-| `docs/MARKET.md` | 활용 분야·경쟁 구도·규모 분석 | 포지셔닝·범위 재확인 시 |
-| `docs/PUBLISHING.md` | npm 배포 실행 체크리스트 (T11 확장판) | 공개 배포 착수 전 |
+| Compile | Document/folder → Agent Skills standard output (`SKILL.md` index + chapters + glossary + patterns + cheatsheet), deterministic assembly | v0.1 |
+| Quality gate | Golden Q&A extraction → isolated answer simulation → grading → pass/fail threshold | v0.1 |
+| Auto recompile | Source watcher + manifest-hash incremental updates ("subscription") | v0.2 (planned) |
+| Dual serving | Same output also served as an MCP server | v0.3 (planned) |
 
-## 개발 방식
+Supported input formats: text PDF, DOCX, Markdown/TXT, HTML. Scanned/image PDFs (OCR) are out of scope for v0.1.
 
-앞선 네 레포와 동일: **문서 → 에이전트 구현 → 검증**. 사람(Jin)은 스펙·리뷰·실 LLM 스모크·npm 공개 승인, 구현은 Claude Code가 `docs/TASKS.md` 단위로. 공통 게이트는 `npm run check`.
-
-## 퀵스타트 (T0 완료 후 유효)
+## Quickstart
 
 ```bash
 npm install
-npm run check                          # typecheck + lint + test — 공통 게이트
-npm run cli -- compile ./samples/manual.pdf   # 컴파일 + 품질 게이트 실행
-npm run cli -- eval ~/.claude/skills/manual   # 기존 스킬 재평가
+cp .env.example .env              # fill in ANTHROPIC_API_KEY
+npm run cli -- compile ./samples/manual.pdf --out ./my-skill
+npm run cli -- validate ./my-skill     # structure check only, no LLM calls
+npm run cli -- report ./my-skill       # print the last quality-gate report
+npm run cli -- eval ./my-skill         # re-grade an existing skill
 ```
 
-## 실 LLM 스모크 (사람 전용, `docs/TESTING.md` §5)
+`compile` writes the skill to `--out` (or `~/.claude/skills/<slug>` / `~/.agents/skills/<slug>` by default) only if the quality gate passes. On failure it preserves the output in a temp directory instead, alongside a report naming the weak chapter(s).
 
-`.env`에 `ANTHROPIC_API_KEY`를 채운 뒤 `npm run smoke`를 실행하면 실 Claude로 `samples/manual.pdf`를 컴파일해 게이트 리포트와 비용(호출 수·추정 토큰) 요약을 출력한다(파일은 쓰지 않는다, 진단 전용). 통과율·약한 챕터가 타당한지 확인하고, 임계치·k 튜닝이 필요하면 SPEC §8에 메모를 남긴다.
+## 60-second demo
 
-## 상태
+See [`docs/DEMO.md`](docs/DEMO.md) for the full recorded-demo script (self-authored sample only). Short version:
 
-- 2026-09-06: 문서 단계 (코드 미작성). T0부터 시작.
-- 2026-09-06: npm 배포 사전 분석 완료 — 경쟁 구도·활용 분야·규모(`docs/MARKET.md`), 배포 실행 체크리스트(`docs/PUBLISHING.md`) 신규 작성, `LICENSE`(MIT 초안)·`.gitignore` 추가. 패키지명 `live-skill` npm 가용 확인(SPEC §8). 코드는 여전히 미작성 — T0부터 순서대로 진행 필요.
-- 2026-09-06: 형제 레포(`../msg-agent`, `../retail-mcp`) 실전 선례를 TASKS.md T0·T1·T2·T11에 교차 참조 — 같은 스택의 검증된 scaffolding·추출기 구현, npm 배포 시 실제로 걸렸던 함정(REL-001~008) 반영. T0 착수 시 처음부터 설계하지 않고 이식하는 경로가 열림.
-- 이름 메모: 폴더/작업명은 live-skill, npm 패키지명 최종 확정은 T11에서 사람이 결정(WORKFLOW §4) — 1차 조사 결과는 SPEC §8·`docs/PUBLISHING.md` 참조.
+```bash
+npm run cli -- compile samples/manual.pdf --out ./demo-skill
+npm run cli -- report ./demo-skill
+```
+
+## Real-LLM smoke test (human only, costs money)
+
+```bash
+npm run smoke   # compiles samples/manual.pdf with real Claude, prints the gate report + a call/token cost summary
+```
+
+Everything else — `npm run check` (typecheck + lint + test) — runs entirely against a scripted mock LLM. Zero network calls in the automated test suite; see `docs/TESTING.md`.
+
+## Documentation
+
+The internal design/spec/task docs under `docs/` are written in Korean (this is a solo project developed with an AI pairing workflow documented there) — but the interfaces are all TypeScript with English identifiers, and the code itself is the more precise reference for how any of this works. Start with `docs/SPEC.md` (product spec) and `docs/DESIGN.md` (technical design) if you want the full picture.
+
+## Status
+
+v0.1 (compile + quality gate + CLI) is implemented and tested; not yet published to npm. See `docs/SPEC.md` §7 for the roadmap.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
