@@ -2,6 +2,7 @@
 // 실제 fs/네트워크 없음). 패턴 출처: ../msg-agent/tests/cli.test.ts.
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/core/config.js";
+import { trackCost } from "../src/core/costTracker.js";
 import { createExtractors } from "../src/adapters/extractors/index.js";
 import { FixtureExtractor } from "../src/mocks/fixtureExtractor.js";
 import { script } from "../src/mocks/scriptedLlm.js";
@@ -255,6 +256,70 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     );
     expect(code).toBe(1);
     expect(captured.all.join("\n")).toContain("missing");
+  });
+
+  it("refuses before any LLM call when the reuse path would exceed MAX_LLM_CALLS (D2 preflight)", async () => {
+    const captured = lines();
+    const llm = script().build(); // 대본 0개
+    const code = await runEval(
+      { skillDir: "dir" },
+      baseDeps({ out: captured.out, llm, config: loadConfig({ MAX_LLM_CALLS: "2" }) }), // 문항 1개 × 3 = 3 > 2
+    );
+    expect(code).toBe(1);
+    expect(captured.all.join("\n")).toContain("MAX_LLM_CALLS 상한 2");
+    llm.assertExhausted();
+  });
+
+  it("stops mid-run when the cap trips during grading and reports it instead of crashing (D2 runtime)", async () => {
+    const captured = lines();
+    const inner = script()
+      .selectChapter(chapterFile.path)
+      .answer("on the unit") // 3번째(grade)는 대본 없음 — 상한이 막아야 한다
+      .build();
+    // config 상한(300)은 통과하지만 주입한 provider 자체가 2회에서 막힌다 — 실행 중 상한 처리 경로를 밟는다.
+    const capped = trackCost(inner, { maxCalls: 2 });
+    const code = await runEval(
+      { skillDir: "dir" },
+      baseDeps({ out: captured.out, llm: capped.llm }),
+    );
+    expect(code).toBe(1);
+    expect(captured.all.join("\n")).toContain("재채점 중단");
+    expect(inner.calls).toHaveLength(2);
+    inner.assertExhausted();
+  });
+
+  it("prints the measured LLM call count after a successful re-grade (D2)", async () => {
+    const captured = lines();
+    const llm = script()
+      .selectChapter(chapterFile.path)
+      .answer("on the unit")
+      .grade("correct")
+      .build();
+    await runEval({ skillDir: "dir" }, baseDeps({ out: captured.out, llm }));
+    expect(captured.all.join("\n")).toContain("LLM 호출 3회");
+  });
+
+  it("with --source, refuses before any LLM call when the gate estimate exceeds MAX_LLM_CALLS (D2 preflight)", async () => {
+    const captured = lines();
+    const doc: ExtractedDoc = {
+      sections: [{ id: "a", heading: "A", level: 1, text: "Mount the unit." }],
+    };
+    const llm = script().build();
+    const code = await runEval(
+      { skillDir: "dir", source: ["a.md"] },
+      baseDeps({
+        out: captured.out,
+        llm,
+        extractors: [new FixtureExtractor({ md: doc })],
+        collectInputFiles: () => Promise.resolve(["a.md"]),
+        readSourceFile: (p) =>
+          Promise.resolve({ path: p, bytes: new TextEncoder().encode("a.md") }),
+        config: loadConfig({ QA_PER_SECTION: "1", MAX_LLM_CALLS: "4" }), // 섹션 1개: 2 + 3 = 5 > 4
+      }),
+    );
+    expect(code).toBe(1);
+    expect(captured.all.join("\n")).toContain("MAX_LLM_CALLS 상한 4");
+    llm.assertExhausted();
   });
 
   it("returns 1 before any LLM call when the manifest names a chapter that is not on disk (B3)", async () => {

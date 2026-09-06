@@ -141,9 +141,10 @@
 - 완료(2026-09-07, PR #27): `estimateGateCalls`를 `sections × 2 + sections × k × 3`으로 정정(재생성 1회 포함 — 모든 섹션이 재생성을 타는 게이트가 정확히 이 수에 닿음을 테스트로 확인). `trackCost(llm, { maxCalls })`가 상한을 넘기는 호출을 provider에 닿기 전에 `LlmCallCapError`로 막고, `compile()`이 outline·distill·게이트 전부를 이 래퍼로만 불러 실행 중 상한을 강제 — 터지면 `call_cap_exceeded`(`stage: "runtime"`, 실측 호출 수)로 반환, 사전 추정 실패는 `stage: "preflight"`. `CompileResult.llmCalls`(실측)를 CLI가 "LLM 호출 N회"로 출력. DESIGN §4·§5.1·§7 갱신. eval·smoke 적용은 D2.
 - 완료 기준: [x] DESIGN §4 갱신 [x] 상한 6에 7번째 호출 차단 테스트(runGate 8회 필요 게이트를 상한 6 래퍼로 → 7번째에서 `LlmCallCapError`, provider 도달 6회; 래퍼 단위 테스트; 파이프라인 실행 중 경로 → `runtime` 오류) [x] check 통과(22 files·332 tests)
 
-#### D2 — eval 경로 상한 검사 · 상태: TODO · 원본: SEC-008, AUD-009 · 의존: D1
+#### D2 — eval 경로 상한 검사 · 상태: DONE(2026-09-07) · 원본: SEC-008, AUD-009 · 의존: D1
 - 목표: eval 재사용/`--source` 경로 모두 D1 래퍼 적용 + `manifest.goldenQa` 개수·문자열 길이 상한.
-- 완료 기준: [ ] eval 상한 초과 중단 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #28): `eval` 두 경로 다 compile과 같은 두 겹 — 사전 추정(재사용 `estimateEvalCalls` = 문항 수 × 3, `--source`는 게이트 산식)이 상한을 넘으면 LLM 호출 0회로 종료 1, 통과해도 `trackCost(llm, { maxCalls })` 래퍼로만 호출해 실행 중 상한에 닿으면 "재채점 중단"으로 보고. 끝나면 실측 "LLM 호출 N회" 출력. `manifest.goldenQa`는 스키마에서 `MAX_GOLDEN_QA_ENTRIES`(1,000)개로 제한(문자열 길이는 C1의 2,000자). `smoke`는 `compile()`을 그대로 부르므로 D1로 이미 적용. DESIGN §2·§6 갱신.
+- 완료 기준: [x] eval 상한 초과 중단 테스트(재사용 사전 추정 거부·실행 중 상한 중단·`--source` 사전 추정 거부·성공 시 호출 수 출력, goldenQa 1,001개 거부/1,000개 허용) [x] check 통과(22 files·338 tests)
 
 #### D3 — 입력 크기 사전 제한 · 상태: TODO · 원본: 001-015, SEC-011, AUD-014
 - 목표: 읽기 전에 `stat` 기반 파일 수·파일별/총 바이트 제한, 제한된 동시성으로 읽기, 불필요한 Buffer 복사 제거.

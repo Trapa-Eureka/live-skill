@@ -76,6 +76,11 @@ export function estimateGateCalls(sectionCount: number, k: number): number {
   return sectionCount * 2 + sectionCount * k * 3;
 }
 
+/** eval 재사용 경로(qaGen 생략)의 상한선(D2): 문항마다 선택·답변·채점 3회. 조기 종료면 실제는 이보다 적다. */
+export function estimateEvalCalls(qaCount: number): number {
+  return qaCount * 3;
+}
+
 function parseQaGenItems(
   raw: string,
 ): { question: string; refAnswer: string; anchorQuote: string }[] {

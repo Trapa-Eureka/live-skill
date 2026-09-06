@@ -208,6 +208,10 @@ export const gateReportSchema = z
     }
   });
 
+/** manifest.goldenQa 개수 상한(D2, SEC-008): 외부 manifest가 문항을 무한정 실어 eval 비용·메모리를 키우지 못하게.
+ * 필드 길이 상한(2,000자)과 합쳐 최악 ~6MB. 컴파일 산출물은 섹션 수 × k라 이 값에 한참 못 미친다. */
+export const MAX_GOLDEN_QA_ENTRIES = 1000;
+
 /** 소문자 16진수 64자 — core/hash.ts sha256Hex의 출력 형식 그대로(B6). */
 export const sha256Schema = z
   .string()
@@ -230,7 +234,7 @@ export const manifestSchema = z
     ),
     outputs: z.array(z.string().min(1)),
     gate: z.union([gateReportSchema, z.object({ skipped: z.literal(true) })]),
-    goldenQa: z.array(goldenQaSchema),
+    goldenQa: z.array(goldenQaSchema).max(MAX_GOLDEN_QA_ENTRIES),
   })
   .superRefine((m, ctx) => {
     const issue = (message: string, path: (string | number)[]): void => {
