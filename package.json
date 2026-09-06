@@ -24,15 +24,19 @@
     "check": "npm run typecheck && npm run lint && npm run test",
     "cli": "tsx src/cli/index.ts",
     "smoke": "tsx scripts/smoke.ts",
+    "fixtures": "tsx scripts/fixtures/generate.ts",
     "prepublishOnly": "npm run check && npm run build && npm run check:tarball",
     "check:tarball": "sh scripts/check-tarball.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.3",
+    "@types/pdfkit": "^0.17.6",
     "@vitest/coverage-v8": "^5.0.0",
+    "docx": "^9.7.1",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
+    "pdfkit": "^0.20.2",
     "prettier": "^3.9.6",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3",
@@ -40,7 +44,11 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
     "commander": "^15.0.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.2",
+    "pdf-parse": "^2.4.5",
     "zod": "^4.5.4"
   },
   "repository": {
