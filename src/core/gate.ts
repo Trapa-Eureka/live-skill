@@ -175,6 +175,8 @@ async function evaluateQa(
 export interface EvaluateInput {
   files: readonly SkillFile[];
   chapters: readonly GateChapter[];
+  /** 섹션당 요청한 문항 수(coverage.requested). 기본 DEFAULT_K — eval 재사용 경로는 그때의 config 값을 준다. */
+  qaPerSection?: number;
 }
 
 /**
@@ -210,9 +212,32 @@ export async function evaluateGoldenQa(
     };
   });
 
-  const failures = outcomes
-    .filter((o) => !o.correct)
-    .map((o) => ({ qaId: o.qaId, reason: o.failureReason ?? ("wrong" as const) }));
+  // B2(DESIGN §4): 모집단(챕터별 sectionIds) 섹션마다 유효 문항 수를 센다. 하나도 못 만든 섹션은 "미검증"이라
+  // 나머지가 전부 정답이어도 통과할 수 없다 — 분모에서 빼는 대신(가드레일 1 위반) 별도 필요조건으로 둔다.
+  const requested = input.qaPerSection ?? DEFAULT_K;
+  const generatedBySection = new Map<string, number>();
+  for (const qa of qas) {
+    generatedBySection.set(qa.sectionId, (generatedBySection.get(qa.sectionId) ?? 0) + 1);
+  }
+  const coverage = input.chapters.flatMap((c) =>
+    c.sectionIds.map((sectionId) => ({
+      sectionId,
+      requested,
+      generated: generatedBySection.get(sectionId) ?? 0,
+    })),
+  );
+  const uncovered = coverage.filter((c) => c.generated === 0);
+
+  const failures = [
+    ...outcomes
+      .filter((o) => !o.correct)
+      .map((o) => ({ qaId: o.qaId, reason: o.failureReason ?? ("wrong" as const) })),
+    // 문항이 아니라 섹션의 실패 — q1..qk 앞의 "0번 문항"으로 표기한다(DESIGN §2).
+    ...uncovered.map((c) => ({
+      qaId: `${c.sectionId}-q0`,
+      reason: "qa_generation_failed" as const,
+    })),
+  ];
 
   const loadHistory = outcomes.map((o) => ({
     qaId: o.qaId,
@@ -222,7 +247,7 @@ export async function evaluateGoldenQa(
 
   const asked = outcomes.length;
   const correct = outcomes.filter((o) => o.correct).length;
-  // 질문이 하나도 없으면(모든 문항이 qaGen 단계에서 제외됨) 보수적으로 미통과 처리 — 검증된 게 아무것도 없다.
+  // 질문이 하나도 없으면 보수적으로 미통과 처리 — 검증된 게 아무것도 없다.
   const passRate = asked === 0 ? 0 : correct / asked;
 
   // 부동소수 오차 방지: 수학적으로 임계치와 같은 비율(예: 9/10 = 0.9)이 이진 부동소수 반올림 때문에
@@ -231,10 +256,11 @@ export async function evaluateGoldenQa(
   return {
     passRate,
     threshold,
-    passed: passRate >= threshold - EPSILON,
+    passed: passRate >= threshold - EPSILON && uncovered.length === 0,
     perChapter,
     failures,
     loadHistory,
+    coverage,
   };
 }
 
@@ -260,7 +286,7 @@ export async function runGate(input: GateInput, deps: GateDeps): Promise<GateOut
 
   const report = await evaluateGoldenQa(
     goldenQa,
-    { files: input.files, chapters: input.chapters },
+    { files: input.files, chapters: input.chapters, qaPerSection: k },
     deps.llm,
     deps.threshold ?? DEFAULT_THRESHOLD,
   );

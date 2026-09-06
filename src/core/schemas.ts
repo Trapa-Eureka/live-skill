@@ -36,7 +36,12 @@ export const goldenQaSchema = z.object({
   anchorQuote: z.string().min(1),
 });
 
-export const gateFailureReasonSchema = z.enum(["wrong", "not_found", "anchor_missing"]);
+export const gateFailureReasonSchema = z.enum([
+  "wrong",
+  "not_found",
+  "anchor_missing",
+  "qa_generation_failed",
+]);
 
 /** GateReport — 품질 게이트 최종 리포트, manifest.gate에 내장된다. */
 export const gateReportSchema = z.object({
@@ -61,6 +66,13 @@ export const gateReportSchema = z.object({
       qaId: z.string().min(1),
       selectedFile: z.string(),
       loadedFiles: z.array(z.string()),
+    }),
+  ),
+  coverage: z.array(
+    z.object({
+      sectionId: z.string().min(1),
+      requested: z.number().int().nonnegative(),
+      generated: z.number().int().nonnegative(),
     }),
   ),
 });

@@ -70,7 +70,8 @@ export interface GoldenQA {
 }
 
 /** 게이트 판정 사유 — GateReport.failures[].reason. */
-export type GateFailureReason = "wrong" | "not_found" | "anchor_missing";
+/** qa_generation_failed(B2)는 문항이 아니라 섹션의 실패 — qaId는 `<sectionId>-q0`. */
+export type GateFailureReason = "wrong" | "not_found" | "anchor_missing" | "qa_generation_failed";
 
 /** 품질 게이트 최종 리포트 (core/gate.ts, T7). manifest에 내장되므로 경계에서 zod 파싱. */
 export interface GateReport {
@@ -82,6 +83,9 @@ export interface GateReport {
   /** answerer 격리 감사 로그(DESIGN §2 T7 결정) — selectedFile은 LLM이 실제로 답한 원시 문자열(무효한
    * 경로여도 그대로), loadedFiles는 실제로 읽어 들인 파일(선택이 무효하면 빈 배열). */
   loadHistory: { qaId: string; selectedFile: string; loadedFiles: string[] }[];
+  /** B2: 모집단 섹션마다 요청한 문항 수와 실제 유효 문항 수. generated 0인 섹션이 하나라도 있으면 passed는
+   * false(미검증 섹션) — passRate와 별개의 필요조건. */
+  coverage: { sectionId: string; requested: number; generated: number }[];
 }
 
 /** 컴파일 산출 manifest — 스킬 디렉터리에 기록, v0.2 증분 재컴파일의 키(DESIGN §5). 파일 IO 경계이므로 zod 파싱. */

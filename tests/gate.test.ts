@@ -377,7 +377,7 @@ describe("generateGoldenQa — anchor validation + one retry (TESTING §3)", () 
     llm.assertExhausted();
   });
 
-  it("excludes the item entirely if the regenerated one also fails (문항 제외)", async () => {
+  it("returns no items if the regenerated one also fails — the gate then marks the section unverified (B2)", async () => {
     const llm = script()
       .qa([{ question: "Q1", refAnswer: "A1", anchorQuote: "not in the section" }])
       .qa([{ question: "Q1-retry", refAnswer: "A1", anchorQuote: "also not in the section" }])
@@ -393,6 +393,107 @@ describe("generateGoldenQa — anchor validation + one retry (TESTING §3)", () 
       .build();
     const qas = await generateGoldenQa(sectionA, 1, llm);
     expect(qas).toHaveLength(1);
+    llm.assertExhausted();
+  });
+});
+
+describe("runGate — 문항 생성 실패 주입 (B2, SEC-005·AUD-005 — 완료 기준, 판별력 6/6)", () => {
+  it("fails when one chapter's qaGen fails twice even though every asked question is correct", async () => {
+    const llm = script()
+      .qa([
+        { question: "How much current?", refAnswer: "500 mA", anchorQuote: "500 mA of current" },
+      ])
+      .qaRaw("{not json") // b: 1차 실패
+      .qa([{ question: "LED?", refAnswer: "x", anchorQuote: "quote that is not in section b" }]) // b: 재생성도 앵커 불합격
+      .selectChapter("chapters/ch01-installation.md")
+      .answer("500 mA")
+      .grade("correct")
+      .build();
+
+    const { report, goldenQa } = await runGate(
+      { files: [skillMd, chapter1, chapter2], chapters, sections: [sectionA, sectionB] },
+      { llm, k: 1 },
+    );
+
+    expect(goldenQa.map((q) => q.sectionId)).toEqual(["a"]); // b의 문항은 없다
+    expect(report.passRate).toBe(1); // 물어본 문항 기준으로는 100% —
+    expect(report.passed).toBe(false); // — 그래도 미검증 섹션이 있으면 통과가 아니다
+    expect(report.coverage).toEqual([
+      { sectionId: "a", requested: 1, generated: 1 },
+      { sectionId: "b", requested: 1, generated: 0 },
+    ]);
+    expect(report.failures).toEqual([{ qaId: "b-q0", reason: "qa_generation_failed" }]);
+    expect(report.perChapter).toEqual([
+      { file: "chapters/ch01-installation.md", asked: 1, correct: 1 },
+      { file: "chapters/ch02-troubleshooting.md", asked: 0, correct: 0 },
+    ]);
+    llm.assertExhausted(); // b에 대해선 answer/grade를 부르지 않았다 — 물을 문항이 없으니
+  });
+
+  it("records a shortfall (some but fewer than k valid items) in coverage without failing on it alone", async () => {
+    const llm = script()
+      // a: k=2 요청, 1차에 1개 유효, 재생성에서 0개 유효 → generated 1/2
+      .qa([
+        { question: "How much current?", refAnswer: "500 mA", anchorQuote: "500 mA of current" },
+      ])
+      .qa([{ question: "junk", refAnswer: "x", anchorQuote: "not in a" }])
+      // b: 한 번에 2개 유효
+      .qa([
+        { question: "LED colour?", refAnswer: "red", anchorQuote: "blinks red" },
+        { question: "When?", refAnswer: "error", anchorQuote: "error condition" },
+      ])
+      .selectChapter("chapters/ch01-installation.md")
+      .answer("500 mA")
+      .grade("correct")
+      .selectChapter("chapters/ch02-troubleshooting.md")
+      .answer("red")
+      .grade("correct")
+      .selectChapter("chapters/ch02-troubleshooting.md")
+      .answer("error")
+      .grade("correct")
+      .build();
+
+    const { report } = await runGate(
+      { files: [skillMd, chapter1, chapter2], chapters, sections: [sectionA, sectionB] },
+      { llm, k: 2 },
+    );
+
+    expect(report.coverage).toEqual([
+      { sectionId: "a", requested: 2, generated: 1 },
+      { sectionId: "b", requested: 2, generated: 2 },
+    ]);
+    expect(report.passed).toBe(true);
+    expect(report.failures).toEqual([]);
+    llm.assertExhausted();
+  });
+
+  it("evaluateGoldenQa (eval reuse path) fails a manifest whose QA list has no question for a section", async () => {
+    const qas: GoldenQA[] = [
+      {
+        id: "a-q1",
+        sectionId: "a",
+        question: "How much current?",
+        refAnswer: "500 mA",
+        anchorQuote: "500 mA of current",
+      },
+    ];
+    const llm = script()
+      .selectChapter("chapters/ch01-installation.md")
+      .answer("500 mA")
+      .grade("correct")
+      .build();
+    const report = await evaluateGoldenQa(
+      qas,
+      { files: [skillMd, chapter1, chapter2], chapters, qaPerSection: 1 },
+      llm,
+    );
+    expect(report.passed).toBe(false);
+    expect(report.failures).toEqual([{ qaId: "b-q0", reason: "qa_generation_failed" }]);
+    expect(report.coverage.find((c) => c.sectionId === "b")).toEqual({
+      sectionId: "b",
+      requested: 1,
+      generated: 0,
+    });
     llm.assertExhausted();
   });
 });

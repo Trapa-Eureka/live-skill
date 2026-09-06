@@ -22,7 +22,7 @@
 ## 3. 골든 케이스 (결정론 층)
 
 - assembler: 고정 DistilledChapter 입력 → 산출 5파일 스냅샷 일치, 토큰 예산 계산 검증
-- 앵커 검사: `anchorQuote`가 원문에 없는 QA 문항 → 폐기·재생성 1회 → 그래도 실패 시 문항 제외 기록
+- 앵커 검사: `anchorQuote`가 원문에 없는 QA 문항 → 폐기·재생성 1회 → 그래도 유효 문항이 0개인 섹션은 **미검증**(`qa_generation_failed`, 게이트 통과 불가), 부족분은 `coverage`에 기록(B2 — 예전 "문항 제외"는 가드레일 1과 충돌해 폐기)
 - manifest: 같은 입력 2회 컴파일 → sections 해시·chapterFile 매핑 동일 / 섹션 id 안정성(헤딩 경로 슬러그) 검증
 - validator: 예산 초과 챕터, 깨진 링크, 앵커 없는 문장 비율 경고 각각 검출
 
@@ -34,6 +34,7 @@
 - [ ] **오답 증류 주입**: 챕터 본문의 핵심 수치를 반전 → grader 대본이 앵커 모순 검출 → 미배포
 - [ ] 임계치 경계: 90% 정확히 → 통과 / 1문항 차 미달 → 실패 (부동소수 처리)
 - [ ] `--no-gate` → 배포되지만 SKILL.md에 unverified 표시, manifest.gate = skipped
+- [ ] **문항 생성 실패 주입(B2)**: 한 챕터의 qaGen이 두 번 다 실패 → 나머지 문항이 전부 정답이어도 미통과 + `qa_generation_failed` 기록 + `coverage.generated = 0`
 
 **answerer 격리**
 - [ ] answerer 컨텍스트에 원문·미선택 챕터가 포함되면 테스트 실패 (주입 페이로드 검사)

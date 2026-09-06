@@ -41,8 +41,9 @@ export interface GoldenQA { id: string; sectionId: string; question: string; ref
 export interface GateReport {
   passRate: number; threshold: number; passed: boolean;
   perChapter: { file: string; asked: number; correct: number }[];
-  failures: { qaId: string; reason: "wrong" | "not_found" | "anchor_missing" }[];
+  failures: { qaId: string; reason: "wrong" | "not_found" | "anchor_missing" | "qa_generation_failed" }[];   // B2: qa_generation_failed는 문항이 아니라 섹션의 실패라 qaId가 `<sectionId>-q0`(q1..qk 앞의 0번 = "만들지 못한 문항")
   loadHistory: { qaId: string; selectedFile: string; loadedFiles: string[] }[];   // T7 결정: answerer 격리 감사 로그(§4-2, 완료 기준 "로드 이력") — selectedFile은 LLM이 실제로 답한 원시 문자열(존재하지 않는 경로여도 그대로 기록), loadedFiles는 그중 실제로 읽어 들인 파일(선택이 무효면 빈 배열)
+  coverage: { sectionId: string; requested: number; generated: number }[];   // B2: 모집단 섹션마다 요청한 문항 수 k와 실제 유효 문항 수 — generated 0인 섹션이 하나라도 있으면 passed는 false
 }
 export interface Manifest {
   version: 1; createdAt: string; sourceFiles: { path: string; sha256: string }[];
@@ -97,7 +98,7 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 
 ## 4. 품질 게이트 (core/gate.ts) — 제품의 심장
 
-1. **qaGen**: 섹션당 k개(기본 3) 골든 Q&A 생성. 각 항목은 원문 인용(`anchorQuote`) 필수 — 인용이 원문에 실존하는지 문자열 검사(결정론)로 확인, 불합격 문항은 폐기 후 재생성 1회. 재생성 후에도 실패하면 그 문항은 제외(집계에도 안 들어간다).
+1. **qaGen**: 섹션당 k개(기본 3) 골든 Q&A 생성. 각 항목은 원문 인용(`anchorQuote`) 필수 — 인용이 원문에 실존하는지 문자열 검사(결정론)로 확인, 불합격 문항은 폐기 후 재생성 1회. 재생성 후에도 유효 문항이 **하나도 없는 섹션은 "미검증"** — 그 섹션이 하나라도 있으면 게이트는 통과할 수 없다(`qa_generation_failed`, B2). 유효 문항이 k개에 못 미치는 부족분은 `coverage`에 기록되지만 통과 여부는 바꾸지 않는다(못 만든 문항을 오답으로 꾸미지 않는다 — 생성 실패와 채점 실패는 별개 축).
 2. **answerer (격리 시뮬레이터)**: 실제 에이전트의 점진 로딩을 재현한다 — 컨텍스트에 `SKILL.md`만 주고 챕터 선택을 시키고, 선택된 챕터 파일만 추가 로드해 답하게 한다. **원문·미선택 챕터는 절대 주입하지 않는다** (CLAUDE.md 가드레일 2). 로드 이력은 리포트에 기록(`GateReport.loadHistory`, §2).
 3. **grader**: 이중 채점 — (a) 루브릭 LLM 채점(정답 요지 일치) AND (b) 답변이 refAnswer의 앵커 사실과 모순되지 않는지. 판정은 보수적으로: 불확실하면 오답 처리.
 4. **판정**: passRate ≥ threshold(기본 0.9) → 배포. 미달 → 산출물은 임시 디렉터리에 남기고 약한 챕터 지목 리포트 반환(`report` 명령으로 재열람).
@@ -109,6 +110,8 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 3. 위 둘을 통과하면 `answerPrompt`로 선택된 챕터 **하나만** 로드해 답변 생성 → `gradePrompt`(이중 채점을 한 번의 호출로 묻는다, `core/prompts.ts` T3 결정)로 채점 → WRONG이면 **`wrong`**.
 
 **비용 가드(정정)**: DESIGN 초안의 산식은 answerer가 1회 호출이라고 가정했지만, T3에서 answerer는 항상 2회(선택 1 + 답변 1)로 확정됐다. 정확한 게이트 호출 수 = **섹션수×1(qaGen, 섹션당 한 번에 k개) + 섹션수×k×3(선택+답변+채점, 단 `not_found`/`anchor_missing`으로 조기 종료되면 그만큼 덜 든다 — 이 산식은 상한선)**. `core/pipeline.ts`(T6)는 outline 응답으로 챕터·섹션 수를 안 직후, distill을 시작하기 전에 **컴파일 호출 수 + 이 게이트 상한선**을 합쳐 `MAX_LLM_CALLS`와 비교한다(§5.1 갱신) — k 자동 축소 제안은 v0.2로 미루고, v0.1은 초과 시 즉시 중단 안내로 충분하다(우회 없음, 가드레일 6).
+
+**B2 결정(2026-09-07, SEC-005·AUD-005) — 문항 생성 실패는 "제외"가 아니라 "미검증"이다**: 예전 §4-1은 재생성으로도 못 만든 문항을 집계에서 빼도록 했고, 그 결과 어떤 섹션의 qaGen이 두 번 다 실패하면(빈 배열·깨진 JSON·원문에 없는 인용) 그 섹션은 분모에서 사라져 나머지만으로 100% 통과했다 — CLAUDE.md 가드레일 1("실패 케이스를 제외해서 통과시키는 수정 금지")과 문서 자체가 충돌하던 지점이라 정책을 바꾼다. (1) `evaluateGoldenQa`가 챕터별 `sectionIds`(=모집단, B1)마다 `{ requested: k, generated: 유효 문항 수 }`를 `GateReport.coverage`에 남긴다. (2) `generated === 0`인 섹션은 `failures`에 `{ qaId: "<sectionId>-q0", reason: "qa_generation_failed" }`로 올라가고, 그런 섹션이 하나라도 있으면 `passed = false` — passRate 조건과 별개의 필요조건이다. passRate 자체는 여전히 실제로 물은 문항 기준(`correct / asked`)이다: 못 만든 문항을 오답으로 꾸며 비율을 깎는 대신 "생성 실패"와 "채점 실패"를 따로 보여준다(003 §AUD-005 권고). (3) `eval` 재사용 경로도 같은 함수를 타므로, manifest에서 어떤 섹션의 QA가 빠져 있으면(외부 manifest 조작 포함) 그 섹션은 미검증이라 통과하지 못한다 — `requested`는 그때의 `config.qaPerSection`. (4) `generateGoldenQa` 자체의 계약(0..k개 반환, 재생성 1회)은 그대로다 — 판정이 바뀐 것이지 생성이 바뀐 것이 아니다.
 
 **T8 결정 — `runGate`를 생성/평가로 분리**: `eval` 명령(§6)이 원문 없이 기존 골든 QA를 재사용해 재채점하려면, "이미 만들어진 QA를 채점만 하는" 경로가 core/gate.ts에 따로 있어야 한다. 그래서 `evaluateGoldenQa(qas, chapters, files, llm)`(qaGen 생략, 2~4단계만)를 export하고, `runGate()`는 이제 섹션마다 `generateGoldenQa`로 문항을 만든 뒤 `evaluateGoldenQa`에 위임해 `{ report: GateReport, goldenQa: GoldenQA[] }`를 반환한다(기존엔 `GateReport`만 반환했다) — 생성된 QA 자체를 manifest에 남기기 위함(§2 `Manifest.goldenQa`).
 
