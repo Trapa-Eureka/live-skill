@@ -1,0 +1,78 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`assembleSkill — fixed-input snapshot (완료 기준) > produces the same 5 files for the same input, every time 1`] = `
+[
+  {
+    "content": "---
+name: skillsync-x200
+description: SkillSync X200 Manual
+---
+
+# SkillSync X200 Manual
+
+## 챕터 인덱스
+
+- \`chapters/ch01-installation.md\` — Installation (원문 섹션: installation, installation/prerequisites)
+- \`chapters/ch02-troubleshooting.md\` — Troubleshooting (원문 섹션: troubleshooting)
+
+## 참고 파일
+
+- \`glossary.md\` — 핵심 용어
+- \`patterns.md\` — 기법·절차·안티패턴
+- \`cheatsheet.md\` — 결정 표·즉답 규칙
+",
+    "estimatedTokens": 121,
+    "path": "SKILL.md",
+  },
+  {
+    "content": "Mount the unit on a flat, grounded surface. [§installation]
+
+**Prerequisite** — a host running Console v4 or later. [§installation/prerequisites]
+
+- [PROCEDURE] Assign a static address before powering on. [§installation/prerequisites]
+- [RULE] If the link LED never turns solid, reboot the unit. [§installation]
+",
+    "estimatedTokens": 78,
+    "path": "chapters/ch01-installation.md",
+  },
+  {
+    "content": "Cross-check the fault LED against the error code table. [§troubleshooting]
+
+- [ANTI-PATTERN] Do not substitute a higher-rated fuse. [§troubleshooting]
+**Prerequisite** — repeated in another chapter to prove dedup. [§troubleshooting]
+",
+    "estimatedTokens": 59,
+    "path": "chapters/ch02-troubleshooting.md",
+  },
+  {
+    "content": "# Glossary
+
+**Prerequisite** — a host running Console v4 or later. [§installation/prerequisites] (\`chapters/ch01-installation.md\`, \`chapters/ch02-troubleshooting.md\`)
+",
+    "estimatedTokens": 42,
+    "path": "glossary.md",
+  },
+  {
+    "content": "# Patterns
+
+## 절차
+
+- Assign a static address before powering on. [§installation/prerequisites] (\`chapters/ch01-installation.md\`)
+
+## 안티패턴
+
+- Do not substitute a higher-rated fuse. [§troubleshooting] (\`chapters/ch02-troubleshooting.md\`)
+",
+    "estimatedTokens": 64,
+    "path": "patterns.md",
+  },
+  {
+    "content": "# Cheatsheet
+
+- If the link LED never turns solid, reboot the unit. [§installation] (\`chapters/ch01-installation.md\`)
+",
+    "estimatedTokens": 30,
+    "path": "cheatsheet.md",
+  },
+]
+`;
