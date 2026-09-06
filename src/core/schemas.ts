@@ -27,6 +27,17 @@ export const skillPlanSchema = z.object({
   chapters: z.array(chapterPlanSchema).min(1),
 });
 
+/** 챕터 파일 경로 형식 — assembler의 `chapterFilePath()`가 만드는 형태만(B3, 가드레일 2): `chapters/` 바로
+ * 아래의 슬러그 문자 + `.md`. `manifest.json`·`SKILL.md`·상위 경로·하위 디렉터리는 여기서 걸러진다 — answerer가
+ * 로드할 수 있는 파일의 형식적 경계를 manifest가 아니라 코드가 쥔다. */
+export const CHAPTER_FILE_PATTERN = /^chapters\/[\p{L}\p{N}-]+\.md$/u;
+export const chapterFileSchema = z
+  .string()
+  .regex(CHAPTER_FILE_PATTERN, "chapterFile must look like chapters/<slug>.md");
+export function isChapterFilePath(path: string): boolean {
+  return CHAPTER_FILE_PATTERN.test(path);
+}
+
 /** GoldenQA — qaGen 단계 LLM 응답 한 항목. */
 export const goldenQaSchema = z.object({
   id: z.string().min(1),
@@ -86,7 +97,7 @@ export const manifestSchema = z.object({
     z.object({
       id: z.string().min(1),
       sha256: z.string().length(64),
-      chapterFile: z.string().min(1),
+      chapterFile: chapterFileSchema,
     }),
   ),
   outputs: z.array(z.string().min(1)),

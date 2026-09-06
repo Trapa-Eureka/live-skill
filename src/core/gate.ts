@@ -16,6 +16,7 @@ import type {
   Manifest,
   Section,
 } from "./types.js";
+import { isChapterFilePath } from "./schemas.js";
 import type { SkillFile } from "./validator.js";
 import { z } from "zod";
 
@@ -57,6 +58,16 @@ export function chaptersFromManifest(manifest: Manifest): GateChapter[] {
   return [...byFile.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([file, sectionIds]) => ({ file, sectionIds }));
+}
+
+/** manifest가 가리키는 챕터 파일 중 실제 스킬 디렉터리에 없는 것(B3) — `eval`이 LLM을 부르기 전에 확인한다.
+ * 다른 디렉터리의 manifest를 갖다 붙였거나 챕터가 지워진 경우를 조용히 not_found 실패로 만들지 않기 위함. */
+export function missingChapterFiles(
+  chapters: readonly GateChapter[],
+  files: readonly SkillFile[],
+): string[] {
+  const onDisk = new Set(files.map((f) => f.path));
+  return chapters.map((c) => c.file).filter((file) => !onDisk.has(file));
 }
 
 /** 게이트가 예상 소비할 LLM 호출 수 상한선(DESIGN §4 T7 결정). 조기 종료가 있으면 실제는 이보다 적다. */
@@ -189,9 +200,14 @@ export async function evaluateGoldenQa(
   llm: LlmProvider,
   threshold = DEFAULT_THRESHOLD,
 ): Promise<GateReport> {
-  const filesByPath = new Map(input.files.map((f) => [f.path, f]));
-  const chapterFileSet = new Set(input.chapters.map((c) => c.file));
-  const skillMd = filesByPath.get("SKILL.md")?.content ?? "";
+  // B3(가드레일 2): answerer가 로드할 수 있는 파일은 "코드가 정한 챕터 형식(chapters/<slug>.md)이면서 챕터 목록에
+  // 있는 것"뿐이다. manifest.json(정답이 들어 있다)·원문·부속 파일은 챕터 목록에 끼어 있어도 절대 로드하지
+  // 않는다 — 외부 manifest가 목록을 정하더라도 형식 경계는 코드가 쥔다. SKILL.md만 인덱스로 따로 준다.
+  const chapterFileSet = new Set(input.chapters.map((c) => c.file).filter(isChapterFilePath));
+  const filesByPath = new Map(
+    input.files.filter((f) => chapterFileSet.has(f.path)).map((f) => [f.path, f]),
+  );
+  const skillMd = input.files.find((f) => f.path === "SKILL.md")?.content ?? "";
   const chapterFileBySectionId = new Map<string, string>();
   for (const chapter of input.chapters) {
     for (const sectionId of chapter.sectionIds) chapterFileBySectionId.set(sectionId, chapter.file);

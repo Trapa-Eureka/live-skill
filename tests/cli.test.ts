@@ -256,6 +256,22 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     expect(code).toBe(1);
     expect(captured.all.join("\n")).toContain("missing");
   });
+
+  it("returns 1 before any LLM call when the manifest names a chapter that is not on disk (B3)", async () => {
+    const captured = lines();
+    const llm = script().build(); // 대본 0개 — 호출되면 즉시 실패
+    const code = await runEval(
+      { skillDir: "dir" },
+      baseDeps({
+        out: captured.out,
+        llm,
+        readSkillDir: () => Promise.resolve([{ path: "SKILL.md", content: "# x" }]), // 챕터 파일이 없다
+      }),
+    );
+    expect(code).toBe(1);
+    expect(captured.all.join("\n")).toContain("chapters/ch01-a.md");
+    llm.assertExhausted();
+  });
 });
 
 describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () => {

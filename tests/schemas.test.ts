@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chapterFilePath,
   chapterPlanSchema,
   gateReportSchema,
   goldenQaSchema,
@@ -176,6 +177,39 @@ describe("manifestSchema", () => {
       },
     };
     expect(() => manifestSchema.parse(missingCoverage)).toThrow();
+  });
+
+  // B3 (SEC-006·AUD-006): chapterFile은 answerer 허용 목록이 되므로 코드가 만드는 챕터 형식만 통과한다.
+  it.each([
+    "manifest.json",
+    "SKILL.md",
+    "glossary.md",
+    "chapters/../SKILL.md",
+    "chapters/../../etc/passwd",
+    "chapters/sub/ch01-a.md",
+    "chapters/ch01-a.txt",
+    "/chapters/ch01-a.md",
+    "chapters/",
+    "",
+  ])("rejects chapterFile %j", (chapterFile) => {
+    const invalid = { ...valid, sections: [{ id: "x", sha256: sha, chapterFile }] };
+    expect(() => manifestSchema.parse(invalid)).toThrow();
+  });
+
+  it.each(["chapters/ch01-installation.md", "chapters/ch02-한국어.md", "chapters/ch10-section.md"])(
+    "accepts chapterFile %j",
+    (chapterFile) => {
+      const ok = { ...valid, sections: [{ id: "x", sha256: sha, chapterFile }] };
+      expect(manifestSchema.parse(ok).sections[0]?.chapterFile).toBe(chapterFile);
+    },
+  );
+
+  it("accepts every path the assembler itself produces (compile output must stay readable)", () => {
+    for (const [i, title] of ["Setup & Operation", "설치 및 문제 해결", "---", "A / B"].entries()) {
+      const chapterFile = chapterFilePath(i, title);
+      const ok = { ...valid, sections: [{ id: "x", sha256: sha, chapterFile }] };
+      expect(manifestSchema.parse(ok).sections[0]?.chapterFile).toBe(chapterFile);
+    }
   });
 
   it("rejects a sha256 of the wrong length", () => {
