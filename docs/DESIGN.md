@@ -80,6 +80,19 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 
 **SKILL.md의 "핵심 멘탈 모델"은 v0.1에서 별도 LLM 요약이 아니라 챕터 인덱스 자체**(제목·파일·소속 원문 섹션)로 대신한다 — SkillPlan에 별도 개요 필드가 없고, 이를 위해 새 LLM 역할을 만들지 않는다. 더 나은 개요가 필요해지면 v0.2에서 outline 프롬프트에 필드를 추가하는 방향으로 재검토.
 
+### 3.1 Validator 규칙 (T5 결정, 2026-09-06)
+
+`core/validator.ts`가 검사한다 — 결정론, LLM 0회. `AssembledFile[]`과 형태만 같은 `{path, content}[]`를 받아 디스크에서 읽은 기존 스킬 디렉터리(`validate <skillDir>` 명령)도 그대로 검사할 수 있게 한다 — 파일 읽기 자체는 어댑터(T8) 몫.
+
+| 검사 | 판정 | 규칙 |
+|---|---|---|
+| 예산 초과 | **error** | 파일마다 `estimateTokens(content)`를 경로로 판별한 예산(§3 표, `Config.budgets`)과 비교. `chapters/*.md`는 파일마다 개별로. 초과 시 강제 실패(§3 "validator가 강제한다") |
+| 프런트매터 | **error** | `SKILL.md`가 없거나, `---`로 시작하는 YAML 프런트매터에 `name`·`description` 필드가 없으면 실패 |
+| 챕터 링크 | **error** | `SKILL.md` 본문에서 역따옴표로 감싼 `chapters/*.md` 경로를 전부 뽑아, 실제로 주어진 파일 목록에 그 경로가 있는지 확인 — 없으면 깨진 링크 |
+| 앵커 비율 | **warning** | 챕터 파일마다 헤딩·빈 줄을 뺀 실질 줄 중 `[§`를 포함하지 않는 비율을 계산, 기본 50% 초과 시 경고(§3 "앵커 없는 문장은 validator가 경고") — 게이트 실패 원인은 아니지만 리포트에 남는다 |
+
+`ValidationReport.passed`는 error가 하나도 없을 때만 true — warning은 통과를 막지 않는다.
+
 ## 4. 품질 게이트 (core/gate.ts) — 제품의 심장
 
 1. **qaGen**: 섹션당 k개(기본 3) 골든 Q&A 생성. 각 항목은 원문 인용(`anchorQuote`) 필수 — 인용이 원문에 실존하는지 문자열 검사(결정론)로 확인, 불합격 문항은 폐기 후 재생성 1회.
