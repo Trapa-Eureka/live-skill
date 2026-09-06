@@ -19,12 +19,22 @@ core/pipeline.ts
 
 ## 2. 핵심 인터페이스 (core/types.ts)
 
+**T1 결정(2026-09-06)**: `DocumentExtractor.extract()`는 예외 대신 `Result<ExtractedDoc, ExtractError>`를 반환한다 — `../msg-agent`에서 이미 검증된 패턴(`docs/PUBLISHING.md` §1)이고, TESTING §4의 "빈 문서/미지원 형식 → 수정 방법 담긴 거절"을 타입 수준에서 강제한다. `Result<T, E>`·`ok`/`err`는 `core/result.ts`. `ChapterPlan`(아웃라인 단계가 만드는, 배포 전 챕터 계획)은 기존 문서에서 참조만 되고 정의가 빠져 있어 이번에 명시한다.
+
 ```ts
-export interface DocumentExtractor { supports(mime: string, name: string): boolean; extract(bytes: Uint8Array): Promise<ExtractedDoc> }
-export interface ExtractedDoc { sections: Section[] }            // { id, heading, level, text } — message 레포와 동일 규약
+export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
+
+export interface Section { id: string; heading: string; level: number; text: string }
+export interface ExtractedDoc { sections: Section[] }            // message 레포와 동일 규약(섹션 구조화)
+export type ExtractError =
+  | { kind: "empty_text" }
+  | { kind: "corrupt"; detail: string }
+  | { kind: "unsupported"; mime: string; name: string };
+export interface DocumentExtractor { supports(mime: string, name: string): boolean; extract(bytes: Uint8Array): Promise<Result<ExtractedDoc, ExtractError>> }
 export interface LlmProvider { complete(req: { system: string; prompt: string; maxTokens: number }): Promise<string> }
 export interface Clock { now(): Date }
 
+export interface ChapterPlan { id: string; file: string; title: string; sectionIds: string[] }   // 아웃라인이 원문 섹션을 챕터로 묶은 계획
 export interface SkillPlan { slug: string; title: string; chapters: ChapterPlan[] }   // outline 결과 (zod 파싱)
 export interface DistilledChapter { id: string; file: string; body: string; anchors: string[] }
 export interface GoldenQA { id: string; sectionId: string; question: string; refAnswer: string; anchorQuote: string }
@@ -39,6 +49,8 @@ export interface Manifest {
   outputs: string[]; gate: GateReport | { skipped: true };
 }
 ```
+
+섹션 id는 헤딩 경로 기반 슬러그(`core/sectionId.ts`)로 부모 헤딩 경로를 이어붙여 만든다 — 같은 문서를 다시 추출해도 같은 id가 나와야 한다(§5). 동일 경로가 중복되면 등장 순서로 `-2`, `-3`… 접미사를 붙여 구분한다.
 
 ## 3. 스킬 산출 구조 (assembler — 결정론 템플릿)
 
