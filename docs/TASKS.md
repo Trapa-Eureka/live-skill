@@ -97,9 +97,10 @@
 
 ### B. 품질 게이트 우회 (가드레일 1 직결) — High
 
-#### B1 — outline 커버리지 검증 · 상태: TODO · 원본: 001-004, SEC-004, AUD-004
+#### B1 — outline 커버리지 검증 · 상태: DONE(2026-09-07) · 원본: 001-004, SEC-004, AUD-004
 - 목표: outline 파싱 직후 입력 섹션 전체와 계획을 대조 — 모든 실질 섹션 정확히 1회 배정, 알 수 없는 ID·중복 chapter ID 거부(`outline_invalid`). "실질 섹션"(본문 없는 헤딩 등 제외 대상)은 모델 재량이 아닌 결정론 정책으로 DESIGN §5.1에 명시.
-- 완료 기준: [ ] DESIGN §5.1 정책 갱신 [ ] 누락·중복·미지 ID 각각 거부 테스트 [ ] 기존 e2e·pipeline 대본을 정책에 맞게 갱신 [ ] check 통과
+- 완료(2026-09-07, PR #20): `core/outlineCoverage.ts` 신설 — `isSubstantiveSection`(본문 `trim() !== ""`)으로 파이프라인이 모집단을 먼저 확정해 outline에 그것만 보여주고, 파싱 직후 `checkOutlineCoverage`가 누락·미지 id·섹션 중복 배정·chapter id 중복 네 가지를 한 번에 모아 `outline_invalid`(detail 포함)로 끝낸다 — distill·게이트 비용 전. `normalizeText`가 HTML 주석(`<!-- … -->`)을 지워 주석만 있던 선두 "유령 섹션"이 모집단에 끼지 않는다(자체 제작 픽스처의 가드레일 4 주석). e2e 대본은 갱신 없이 정책과 일치했고, smoke 미달 대본은 일부 섹션만 넣던 것을 4섹션 전부로 고쳐 마지막 문항 오답(3/4=75%)으로 미달을 만들도록 바꿈.
+- 완료 기준: [x] DESIGN §5.1 정책 갱신 [x] 누락·중복·미지 ID 각각 거부 테스트(+chapter id 중복, 컨테이너 섹션 미제공/참조 시 거부; 단위 7종 + pipeline 6종) [x] 기존 e2e·pipeline 대본을 정책에 맞게 갱신(smoke 미달 대본·주석 제거 테스트) [x] check 통과(22 files·248 tests)
 
 #### B2 — qaGen 실패 커버리지 · 상태: TODO · 원본: SEC-005, AUD-005
 - 목표: 재생성으로도 유효 QA를 못 만든 섹션을 분모에서 빼지 않고 `qa_generation_failed` 실패 사유로 기록, 섹션 커버리지 미달이면 verified 배포 금지. DESIGN §4의 "문항 제외" 정책과 TESTING §3을 함께 수정.

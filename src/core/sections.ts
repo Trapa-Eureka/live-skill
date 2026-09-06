@@ -9,11 +9,13 @@ const TERMINAL_PUNCT = /[.!?:;,。．！？：；、]$/u;
 const MARKDOWN_HEADING = /^(#{1,6})\s+(.+?)\s*#*$/u;
 const ORDERED_LIST = /^(?:\d+[.)]|[-*+•])\s+/u;
 
-/** 줄바꿈·BOM을 정규화하고 빈 줄 3개 이상을 2개로 줄인다. */
+/** 줄바꿈·BOM을 정규화하고 빈 줄 3개 이상을 2개로 줄인다. HTML 주석(`<!-- … -->`)은 본문이 아니므로
+ * 지운다(B1, DESIGN §5.1) — 마크다운 렌더러도 보여주지 않는 텍스트가 섹션·검증 모집단이 되면 안 된다. */
 export function normalizeText(raw: string): string {
   return raw
     .replace(/\uFEFF/gu, "")
     .replace(/\r\n?/gu, "\n")
+    .replace(/<!--[\s\S]*?-->/gu, "")
     .replace(/[ \t]+\n/gu, "\n")
     .replace(/\n{3,}/gu, "\n\n")
     .trim();

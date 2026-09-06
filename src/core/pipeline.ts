@@ -5,6 +5,11 @@ import { assembleSkill, chapterFilePath, type AssembledFile } from "./assembler.
 import type { Config } from "./config.js";
 import { estimateGateCalls, runGate, type GateChapter } from "./gate.js";
 import { sha256Hex } from "./hash.js";
+import {
+  checkOutlineCoverage,
+  formatOutlineCoverageIssues,
+  isSubstantiveSection,
+} from "./outlineCoverage.js";
 import { distillPrompt, outlinePrompt } from "./prompts.js";
 import { err, ok, type Result } from "./result.js";
 import { skillPlanSchema } from "./schemas.js";
@@ -136,11 +141,13 @@ export async function compile(
   const extracted = await extractAll(sources, deps.extractors);
   if (!extracted.ok) return extracted;
 
-  const sections = namespaceSections(extracted.value);
+  // 검증 모집단(B1): 본문 있는 섹션 전부. 본문 없는 헤딩은 outline에 보여주지도, 배정을 요구하지도 않는다.
+  const sections = namespaceSections(extracted.value).filter(isSubstantiveSection);
   if (sections.length === 0) {
     return err({
       kind: "empty_input",
-      message: "every source file produced zero sections. Fix: check the source content.",
+      message:
+        "every source file produced zero sections with body text. Fix: check the source content.",
     });
   }
 
@@ -165,6 +172,17 @@ export async function compile(
       detail: e instanceof Error ? e.message : "unknown",
       message:
         "the outline step returned a response that doesn't match the expected schema. Fix: retry, or check the outline prompt/model.",
+    });
+  }
+
+  // B1: 계획이 모집단을 정확히 한 번씩 덮는지 — 빠진 섹션은 증류·manifest·게이트에서 조용히 사라졌었다.
+  const coverage = checkOutlineCoverage(plan, sections);
+  if (coverage !== undefined) {
+    const detail = formatOutlineCoverageIssues(coverage);
+    return err({
+      kind: "outline_invalid",
+      detail,
+      message: `the outline does not cover the source exactly once (${detail}). Fix: retry — every section with body text must be assigned to exactly one chapter, only known section ids may be used, and chapter ids must be unique.`,
     });
   }
 

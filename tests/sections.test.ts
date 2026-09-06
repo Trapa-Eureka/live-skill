@@ -13,6 +13,20 @@ describe("normalizeText", () => {
   });
 });
 
+describe("normalizeText — HTML comments are not body text (B1)", () => {
+  it("strips <!-- --> comments, including multi-line ones, so a comment-only preamble yields no section", () => {
+    const md = "<!-- 자체 제작 문서\n   두 줄 주석 -->\n\n# Title\n\nBody.";
+    expect(normalizeText(md)).toBe("# Title\n\nBody.");
+    const sections = structureText(md);
+    expect(sections.map((s) => s.heading)).toEqual(["Title"]);
+    expect(sections[0]?.text).toBe("Body.");
+  });
+
+  it("strips a comment sitting inside a section's body without touching the surrounding text", () => {
+    expect(structureText("# T\n\nBefore. <!-- note --> After.")[0]?.text).toBe("Before.  After.");
+  });
+});
+
 describe("structureText", () => {
   it("returns no sections for empty/whitespace-only input", () => {
     expect(structureText("")).toEqual([]);
