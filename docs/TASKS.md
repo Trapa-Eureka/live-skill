@@ -90,9 +90,10 @@
 - 완료(2026-09-06, PR #18): 신뢰 경계 = "사용자가 직접 넘긴 루트"(입력 경로·outDir은 링크여도 믿고 `realpath`로 고정). 그 아래에서 `collectInputFiles`는 `lstat`으로 링크(`symlink_refused`)·비정규 파일(`not_regular_file`)을 거부하므로 링크를 따라가지 않아 순환 자체가 불가능(방문 집합 대신), 디렉터리마다 `realpath` 루트 경계 재확인. `writeSkill`은 파일별 구성요소 `lstat` → 생성 디렉터리 `realpath` 경계 → `O_NOFOLLOW` open으로 쓰기. `readSourceFile`/`readSkillDir`/`readManifest`도 no-follow 읽기. 한계(중간 디렉터리 교체 경쟁·Windows)는 DESIGN §6 A2에 기록, A3가 이어받음.
 - 완료 기준: [x] 링크 사이클 입력에서 종료 테스트(`in/loop → ..` 즉시 거부) [x] 출력 내 외부 링크 → 거부 테스트(링크된 하위 디렉터리·링크된 파일, `--force`여도 외부 무손상) [x] check 통과(228 tests)
 
-#### A3 — 원자적 staging 쓰기 · 상태: TODO · 원본: 001-012/013, AUD-007
+#### A3 — 원자적 staging 쓰기 · 상태: DONE(2026-09-07) · 원본: 001-012/013, AUD-007
 - 목표: 같은 파일시스템의 staging 디렉터리에 전체 산출물을 쓴 뒤 `rename`으로 교체(TOCTOU·부분 쓰기 해소). 이전 세대의 stale 파일 제거. 실패 시 이전 완전한 세대 보존.
-- 완료 기준: [ ] 중간 쓰기 실패 시 이전 산출물 무손상 테스트 [ ] `--force` 재컴파일 후 stale 챕터 없음 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #19): `writeSkill`이 outDir의 realpath와 **같은 부모 아래** `mkdtemp(".<name>.live-skill-staging-")`에 전부 쓰고(A2 no-follow 쓰기 그대로) `rename`으로 통째로 교체. `--force`면 기존 세대를 `.<name>.live-skill-old-<random>`으로 비켜 놓은 뒤 올리고 지움(실패 시 되돌림); `--force` 없으면 `rename` 자체가 판정(`ENOTEMPTY` → `already_exists`, 검사-쓰기 TOCTOU 해소). outDir이 링크면 링크 대상 디렉터리를 교체해 링크는 보존. 어느 단계든 실패하면 staging 삭제·이전 세대 무손상. A2의 "outDir 안 링크 거부"는 "링크와 함께 교체되고 대상은 무손상"으로 의미가 바뀌어 테스트 갱신. 한계(force 교체 중 짧은 ENOENT 창, 잠금 없음, Windows 미검증)는 DESIGN §6 A3에 기록.
+- 완료 기준: [x] 중간 쓰기 실패 시 이전 산출물 무손상 테스트(3번째 파일 EISDIR 주입 → v1 전체·manifest 보존·staging/old 잔해 0) [x] `--force` 재컴파일 후 stale 챕터 없음 테스트 [x] check 통과(233 tests)
 
 ### B. 품질 게이트 우회 (가드레일 1 직결) — High
 

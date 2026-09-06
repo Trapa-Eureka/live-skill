@@ -5,9 +5,20 @@
 // 심볼릭 링크와 일반 파일이 아닌 항목을 거부한다. 파일은 O_NOFOLLOW로 열어 lstat 검사와 open 사이에
 // 링크로 바뀐 경우까지 막는다(중간 디렉터리 교체 경쟁은 A3의 staging 교체가 이어받는다).
 import { homedir, tmpdir } from "node:os";
+import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, mkdtemp, open, readdir, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+} from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import {
   SLUG_MAX_LENGTH,
   SLUG_PATTERN,
@@ -140,20 +151,81 @@ export interface WriteSkillOptions {
   force?: boolean;
 }
 
+function alreadyExists(dir: string): FsTargetError {
+  return new FsTargetError(
+    "already_exists",
+    `"${dir}" already exists and is not empty. Fix: pass --force to overwrite, or choose a different --out directory.`,
+  );
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (e) {
+    if (hasErrnoCode(e, "ENOENT")) return false;
+    throw e;
+  }
+}
+
+/** outDir을 실제 경로로 고정한다. 있으면 realpath(링크면 링크가 가리키는 디렉터리가 교체 대상 — 링크는 남는다),
+ * 없으면 부모를 만들고 부모의 realpath + basename. */
+async function resolveOutRoot(outDir: string): Promise<string> {
+  try {
+    return await realpath(outDir);
+  } catch (e) {
+    if (!hasErrnoCode(e, "ENOENT")) throw e;
+    await mkdir(dirname(outDir), { recursive: true });
+    return join(await realpath(dirname(outDir)), basename(outDir));
+  }
+}
+
+/** rename이 "비어 있지 않은 기존 디렉터리" 때문에 실패했는지. */
+function isRenameOverNonEmpty(e: unknown): boolean {
+  return hasErrnoCode(e, "ENOTEMPTY") || hasErrnoCode(e, "EEXIST") || hasErrnoCode(e, "EPERM");
+}
+
+/** 완성된 staging을 target 자리로 올린다(DESIGN §6 A3). 같은 부모 아래의 rename이라 각 단계가 원자적이다. */
+async function swapIntoPlace(staging: string, target: string, force: boolean): Promise<void> {
+  let old: string | undefined;
+  if (force && (await pathExists(target))) {
+    // 이전 세대를 통째로 비켜 놓는다 — 이름은 만들지 않은(존재하지 않는) 경로라 어디서든 rename이 된다.
+    old = join(
+      dirname(target),
+      `.${basename(target)}.live-skill-old-${randomBytes(6).toString("hex")}`,
+    );
+    await rename(target, old);
+  }
+  try {
+    try {
+      await rename(staging, target); // 비어 있는 기존 디렉터리는 그대로 대체된다; 내용이 있으면 ENOTEMPTY
+    } catch (e) {
+      if (!isRenameOverNonEmpty(e)) throw e;
+      // 비어 있는데도 플랫폼이 대체를 거부했을 수 있다(Windows) — 비어 있을 때만 지우고 한 번 더.
+      const entries = await readdir(target).catch(() => undefined);
+      if (entries === undefined) throw e; // 디렉터리조차 아니다 — 원래 오류가 더 정확하다
+      if (entries.length > 0) throw alreadyExists(target);
+      await rmdir(target);
+      await rename(staging, target);
+    }
+  } catch (e) {
+    if (old !== undefined) await rename(old, target).catch(() => undefined); // 이전 세대 복구(최선)
+    throw e;
+  }
+  if (old !== undefined) await rm(old, { recursive: true, force: true });
+}
+
 /** AssembledFile[] + Manifest를 outDir에 쓴다. force 없이 기존 비어있지 않은 디렉터리는 거부한다.
- * outDir 아래의 링크는 따라가지 않는다(A2) — 링크를 통해 outDir 밖의 파일을 덮어쓰는 길을 막는다. */
+ * A3: 산출물 전부를 같은 부모 아래 staging 디렉터리에 먼저 쓰고 rename으로 통째로 교체한다 — outDir은
+ * 언제나 이전 세대 전체 아니면 새 세대 전체다(부분 쓰기·stale 파일·검사-쓰기 경쟁 없음). 기존 트리 안에는
+ * 아무것도 쓰지 않으므로 A2의 링크 문제도 staging 안에서만 검사하면 된다. */
 export async function writeSkill(
   outDir: string,
   files: readonly AssembledFile[],
   manifest: Manifest,
   opts: WriteSkillOptions = {},
 ): Promise<void> {
-  if (!(opts.force ?? false) && (await dirHasContent(outDir))) {
-    throw new FsTargetError(
-      "already_exists",
-      `"${outDir}" already exists and is not empty. Fix: pass --force to overwrite, or choose a different --out directory.`,
-    );
-  }
+  const force = opts.force ?? false;
   const manifestFile: AssembledFile = {
     path: "manifest.json",
     content: `${JSON.stringify(manifest, null, 2)}\n`,
@@ -161,20 +233,30 @@ export async function writeSkill(
   };
   const all = [...files, manifestFile];
 
-  // 1) 문자열 경계 검사를 전부 먼저 — 하나라도 밖을 가리키면 outDir조차 만들지 않는다.
+  // 1) 문자열 경계 검사를 전부 먼저 — 하나라도 밖을 가리키면 디스크를 건드리지 않는다.
   for (const f of all) assertRelativeWithin(outDir, f.path);
 
-  // 2) 루트 확정: outDir 자체는 호출자(사용자 --out·A1 해석기)가 정한 값이라 링크여도 믿고, realpath로 고정.
-  await mkdir(outDir, { recursive: true });
-  const outReal = await realpath(outDir);
+  // 2) 이른 거부(친절한 메시지용). 최종 판정은 아래 rename이 한다 — 그 사이에 채워져도 ENOTEMPTY로 잡힌다.
+  if (!force && (await dirHasContent(outDir))) throw alreadyExists(outDir);
 
-  // 3) 파일마다: 링크 검사 → 디렉터리 생성 → realpath 경계 재확인 → O_NOFOLLOW로 쓰기.
-  for (const f of all) {
-    await assertNoSymlinkBelow(outReal, f.path);
-    const target = join(outReal, normalize(f.path));
-    await mkdir(dirname(target), { recursive: true });
-    await assertRealpathWithin(outReal, dirname(target));
-    await writeFileNoFollow(target, f.content);
+  // 3) 실제 교체 대상과 같은 부모 아래 staging(같은 파일시스템이어야 rename이 원자적이다).
+  const target = await resolveOutRoot(outDir);
+  const staging = await mkdtemp(join(dirname(target), `.${basename(target)}.live-skill-staging-`));
+
+  try {
+    // 4) 전부 staging에 쓴다 — A2와 같은 no-follow 쓰기.
+    for (const f of all) {
+      await assertNoSymlinkBelow(staging, f.path);
+      const dest = join(staging, normalize(f.path));
+      await mkdir(dirname(dest), { recursive: true });
+      await assertRealpathWithin(staging, dirname(dest));
+      await writeFileNoFollow(dest, f.content);
+    }
+    // 5) 통째로 교체.
+    await swapIntoPlace(staging, target, force);
+  } catch (e) {
+    await rm(staging, { recursive: true, force: true }); // 성공했으면 이미 없다 — force라 조용히 지나간다
+    throw e;
   }
 }
 
