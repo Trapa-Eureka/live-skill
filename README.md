@@ -23,6 +23,8 @@
 | `docs/TESTING.md` | 테스트 전략 — 가짜 LLM 대본, 게이트 검증, 픽스처 규칙 | 테스트 작성 전 |
 | `docs/TASKS.md` | 태스크 백로그 — 에이전트 실행 단위, 완료 기준 | 작업 배정 시 |
 | `docs/WORKFLOW.md` | AI-native 개발 규칙 (공통 + 이 레포 특이사항) | 최초 1회 + 운영 중 참조 |
+| `docs/MARKET.md` | 활용 분야·경쟁 구도·규모 분석 | 포지셔닝·범위 재확인 시 |
+| `docs/PUBLISHING.md` | npm 배포 실행 체크리스트 (T11 확장판) | 공개 배포 착수 전 |
 
 ## 개발 방식
 
@@ -40,4 +42,6 @@ npm run cli -- eval ~/.claude/skills/manual   # 기존 스킬 재평가
 ## 상태
 
 - 2026-09-06: 문서 단계 (코드 미작성). T0부터 시작.
-- 이름 메모: 폴더/작업명은 live-skill, npm 패키지명 가용성 조사는 T11 (SPEC §8).
+- 2026-09-06: npm 배포 사전 분석 완료 — 경쟁 구도·활용 분야·규모(`docs/MARKET.md`), 배포 실행 체크리스트(`docs/PUBLISHING.md`) 신규 작성, `LICENSE`(MIT 초안)·`.gitignore` 추가. 패키지명 `live-skill` npm 가용 확인(SPEC §8). 코드는 여전히 미작성 — T0부터 순서대로 진행 필요.
+- 2026-09-06: 형제 레포(`../msg-agent`, `../retail-mcp`) 실전 선례를 TASKS.md T0·T1·T2·T11에 교차 참조 — 같은 스택의 검증된 scaffolding·추출기 구현, npm 배포 시 실제로 걸렸던 함정(REL-001~008) 반영. T0 착수 시 처음부터 설계하지 않고 이식하는 경로가 열림.
+- 이름 메모: 폴더/작업명은 live-skill, npm 패키지명 최종 확정은 T11에서 사람이 결정(WORKFLOW §4) — 1차 조사 결과는 SPEC §8·`docs/PUBLISHING.md` 참조.
