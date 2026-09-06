@@ -117,9 +117,10 @@
 - 완료(2026-09-07, PR #23): 하한 **0.5**(`GATE_THRESHOLD_FLOOR`, core/gate.ts — 사용자 제안값 동의) — `loadConfig`가 `[0.5, 1]` 밖의 값을 원인+수정 방법 담은 일반 Error로 거부(zod 원시 오류를 감싸 필드명 포함), `evaluateGoldenQa`도 `assertGateThreshold`로 재검사해 경계 우회 호출자 차단. `passed`에 `asked > 0` 명시 조건(모집단이 빈 극단 케이스까지). env의 공백만 있는 값은 `trim` 후 미설정 처리(`Number("  ")===0` 구멍). `.env.example`·DESIGN §7 주석에 범위 명시. 하한 값 변경은 코드가 아니라 DESIGN §7·가드레일 1 검토가 먼저라고 문서화.
 - 완료 기준: [x] DESIGN §7 갱신(+TESTING §4 체크리스트) [x] `GATE_THRESHOLD=0` → 설정 오류 테스트(0·0.49·-1 거부, 0.5·0.9·1 허용, 공백 → 기본값, 메시지에 필드명·Fix) [x] 0문항 → `passed=false` 테스트(빈 모집단·runGate 섹션 0개·하한 미만 threshold 거부) [x] check 통과(22 files·282 tests)
 
-#### B5 — grader 엄격 파싱 · 상태: TODO · 원본: SEC-010, AUD-013
+#### B5 — grader 엄격 파싱 · 상태: DONE(2026-09-07) · 원본: SEC-010, AUD-013
 - 목표: 응답 전체를 정규화해 정확히 `CORRECT`/`WRONG`만 인정, 그 외(모순·설명 포함)는 보수적으로 wrong.
-- 완료 기준: [ ] `CORRECT? No, WRONG.` → wrong 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #24): `parseGradeVerdict`가 응답 전체를 정규화(앞뒤 공백·마크다운 강조·따옴표·마침표 제거, 대소문자 무시)한 값이 정확히 `CORRECT`일 때만 정답 — 설명이 붙었거나 두 단어가 다 있으면 판정 불가 = wrong. DESIGN §4-3에 기록. 후보 답변의 데이터/지시 분리는 C1에서.
+- 완료 기준: [x] `CORRECT? No, WRONG.` → wrong 테스트(+ 모순·설명·INCORRECT 등 8종 wrong, 장식만 붙은 5종 correct) [x] check 통과(22 files·290 tests)
 
 #### B6 — manifest·GateReport 의미 검증 · 상태: TODO · 원본: AUD-011 · 의존: B3
 - 목표: `manifestSchema.superRefine`으로 `correct ≤ asked`, 챕터 합계 = 전체, `passRate` 재계산 일치, `passed ⇔ passRate ≥ threshold`, failures/loadHistory의 qaId가 goldenQa에 존재, `createdAt` ISO, sha256 16진수, `sections[].chapterFile ∈ outputs` 검증.

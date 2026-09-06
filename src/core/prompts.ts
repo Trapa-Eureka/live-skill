@@ -124,7 +124,15 @@ export function gradePrompt(
   return { system, prompt, maxTokens: 20 };
 }
 
-/** grader의 원시 출력을 판정으로 바꾼다 — CORRECT로 명확히 시작하지 않으면 전부 오답 처리(보수 채점). */
+/** grader의 원시 출력을 판정으로 바꾼다 — 응답 **전체**가 CORRECT 한 단어여야 정답이다(B5, 보수 채점).
+ * 예전엔 접두사만 봐서 "CORRECT? No, WRONG." 같은 모순 응답이 정답으로 집계됐다. 앞뒤 공백·마크다운 강조·따옴표·
+ * 마침표만 벗기고("**CORRECT**", "Correct.") 나머지는 전부 WRONG — 설명이 붙었거나 두 단어가 다 있으면 판정
+ * 불가로 보고 통과시키지 않는다(가드레일 1). */
 export function parseGradeVerdict(raw: string): "correct" | "wrong" {
-  return /^\s*correct\b/iu.test(raw) ? "correct" : "wrong";
+  const normalized = raw
+    .trim()
+    .replace(/^[\s*_`"'“”‘’]+/u, "")
+    .replace(/[\s*_`"'“”‘’.!]+$/u, "")
+    .toUpperCase();
+  return normalized === "CORRECT" ? "correct" : "wrong";
 }
