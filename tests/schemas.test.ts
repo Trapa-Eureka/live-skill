@@ -400,6 +400,20 @@ describe("manifestSchema", () => {
     ).toThrow(/section ids must be unique/u);
   });
 
+  it("rejects a manifest carrying more than MAX_GOLDEN_QA_ENTRIES golden QAs (D2)", () => {
+    const flood = Array.from({ length: 1001 }, (_, i) => ({
+      id: `installation-q${String(i + 1)}`,
+      sectionId: "installation",
+      question: "q",
+      refAnswer: "a",
+      anchorQuote: "x",
+    }));
+    expect(() => manifestSchema.parse({ ...valid, goldenQa: flood })).toThrow();
+    expect(
+      manifestSchema.parse({ ...valid, goldenQa: flood.slice(0, 1000) }).goldenQa,
+    ).toHaveLength(1000);
+  });
+
   it("rejects a golden QA whose sectionId is not a manifest section", () => {
     const bad = {
       ...withGate,

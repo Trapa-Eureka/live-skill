@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { AssembledFile } from "../src/core/assembler.js";
 import {
+  estimateEvalCalls,
   estimateGateCalls,
   evaluateGoldenQa,
   generateGoldenQa,
@@ -641,6 +642,13 @@ describe("estimateGateCalls", () => {
     );
     expect(llm.calls).toHaveLength(estimateGateCalls(2, 1));
     llm.assertExhausted();
+  });
+});
+
+describe("estimateEvalCalls (D2)", () => {
+  it("is 3 calls per golden QA (select + answer + grade)", () => {
+    expect(estimateEvalCalls(0)).toBe(0);
+    expect(estimateEvalCalls(7)).toBe(21);
   });
 });
 
