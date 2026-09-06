@@ -1,5 +1,14 @@
 // T6 완료 기준: --force 없이 기존 스킬 디렉터리 덮어쓰기 거부 / --out 밖 쓰기 시도 없음 (실제 fs 사용).
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -29,7 +38,9 @@ const files: AssembledFile[] = [{ path: "SKILL.md", content: "# Skill\n", estima
 let dir: string;
 
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), "live-skill-fstargets-"));
+  // A2: collectInputFiles는 실제 경로를 돌려주므로(macOS의 /var → /private/var 같은 루트 링크 해소) 기대값도
+  // 실제 경로로 만든다.
+  dir = await realpath(await mkdtemp(join(tmpdir(), "live-skill-fstargets-")));
 });
 
 afterEach(async () => {
@@ -125,6 +136,104 @@ describe("collectInputFiles (DESIGN §6 T8 — 폴더 재귀 확장)", () => {
 
     const found = await collectInputFiles([dir]);
     expect(found.sort()).toEqual([join(dir, "a.md"), join(dir, "sub", "b.md")].sort());
+  });
+});
+
+describe("collectInputFiles — symlink boundary (A2, 완료 기준)", () => {
+  it("refuses a symlink inside the input root that points at a file outside it", async () => {
+    await mkdir(join(dir, "in"));
+    await mkdir(join(dir, "outside"));
+    await writeFile(join(dir, "outside", "secret.md"), "# not yours");
+    await symlink(join(dir, "outside", "secret.md"), join(dir, "in", "link.md"));
+
+    await expect(collectInputFiles([join(dir, "in")])).rejects.toMatchObject({
+      kind: "symlink_refused",
+    });
+    await expect(collectInputFiles([join(dir, "in")])).rejects.toThrow(/link\.md/u);
+  });
+
+  it("terminates on a symlink cycle instead of recursing (완료 기준)", async () => {
+    await mkdir(join(dir, "in"));
+    await writeFile(join(dir, "in", "a.md"), "a");
+    await symlink("..", join(dir, "in", "loop")); // in/loop → dir → dir/in → … 옛 코드는 ELOOP까지 돌았다
+
+    await expect(collectInputFiles([join(dir, "in")])).rejects.toMatchObject({
+      kind: "symlink_refused",
+    });
+  });
+
+  it("follows a user-supplied root that is itself a symlink (the root is trusted) and returns real paths", async () => {
+    await mkdir(join(dir, "real"));
+    await writeFile(join(dir, "real", "a.md"), "a");
+    await symlink(join(dir, "real"), join(dir, "alias"));
+
+    expect(await collectInputFiles([join(dir, "alias")])).toEqual([join(dir, "real", "a.md")]);
+  });
+
+  it("readSourceFile refuses a symlink path (no-follow open)", async () => {
+    await writeFile(join(dir, "real.md"), "x");
+    await symlink(join(dir, "real.md"), join(dir, "link.md"));
+    await expect(readSourceFile(join(dir, "link.md"))).rejects.toMatchObject({
+      kind: "symlink_refused",
+    });
+  });
+});
+
+describe("writeSkill — symlink boundary (A2, 완료 기준)", () => {
+  it("refuses to write through a symlinked subdirectory even with --force, touching nothing outside", async () => {
+    const outDir = join(dir, "skill");
+    const elsewhere = join(dir, "elsewhere");
+    await mkdir(outDir);
+    await mkdir(elsewhere);
+    await symlink(elsewhere, join(outDir, "chapters"));
+    const withChapter: AssembledFile[] = [
+      ...files,
+      { path: "chapters/ch01-a.md", content: "body\n", estimatedTokens: 1 },
+    ];
+
+    await expect(writeSkill(outDir, withChapter, manifest, { force: true })).rejects.toMatchObject({
+      kind: "symlink_refused",
+    });
+    expect(await readdir(elsewhere)).toEqual([]);
+  });
+
+  it("refuses to write through a symlinked file even with --force, leaving the target intact", async () => {
+    const outDir = join(dir, "skill");
+    const victim = join(dir, "victim.md");
+    await mkdir(outDir);
+    await writeFile(victim, "keep me");
+    await symlink(victim, join(outDir, "SKILL.md"));
+
+    await expect(writeSkill(outDir, files, manifest, { force: true })).rejects.toMatchObject({
+      kind: "symlink_refused",
+    });
+    expect(await readFile(victim, "utf-8")).toBe("keep me");
+  });
+
+  it("still writes normally into an outDir that is itself a symlink (the root is trusted)", async () => {
+    const real = join(dir, "real-out");
+    await mkdir(real);
+    await symlink(real, join(dir, "out-link"));
+    await writeSkill(join(dir, "out-link"), files, manifest);
+    expect(await readFile(join(real, "SKILL.md"), "utf-8")).toBe("# Skill\n");
+  });
+});
+
+describe("readSkillDir / readManifest — symlink boundary (A2)", () => {
+  it("refuses a skill dir that contains a symlink", async () => {
+    const outDir = join(dir, "skill");
+    await writeSkill(outDir, files, manifest);
+    await writeFile(join(dir, "outside.md"), "x");
+    await symlink(join(dir, "outside.md"), join(outDir, "extra.md"));
+    await expect(readSkillDir(outDir)).rejects.toMatchObject({ kind: "symlink_refused" });
+  });
+
+  it("refuses a manifest.json that is a symlink", async () => {
+    const outDir = join(dir, "skill");
+    await mkdir(outDir);
+    await writeFile(join(dir, "real-manifest.json"), JSON.stringify(manifest));
+    await symlink(join(dir, "real-manifest.json"), join(outDir, "manifest.json"));
+    await expect(readManifest(outDir)).rejects.toMatchObject({ kind: "symlink_refused" });
   });
 });
 

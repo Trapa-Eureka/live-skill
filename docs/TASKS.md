@@ -85,9 +85,10 @@
 - 완료(2026-09-06, PR #17): 두 겹 방어 — (1) `core/schemas.ts`의 `slugSchema`(`^[a-z0-9]+(-[a-z0-9]+)*$`, ≤64자)로 outline 단계에서 `outline_invalid`; (2) `adapters/fsTargets.ts`가 스키마와 무관하게 `resolveTargetDir`/`tempSkillDir`에서 같은 형식을 재검사(`unsafe_slug`)하고 결합 경로가 루트의 직계 하위인지 확인(`escapes_out_dir`). `tempSkillDir`는 `mkdtemp`로 빈 디렉터리를 새로 만들어 돌려주므로 게이트 미달 경로의 `force: true` 특례와 `timestamp` 의존성을 제거. DESIGN §2·§6 갱신.
 - 완료 기준: [x] `../../outside` slug → `outline_invalid` 거부 테스트(pipeline) [x] 타깃·임시 경로 경계 테스트(fsTargets 8종 × 2 + schemas 14종) [x] check 통과(219 tests)
 
-#### A2 — 심볼릭 링크·입력 순회 경계 · 상태: TODO · 원본: 001-002/014, SEC-002, AUD-002
+#### A2 — 심볼릭 링크·입력 순회 경계 · 상태: DONE(2026-09-06) · 원본: 001-002/014, SEC-002, AUD-002
 - 목표: `collectInputFiles`는 `lstat`으로 링크·비정규 파일을 기본 거부하고 방문 집합으로 사이클 방지. `writeSkill`/`readSkillDir`은 각 경로 구성요소를 `lstat`으로 검사해 링크를 따라 밖으로 쓰거나 읽지 않고, `realpath` 기준으로 출력 루트 내부인지 검증.
-- 완료 기준: [ ] 링크 사이클 입력에서 종료 테스트 [ ] 출력 내 외부 링크 → 거부 테스트 [ ] check 통과
+- 완료(2026-09-06, PR #18): 신뢰 경계 = "사용자가 직접 넘긴 루트"(입력 경로·outDir은 링크여도 믿고 `realpath`로 고정). 그 아래에서 `collectInputFiles`는 `lstat`으로 링크(`symlink_refused`)·비정규 파일(`not_regular_file`)을 거부하므로 링크를 따라가지 않아 순환 자체가 불가능(방문 집합 대신), 디렉터리마다 `realpath` 루트 경계 재확인. `writeSkill`은 파일별 구성요소 `lstat` → 생성 디렉터리 `realpath` 경계 → `O_NOFOLLOW` open으로 쓰기. `readSourceFile`/`readSkillDir`/`readManifest`도 no-follow 읽기. 한계(중간 디렉터리 교체 경쟁·Windows)는 DESIGN §6 A2에 기록, A3가 이어받음.
+- 완료 기준: [x] 링크 사이클 입력에서 종료 테스트(`in/loop → ..` 즉시 거부) [x] 출력 내 외부 링크 → 거부 테스트(링크된 하위 디렉터리·링크된 파일, `--force`여도 외부 무손상) [x] check 통과(228 tests)
 
 #### A3 — 원자적 staging 쓰기 · 상태: TODO · 원본: 001-012/013, AUD-007
 - 목표: 같은 파일시스템의 staging 디렉터리에 전체 산출물을 쓴 뒤 `rename`으로 교체(TOCTOU·부분 쓰기 해소). 이전 세대의 stale 파일 제거. 실패 시 이전 완전한 세대 보존.
