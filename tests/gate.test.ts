@@ -224,6 +224,22 @@ describe("evaluateGoldenQa — reuse path (T8 eval, qaGen 생략)", () => {
   });
 });
 
+describe("generateGoldenQa — item hygiene (C1)", () => {
+  it("discards an item carrying control characters and accepts the clean regenerated one", async () => {
+    const llm = script()
+      .qa([
+        { question: "How much?\u001B[31m", refAnswer: "500 mA", anchorQuote: "500 mA of current" },
+      ])
+      .qa([
+        { question: "How much current?", refAnswer: "500 mA", anchorQuote: "500 mA of current" },
+      ])
+      .build();
+    const qas = await generateGoldenQa(sectionA, 1, llm);
+    expect(qas.map((q) => q.question)).toEqual(["How much current?"]);
+    llm.assertExhausted();
+  });
+});
+
 describe("generateGoldenQa — malformed qaGen response", () => {
   it("treats invalid JSON as zero items and retries once before giving up", async () => {
     const llm = script()

@@ -18,9 +18,8 @@ import type {
 } from "./types.js";
 // 판정 규칙(임계치 하한·통과 조건)은 gateVerdict.ts가 단일 출처다 — schemas.ts의 manifest 의미 검증(B6)과 공유.
 import { DEFAULT_THRESHOLD, assertGateThreshold, decidePassed } from "./gateVerdict.js";
-import { isChapterFilePath } from "./schemas.js";
+import { isChapterFilePath, qaGenResponseSchema } from "./schemas.js";
 import type { SkillFile } from "./validator.js";
-import { z } from "zod";
 
 export const DEFAULT_K = 3;
 
@@ -75,13 +74,6 @@ export function missingChapterFiles(
 export function estimateGateCalls(sectionCount: number, k: number): number {
   return sectionCount * 1 + sectionCount * k * 3;
 }
-
-const qaGenItemSchema = z.object({
-  question: z.string().min(1),
-  refAnswer: z.string().min(1),
-  anchorQuote: z.string().min(1),
-});
-const qaGenResponseSchema = z.object({ items: z.array(qaGenItemSchema) });
 
 function parseQaGenItems(
   raw: string,
