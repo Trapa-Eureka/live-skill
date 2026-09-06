@@ -31,12 +31,37 @@ describe("loadConfig", () => {
     expect(loadConfig({ GATE_THRESHOLD: "" }).gateThreshold).toBe(0.9);
   });
 
+  it("treats a whitespace-only value as unset, not as 0 (B4 — Number('  ') is 0)", () => {
+    expect(loadConfig({ GATE_THRESHOLD: "   " }).gateThreshold).toBe(0.9);
+    expect(loadConfig({ MAX_LLM_CALLS: "\t" }).maxLlmCalls).toBe(300);
+    expect(loadConfig({ MODEL: "  " }).model).toBe("claude-sonnet-4-5");
+  });
+
   it("throws a cause+fix error for a non-numeric override (CLAUDE.md error-message convention)", () => {
     expect(() => loadConfig({ MAX_LLM_CALLS: "not-a-number" })).toThrow(/MAX_LLM_CALLS/);
   });
 
-  it("rejects a gate threshold outside [0, 1]", () => {
-    expect(() => loadConfig({ GATE_THRESHOLD: "1.5" })).toThrow();
+  it("rejects a gate threshold above 1", () => {
+    expect(() => loadConfig({ GATE_THRESHOLD: "1.5" })).toThrow(/GATE_THRESHOLD/u);
+  });
+
+  // B4 (SEC-007·AUD-008, 완료 기준): 하한 0.5는 정책 — 0으로 두면 질문 0개도 통과하던 구멍.
+  it.each(["0", "0.49", "-1"])(
+    "rejects GATE_THRESHOLD=%s below the policy floor with a cause+fix message",
+    (value) => {
+      expect(() => loadConfig({ GATE_THRESHOLD: value })).toThrow(/at least 0\.5/u);
+      expect(() => loadConfig({ GATE_THRESHOLD: value })).toThrow(/Fix:/u);
+    },
+  );
+
+  it.each(["0.5", "0.9", "1"])("accepts GATE_THRESHOLD=%s inside [0.5, 1]", (value) => {
+    expect(loadConfig({ GATE_THRESHOLD: value }).gateThreshold).toBe(Number(value));
+  });
+
+  it("wraps schema failures in a plain Error naming the field (no raw zod dump)", () => {
+    expect(() => loadConfig({ GATE_THRESHOLD: "0" })).toThrow(
+      /invalid configuration — gateThreshold/u,
+    );
   });
 
   it("rejects a non-positive qaPerSection", () => {

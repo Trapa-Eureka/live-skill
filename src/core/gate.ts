@@ -22,6 +22,18 @@ import { z } from "zod";
 
 export const DEFAULT_K = 3;
 export const DEFAULT_THRESHOLD = 0.9;
+/** 정책 하한(B4, DESIGN §7): 절반 미만 정답을 "verified"라 부를 수는 없다. config가 강제하고 여기서도 재검사한다 —
+ * 값을 바꾸려면 코드가 아니라 DESIGN §7과 CLAUDE.md 가드레일 1 검토가 먼저다. */
+export const GATE_THRESHOLD_FLOOR = 0.5;
+
+/** threshold가 정책 범위 [FLOOR, 1] 안인지 — 경계(config)를 거치지 않은 호출자까지 막는다. */
+export function assertGateThreshold(threshold: number): void {
+  if (!(threshold >= GATE_THRESHOLD_FLOOR && threshold <= 1)) {
+    throw new Error(
+      `gate threshold ${String(threshold)} is outside the allowed range [${String(GATE_THRESHOLD_FLOOR)}, 1]. Fix: set GATE_THRESHOLD between ${String(GATE_THRESHOLD_FLOOR)} and 1 (default ${String(DEFAULT_THRESHOLD)}); the floor is a product policy (DESIGN §7), not a tunable.`,
+    );
+  }
+}
 
 export interface GateChapter {
   file: string;
@@ -200,6 +212,8 @@ export async function evaluateGoldenQa(
   llm: LlmProvider,
   threshold = DEFAULT_THRESHOLD,
 ): Promise<GateReport> {
+  assertGateThreshold(threshold); // B4: 경계를 우회한 호출자도 하한 아래로는 못 내려간다
+
   // B3(가드레일 2): answerer가 로드할 수 있는 파일은 "코드가 정한 챕터 형식(chapters/<slug>.md)이면서 챕터 목록에
   // 있는 것"뿐이다. manifest.json(정답이 들어 있다)·원문·부속 파일은 챕터 목록에 끼어 있어도 절대 로드하지
   // 않는다 — 외부 manifest가 목록을 정하더라도 형식 경계는 코드가 쥔다. SKILL.md만 인덱스로 따로 준다.
@@ -263,7 +277,6 @@ export async function evaluateGoldenQa(
 
   const asked = outcomes.length;
   const correct = outcomes.filter((o) => o.correct).length;
-  // 질문이 하나도 없으면 보수적으로 미통과 처리 — 검증된 게 아무것도 없다.
   const passRate = asked === 0 ? 0 : correct / asked;
 
   // 부동소수 오차 방지: 수학적으로 임계치와 같은 비율(예: 9/10 = 0.9)이 이진 부동소수 반올림 때문에
@@ -272,7 +285,8 @@ export async function evaluateGoldenQa(
   return {
     passRate,
     threshold,
-    passed: passRate >= threshold - EPSILON && uncovered.length === 0,
+    // B4: 질문이 하나도 없으면 threshold와 무관하게 미통과 — 검증된 게 아무것도 없다(asked > 0은 명시적 조건).
+    passed: asked > 0 && passRate >= threshold - EPSILON && uncovered.length === 0,
     perChapter,
     failures,
     loadHistory,

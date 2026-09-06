@@ -565,6 +565,38 @@ describe("evaluateGoldenQa — 챕터 허용 목록은 코드가 쥔다 (B3, SEC
   });
 });
 
+describe("evaluateGoldenQa — threshold floor and zero questions (B4, SEC-007·AUD-008, 완료 기준)", () => {
+  it("fails with zero questions regardless of the threshold, even with an empty population", async () => {
+    const llm = script().build();
+    const report = await evaluateGoldenQa([], { files: [skillMd], chapters: [] }, llm, 0.5);
+    expect(report.passRate).toBe(0);
+    expect(report.passed).toBe(false);
+    llm.assertExhausted();
+  });
+
+  it("refuses a threshold below the policy floor instead of grading against it", async () => {
+    const llm = script().build();
+    await expect(evaluateGoldenQa([], { files: [skillMd], chapters: [] }, llm, 0)).rejects.toThrow(
+      /outside the allowed range \[0\.5, 1\]/u,
+    );
+    await expect(
+      evaluateGoldenQa([], { files: [skillMd], chapters: [] }, llm, 1.01),
+    ).rejects.toThrow(/outside the allowed range/u);
+    llm.assertExhausted();
+  });
+
+  it("runGate with no sections at all is a failed gate, not a vacuous pass", async () => {
+    const llm = script().build();
+    const { report, goldenQa } = await runGate(
+      { files: [skillMd], chapters: [], sections: [] },
+      { llm, k: 1 },
+    );
+    expect(goldenQa).toEqual([]);
+    expect(report.passed).toBe(false);
+    llm.assertExhausted();
+  });
+});
+
 describe("estimateGateCalls", () => {
   it("computes sections*(1 + 3k) as the upper-bound call estimate (DESIGN §4 T7 결정)", () => {
     expect(estimateGateCalls(5, 3)).toBe(5 * (1 + 3 * 3));

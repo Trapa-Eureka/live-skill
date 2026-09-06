@@ -112,9 +112,10 @@
 - 완료(2026-09-07, PR #22): 세 겹 — (1) 스키마 `chapterFileSchema`(`^chapters/[\p{L}\p{N}-]+\.md$`, assembler `chapterFilePath()`가 만드는 유일한 형태)로 `readManifest` 단계에서 `manifest.json`·`SKILL.md`·`chapters/../x`·하위 디렉터리 거부; (2) `evaluateGoldenQa`는 스키마를 믿지 않고 챕터 목록 중 형식에 맞는 파일만 허용 집합으로 삼아 그 집합의 파일만 로드 가능 — 나머지는 선택해도 `not_found`, 로드 이력 빈 배열, SKILL.md만 인덱스로 별도 제공; (3) `eval`은 LLM 전에 `missingChapterFiles`로 manifest 챕터의 실제 존재를 확인해 없으면 원인·수정 방법과 종료코드 1. outputs와의 상호 참조 검증은 B6(스키마 superRefine)에서.
 - 완료 기준: [x] `chapterFile: "manifest.json"` manifest → 거부 테스트(거부 10종·허용 3종 + assembler 산출 경로 호환) [x] 격리 테스트(조작된 챕터 목록이 manifest.json을 가리켜도 not_found·answer 미호출·모든 프롬프트에 refAnswer 마커 부재; 디스크에 있어도 목록에 없는 챕터는 not_found) [x] check 통과(22 files·271 tests)
 
-#### B4 — threshold 하한·질문 0개 실패 · 상태: TODO · 원본: SEC-007, AUD-008
+#### B4 — threshold 하한·질문 0개 실패 · 상태: DONE(2026-09-07) · 원본: SEC-007, AUD-008
 - 목표: 질문 0개는 threshold와 무관하게 실패. `GATE_THRESHOLD`의 정책 하한을 DESIGN §7에 명시하고 config가 강제(공백 문자열은 미설정 처리, 범위 밖은 설정 오류).
-- 완료 기준: [ ] DESIGN §7 갱신 [ ] `GATE_THRESHOLD=0` → 설정 오류 테스트 [ ] 0문항 → `passed=false` 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #23): 하한 **0.5**(`GATE_THRESHOLD_FLOOR`, core/gate.ts — 사용자 제안값 동의) — `loadConfig`가 `[0.5, 1]` 밖의 값을 원인+수정 방법 담은 일반 Error로 거부(zod 원시 오류를 감싸 필드명 포함), `evaluateGoldenQa`도 `assertGateThreshold`로 재검사해 경계 우회 호출자 차단. `passed`에 `asked > 0` 명시 조건(모집단이 빈 극단 케이스까지). env의 공백만 있는 값은 `trim` 후 미설정 처리(`Number("  ")===0` 구멍). `.env.example`·DESIGN §7 주석에 범위 명시. 하한 값 변경은 코드가 아니라 DESIGN §7·가드레일 1 검토가 먼저라고 문서화.
+- 완료 기준: [x] DESIGN §7 갱신(+TESTING §4 체크리스트) [x] `GATE_THRESHOLD=0` → 설정 오류 테스트(0·0.49·-1 거부, 0.5·0.9·1 허용, 공백 → 기본값, 메시지에 필드명·Fix) [x] 0문항 → `passed=false` 테스트(빈 모집단·runGate 섹션 0개·하한 미만 threshold 거부) [x] check 통과(22 files·282 tests)
 
 #### B5 — grader 엄격 파싱 · 상태: TODO · 원본: SEC-010, AUD-013
 - 목표: 응답 전체를 정규화해 정확히 `CORRECT`/`WRONG`만 인정, 그 외(모순·설명 포함)는 보수적으로 wrong.

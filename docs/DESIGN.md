@@ -165,10 +165,12 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 ```
 ANTHROPIC_API_KEY=
 MODEL=claude-sonnet-4-5      # LlmProvider 모델 문자열
-GATE_THRESHOLD=0.9
+GATE_THRESHOLD=0.9           # 0.5 이상 1 이하 — 하한은 정책(B4), 코드가 강제. 공백/빈 값은 미설정(기본 0.9)
 QA_PER_SECTION=3
 MAX_LLM_CALLS=300            # 컴파일 1회 상한
 ```
+
+**B4 결정(2026-09-07, SEC-007·AUD-008) — 임계치 하한과 "질문 0개"**: 예전엔 `GATE_THRESHOLD=0`이 허용돼 질문 0개·정답 0개도 `passed=true`가 됐다 — `--no-gate`와 달리 unverified 표시조차 없이. 또 `Number("  ")`가 0이라 공백만 있는 값도 조용히 0이 됐다. (1) **하한 0.5**: 절반 미만 정답을 "verified"라 부를 수는 없다는 최소선을 `GATE_THRESHOLD_FLOOR`(core/gate.ts)로 두고 `loadConfig`가 `[0.5, 1]` 밖의 값을 원인+수정 방법과 함께 거부한다(zod 원시 오류가 아니라 일반 Error). `evaluateGoldenQa`도 같은 범위를 재검사해 경계를 우회한 호출자를 막는다. 하한 값 자체는 사람 결정 사항(WORKFLOW §4)이며, 바꾸려면 이 절과 CLAUDE.md 가드레일 1 검토가 먼저다 — 코드의 상수만 고치는 것은 우회다. (2) **질문 0개는 threshold와 무관하게 실패**: `passed`에 `asked > 0`을 명시적 조건으로 둔다(B2의 미검증 섹션 조건과 별개 — 모집단이 비어 있는 극단 케이스까지 덮는다). (3) 공백만 있는 env 값은 미설정으로 정규화한다. 실제 적용된 threshold는 이미 `GateReport.threshold`에, k는 `coverage.requested`에 남는다(리포트·manifest에서 확인 가능).
 
 ## 8. 디렉터리 구조 (목표)
 
