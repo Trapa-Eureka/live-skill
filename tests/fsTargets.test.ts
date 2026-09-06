@@ -1,5 +1,6 @@
 // T6 완료 기준: --force 없이 기존 스킬 디렉터리 덮어쓰기 거부 / --out 밖 쓰기 시도 없음 (실제 fs 사용).
 import {
+  lstat,
   mkdir,
   mkdtemp,
   readdir,
@@ -179,8 +180,10 @@ describe("collectInputFiles — symlink boundary (A2, 완료 기준)", () => {
   });
 });
 
-describe("writeSkill — symlink boundary (A2, 완료 기준)", () => {
-  it("refuses to write through a symlinked subdirectory even with --force, touching nothing outside", async () => {
+describe("writeSkill — symlink boundary (A2, 완료 기준; A3 이후 의미)", () => {
+  // A3 이후 --force는 기존 트리 안에 쓰는 게 아니라 통째로 교체한다. 따라서 안에 놓인 링크는 "거부"가 아니라
+  // 이전 세대와 함께 치워지고, 링크 대상은 어떤 경우에도 건드리지 않는다.
+  it("never writes through a symlinked subdirectory: with --force the link is replaced, its target untouched", async () => {
     const outDir = join(dir, "skill");
     const elsewhere = join(dir, "elsewhere");
     await mkdir(outDir);
@@ -191,23 +194,34 @@ describe("writeSkill — symlink boundary (A2, 완료 기준)", () => {
       { path: "chapters/ch01-a.md", content: "body\n", estimatedTokens: 1 },
     ];
 
-    await expect(writeSkill(outDir, withChapter, manifest, { force: true })).rejects.toMatchObject({
-      kind: "symlink_refused",
-    });
-    expect(await readdir(elsewhere)).toEqual([]);
+    await writeSkill(outDir, withChapter, manifest, { force: true });
+    expect(await readdir(elsewhere)).toEqual([]); // 링크 대상엔 아무것도 안 갔다
+    expect((await lstat(join(outDir, "chapters"))).isSymbolicLink()).toBe(false); // 링크는 사라지고 진짜 디렉터리
+    expect(await readFile(join(outDir, "chapters", "ch01-a.md"), "utf-8")).toBe("body\n");
   });
 
-  it("refuses to write through a symlinked file even with --force, leaving the target intact", async () => {
+  it("never writes through a symlinked file: with --force the link is replaced, the victim intact", async () => {
     const outDir = join(dir, "skill");
     const victim = join(dir, "victim.md");
     await mkdir(outDir);
     await writeFile(victim, "keep me");
     await symlink(victim, join(outDir, "SKILL.md"));
 
-    await expect(writeSkill(outDir, files, manifest, { force: true })).rejects.toMatchObject({
-      kind: "symlink_refused",
-    });
+    await writeSkill(outDir, files, manifest, { force: true });
     expect(await readFile(victim, "utf-8")).toBe("keep me");
+    expect((await lstat(join(outDir, "SKILL.md"))).isSymbolicLink()).toBe(false);
+    expect(await readFile(join(outDir, "SKILL.md"), "utf-8")).toBe("# Skill\n");
+  });
+
+  it("without --force a directory containing only a symlink still counts as non-empty and is refused", async () => {
+    const outDir = join(dir, "skill");
+    await mkdir(outDir);
+    await writeFile(join(dir, "victim.md"), "keep me");
+    await symlink(join(dir, "victim.md"), join(outDir, "SKILL.md"));
+    await expect(writeSkill(outDir, files, manifest)).rejects.toMatchObject({
+      kind: "already_exists",
+    });
+    expect(await readFile(join(dir, "victim.md"), "utf-8")).toBe("keep me");
   });
 
   it("still writes normally into an outDir that is itself a symlink (the root is trusted)", async () => {
@@ -216,6 +230,76 @@ describe("writeSkill — symlink boundary (A2, 완료 기준)", () => {
     await symlink(real, join(dir, "out-link"));
     await writeSkill(join(dir, "out-link"), files, manifest);
     expect(await readFile(join(real, "SKILL.md"), "utf-8")).toBe("# Skill\n");
+  });
+});
+
+describe("writeSkill — atomic staging swap (A3, 완료 기준)", () => {
+  const gen1: AssembledFile[] = [
+    { path: "SKILL.md", content: "# v1\n", estimatedTokens: 2 },
+    { path: "chapters/ch01-a.md", content: "v1 a\n", estimatedTokens: 2 },
+    { path: "chapters/ch02-b.md", content: "v1 b\n", estimatedTokens: 2 },
+  ];
+  const gen1Manifest: Manifest = { ...manifest, outputs: gen1.map((f) => f.path) };
+
+  async function debris(parent: string): Promise<string[]> {
+    return (await readdir(parent)).filter((n) => n.includes(".live-skill-"));
+  }
+
+  it("a failure in the middle of writing leaves the previous generation completely intact, with no staging debris", async () => {
+    const outDir = join(dir, "skill");
+    await writeSkill(outDir, gen1, gen1Manifest);
+
+    // 3번째 파일이 실패하게 만든다: 이미 디렉터리로 만들어진 "chapters"를 파일로 열면 EISDIR.
+    const gen2Broken: AssembledFile[] = [
+      { path: "SKILL.md", content: "# v2\n", estimatedTokens: 2 },
+      { path: "chapters/ch01-a.md", content: "v2 a\n", estimatedTokens: 2 },
+      { path: "chapters", content: "not a dir", estimatedTokens: 2 },
+    ];
+    await expect(writeSkill(outDir, gen2Broken, gen1Manifest, { force: true })).rejects.toThrow();
+
+    expect(await readFile(join(outDir, "SKILL.md"), "utf-8")).toBe("# v1\n");
+    expect(await readFile(join(outDir, "chapters", "ch01-a.md"), "utf-8")).toBe("v1 a\n");
+    expect(await readFile(join(outDir, "chapters", "ch02-b.md"), "utf-8")).toBe("v1 b\n");
+    expect(await readManifest(outDir)).toEqual(gen1Manifest);
+    expect(await debris(dir)).toEqual([]); // staging도 old도 남지 않는다
+  });
+
+  it("--force recompile drops files from the previous generation (no stale chapters)", async () => {
+    const outDir = join(dir, "skill");
+    await writeSkill(outDir, gen1, gen1Manifest);
+
+    const gen2: AssembledFile[] = [
+      { path: "SKILL.md", content: "# v2\n", estimatedTokens: 2 },
+      { path: "chapters/ch01-a.md", content: "v2 a\n", estimatedTokens: 2 },
+    ];
+    const gen2Manifest: Manifest = { ...manifest, outputs: gen2.map((f) => f.path) };
+    await writeSkill(outDir, gen2, gen2Manifest, { force: true });
+
+    expect(await readdir(join(outDir, "chapters"))).toEqual(["ch01-a.md"]);
+    expect((await readSkillDir(outDir)).map((f) => f.path).sort()).toEqual([
+      "SKILL.md",
+      "chapters/ch01-a.md",
+      "manifest.json",
+    ]);
+    expect(await readFile(join(outDir, "SKILL.md"), "utf-8")).toBe("# v2\n");
+    expect(await debris(dir)).toEqual([]);
+  });
+
+  it("creates missing parent directories and leaves no staging debris on success", async () => {
+    const outDir = join(dir, "a", "b", "skill");
+    await writeSkill(outDir, files, manifest);
+    expect(await readFile(join(outDir, "SKILL.md"), "utf-8")).toBe("# Skill\n");
+    expect(await debris(join(dir, "a", "b"))).toEqual([]);
+  });
+
+  it("a refused write (non-empty, no --force) leaves the existing generation and no debris", async () => {
+    const outDir = join(dir, "skill");
+    await writeSkill(outDir, gen1, gen1Manifest);
+    await expect(writeSkill(outDir, files, manifest)).rejects.toMatchObject({
+      kind: "already_exists",
+    });
+    expect(await readFile(join(outDir, "chapters", "ch02-b.md"), "utf-8")).toBe("v1 b\n");
+    expect(await debris(dir)).toEqual([]);
   });
 });
 
