@@ -59,13 +59,14 @@
 ### T10 — 스모크 · 상태: DONE(2026-09-06) · 의존: T9
 - 목표: `scripts/smoke.ts` — 실 Claude로 samples/manual.pdf 컴파일 + 게이트 리포트 출력, 비용(호출 수·토큰) 요약 출력.
 - 완료(2026-09-06, PR #14): `src/cli/index.ts`와 같은 원칙으로 로직(`src/cli/smoke.ts`의 `runSmoke(opts, deps)`)과 조립(`scripts/smoke.ts`)을 분리 — `compile()`을 직접 호출해 게이트 리포트만 출력하고 파일은 쓰지 않는다(진단 전용). `core/costTracker.ts`(`trackCost()`)는 `LlmProvider`를 감싸 호출 수·`estimateTokens()` 기반 추정 토큰을 센다 — `LlmProvider`/`ScriptedLlm` 인터페이스는 그대로 두고 순수 위임+카운팅만 추가(DESIGN §9).
-- 완료 기준: [x] dry 구조(대본)로 스크립트 자체 테스트 — `tests/smoke.test.ts`가 실 `samples/manual.pdf`를 실 추출기로 읽되 `runSmoke`에 ScriptedLlm을 주입해 통과·미달·경로 오류·미지원 형식 4가지를 검증(실 네트워크 0건, 가드레일 3) [x] 사람 실행 절차 README 5줄 이내(README "실 LLM 스모크" 절) [x] check 통과(20 files·181 tests)
+- 완료 기준: [x] dry 구조(대본)로 스크립트 자체 테스트 — `tests/smoke.test.ts`가 실 `samples/manual.pdf`를 실 추출기로 읽되 `runSmoke`에 ScriptedLlm을 주입해 통과·미달·경로 오류·미지원 형식 4가지를 검증(실 네트워크 0건, 가드레일 3) [x] 사람 실행 절차 README 5줄 이내(README "실 LLM 스모크" 절) [x] check 통과(21 files·181 tests)
 
-### T11 — 공개 준비 · 상태: TODO · 의존: T10
+### T11 — 공개 준비 · 상태: DONE(2026-09-06) · 의존: T10
 - 목표: npm 패키지명 가용성 조사(live-skill + 후보 2개, SPEC §8 기록), 영어 README 초안(내부 docs 한국어 유지), GHA `ci.yml`(npm run check), 60초 데모 시나리오(자작 샘플 사용).
 - 사전 조사 완료(2026-09-06, docs 분석 세션 — 코드 착수 전): 이름 가용성 1차 확인은 SPEC §8, npm 배포 실행 순서 전체는 `docs/PUBLISHING.md`, 경쟁 구도·활용 분야는 `docs/MARKET.md`에 선반영. `LICENSE`(MIT 초안)·`.gitignore`도 이때 추가됨. 후보 2 확정·영어 README·ci.yml·데모 시나리오는 여전히 TODO — 이 세션은 코드를 작성하지 않았다(T0 선행 필요).
 - 실전 선례(2026-09-06 확인, 같은 저자 npm 배포 완료/진행 레포): `../retail-mcp/docs/004_NPM_RELEASE_PACKAGING_REVIEW.md`·`008_TEST_AND_RELEASE_GATE_REVIEW.md`에 8단계 릴리스 게이트와 실제로 걸렸던 함정(`private:true` 방치, `bin`/`main` 누락, tarball에 dist 대신 소스만 포함, 파일 화이트리스트 없어 97개 파일 유출, 조직 스코프 없는 이름의 재사용 불확실성 → `@shiz_son/<name>` 전환)이 기록돼 있다. `../msg-agent/scripts/check-tarball.sh`는 이 레포 규모에 맞는 경량 시크릿 스캔 스크립트로 바로 이식 가능. `docs/PUBLISHING.md` §1·§3에 이 교훈을 이미 반영해 뒀다.
-- 완료 기준: [ ] 이름 조사 결과 기록 [ ] ci.yml 문법 검증 [ ] 데모 시나리오 문서화 [ ] check 통과
+- 완료(2026-09-06, PR #15): **이름 조사** — `live-skill`·`live-skills` 재조회로 여전히 미등록 확인, 두 번째 후보로 `skill-gate`(게이트 차별점을 이름에 반영, 미등록 확인 — `skillgate`는 이미 등록돼 있어 제외) 추가해 SPEC §8 "후보 2개" 요건 충족. 최종 확정은 실제 배포 직전으로 계속 유보(WORKFLOW §4, 위임 불가). **영어 README** — `README.md`를 영어로 교체(공개 시 GitHub/npm이 보여주는 기본 문서), 기존 한국어 내용은 `README.ko.md`로 옮기고 서로 상호 링크. `docs/`는 CLAUDE.md 방침대로 한국어 유지. **`ci.yml`** — `.github/workflows/ci.yml` 신설(Node 20/22 매트릭스로 `npm ci`→`check`→`build`→`check:tarball`, 액션 전부 커밋 SHA 고정 — retail-mcp의 공급망 교훈 반영, 이 레포 규모에 안 맞는 커버리지 필수 게이트·SBOM·서비스 컨테이너는 붙이지 않음). `actionlint`(brew, 1.7.12)로 문법·스키마 검증 통과(0 findings). **데모 시나리오** — `docs/DEMO.md`(타임라인 표 + 그대로 복사할 명령, `samples/manual.pdf` 사용) 신설, 영어 README에 축약판 링크.
+- 완료 기준: [x] 이름 조사 결과 기록(SPEC §8, `docs/PUBLISHING.md` §0) [x] ci.yml 문법 검증(`actionlint` 0 findings) [x] 데모 시나리오 문서화(`docs/DEMO.md`) [x] check 통과(21 files·181 tests, 코드 변경 없음 — 문서·CI·README만)
 
 ---
 

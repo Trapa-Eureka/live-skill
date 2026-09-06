@@ -9,8 +9,9 @@
 | 코드 구현 | 미착수 (TASKS.md T0부터 시작, 이 문서는 그 전제) |
 | GitHub 저장소 | `Trapa-Eureka/live-skill`, **PRIVATE**, origin 연결 확인됨 |
 | npm 계정 | 로컬에 `shiz_son` 로그인 확인됨 (registry.npmjs.org) — 배포 실행 권한은 이미 있음 |
-| 패키지명 `live-skill` | npm 레지스트리 미등록 → **사용 가능** |
-| 백업 후보 `live-skills` | npm 레지스트리 미등록 → **사용 가능** (SPEC §8 "후보 2개" 중 1개, 나머지 1개는 미정) |
+| 패키지명 `live-skill` | npm 레지스트리 미등록 → **사용 가능** (2026-09-06 T11에서 재조회, 여전히 사용 가능) |
+| 백업 후보 `live-skills` | npm 레지스트리 미등록 → **사용 가능** (SPEC §8 "후보 2개" 중 1개) |
+| 백업 후보 2 `skill-gate` | npm 레지스트리 미등록 → **사용 가능** (2026-09-06 T11에서 조사·확정 — SPEC §8 "후보 2개" 충족. `skillgate`는 이미 등록돼 있어 제외) |
 | `LICENSE` | 없었음 → 이번 세션에 MIT 초안 추가 (저작권자 `Trapa-Eureka` — msg-agent·sheet_mcp와 표기 통일) |
 | `.gitignore` | 없었음 → 이번 세션에 Node/TS 표준안 추가 |
 | Node/npm | 로컬 Node v24.12, npm v11.6 확인 — CLAUDE.md 요구사항(Node 20+) 충족 |
