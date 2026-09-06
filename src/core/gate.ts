@@ -1,7 +1,6 @@
 // 품질 게이트 — 제품의 심장(DESIGN §4). qaGen(앵커 검사·재생성 1회) → answerer 격리 시뮬레이터
 // (SKILL.md만 보고 챕터 선택 → 선택된 챕터만 로드 → 답변) → grader(이중 채점, 한 번의 호출) → 판정.
 // CLAUDE.md 가드레일 1·2: 임계치 완화 금지, answerer에 원문·미선택 챕터를 절대 주입하지 않는다.
-import type { AssembledFile } from "./assembler.js";
 import {
   answerPrompt,
   chapterSelectionPrompt,
@@ -9,7 +8,15 @@ import {
   parseGradeVerdict,
   qaGenPrompt,
 } from "./prompts.js";
-import type { GateFailureReason, GateReport, GoldenQA, LlmProvider, Section } from "./types.js";
+import type {
+  GateFailureReason,
+  GateReport,
+  GoldenQA,
+  LlmProvider,
+  Manifest,
+  Section,
+} from "./types.js";
+import type { SkillFile } from "./validator.js";
 import { z } from "zod";
 
 export const DEFAULT_K = 3;
@@ -21,8 +28,9 @@ export interface GateChapter {
 }
 
 export interface GateInput {
-  /** assembler 산출물 전체 — answerer는 이 중 SKILL.md와 선택된 챕터 파일"만" 읽는다. */
-  files: readonly AssembledFile[];
+  /** {path, content}만 있으면 된다 — assembler의 AssembledFile도, 디스크에서 읽은 SkillFile(eval, T8)도
+   * 그대로 들어맞는다. answerer는 이 중 SKILL.md와 선택된 챕터 파일"만" 읽는다. */
+  files: readonly SkillFile[];
   /** 챕터 파일 순서·소속 섹션 — qaGen 대상 선정과 perChapter 집계에 쓴다. */
   chapters: readonly GateChapter[];
   /** qaGen이 참조하는 원문 섹션(파이프라인이 병합한 전체 목록). */
@@ -35,6 +43,20 @@ export interface GateDeps {
   k?: number;
   /** 통과 임계치, 기본 0.9(DESIGN §4) — 완화 금지(CLAUDE.md 가드레일 1). */
   threshold?: number;
+}
+
+/** manifest.sections를 chapterFile 기준으로 묶어 GateChapter[]로 되돌린다 — `eval`(T8, DESIGN §6)이
+ * SkillPlan 없이 manifest만으로 게이트를 다시 돌릴 때 쓴다. 파일명 사전순으로 정렬해 결정론을 지킨다. */
+export function chaptersFromManifest(manifest: Manifest): GateChapter[] {
+  const byFile = new Map<string, string[]>();
+  for (const s of manifest.sections) {
+    const ids = byFile.get(s.chapterFile) ?? [];
+    ids.push(s.id);
+    byFile.set(s.chapterFile, ids);
+  }
+  return [...byFile.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([file, sectionIds]) => ({ file, sectionIds }));
 }
 
 /** 게이트가 예상 소비할 LLM 호출 수 상한선(DESIGN §4 T7 결정). 조기 종료가 있으면 실제는 이보다 적다. */
@@ -99,7 +121,7 @@ async function evaluateQa(
   qa: GoldenQA,
   chapterFile: string,
   chapterFiles: ReadonlySet<string>,
-  filesByPath: ReadonlyMap<string, AssembledFile>,
+  filesByPath: ReadonlyMap<string, SkillFile>,
   skillMdContent: string,
   llm: LlmProvider,
 ): Promise<QaOutcome> {
@@ -150,28 +172,33 @@ async function evaluateQa(
   };
 }
 
-/** DESIGN §4의 전체 게이트: qaGen → answerer(격리) → grader → 판정. */
-export async function runGate(input: GateInput, deps: GateDeps): Promise<GateReport> {
-  const k = deps.k ?? DEFAULT_K;
-  const threshold = deps.threshold ?? DEFAULT_THRESHOLD;
+export interface EvaluateInput {
+  files: readonly SkillFile[];
+  chapters: readonly GateChapter[];
+}
 
-  const sectionById = new Map(input.sections.map((s) => [s.id, s]));
+/**
+ * 이미 만들어진 골든 QA 목록을 채점만 한다(qaGen 생략) — DESIGN §4/§6 T8 결정. `eval` 명령이 원문 없이
+ * manifest의 QA를 재사용할 때 쓴다. threshold는 기본 0.9(가드레일 1: 완화 금지).
+ */
+export async function evaluateGoldenQa(
+  qas: readonly GoldenQA[],
+  input: EvaluateInput,
+  llm: LlmProvider,
+  threshold = DEFAULT_THRESHOLD,
+): Promise<GateReport> {
   const filesByPath = new Map(input.files.map((f) => [f.path, f]));
   const chapterFileSet = new Set(input.chapters.map((c) => c.file));
   const skillMd = filesByPath.get("SKILL.md")?.content ?? "";
+  const chapterFileBySectionId = new Map<string, string>();
+  for (const chapter of input.chapters) {
+    for (const sectionId of chapter.sectionIds) chapterFileBySectionId.set(sectionId, chapter.file);
+  }
 
   const outcomes: QaOutcome[] = [];
-  for (const chapter of input.chapters) {
-    for (const sectionId of chapter.sectionIds) {
-      const section = sectionById.get(sectionId);
-      if (section === undefined) continue; // 파이프라인 불일치 방어 — 정상 흐름에선 항상 존재
-      const qas = await generateGoldenQa(section, k, deps.llm);
-      for (const qa of qas) {
-        outcomes.push(
-          await evaluateQa(qa, chapter.file, chapterFileSet, filesByPath, skillMd, deps.llm),
-        );
-      }
-    }
+  for (const qa of qas) {
+    const chapterFile = chapterFileBySectionId.get(qa.sectionId) ?? "";
+    outcomes.push(await evaluateQa(qa, chapterFile, chapterFileSet, filesByPath, skillMd, llm));
   }
 
   const perChapter = input.chapters.map((c) => {
@@ -209,4 +236,33 @@ export async function runGate(input: GateInput, deps: GateDeps): Promise<GateRep
     failures,
     loadHistory,
   };
+}
+
+export interface GateOutcome {
+  report: GateReport;
+  /** 생성된 골든 QA 원본 — manifest.goldenQa로 저장해 eval이 나중에 재사용한다(DESIGN §6 T8 결정). */
+  goldenQa: GoldenQA[];
+}
+
+/** DESIGN §4의 전체 게이트: 섹션마다 qaGen으로 문항을 만들고, evaluateGoldenQa에 위임해 채점한다. */
+export async function runGate(input: GateInput, deps: GateDeps): Promise<GateOutcome> {
+  const k = deps.k ?? DEFAULT_K;
+  const sectionById = new Map(input.sections.map((s) => [s.id, s]));
+
+  const goldenQa: GoldenQA[] = [];
+  for (const chapter of input.chapters) {
+    for (const sectionId of chapter.sectionIds) {
+      const section = sectionById.get(sectionId);
+      if (section === undefined) continue; // 파이프라인 불일치 방어 — 정상 흐름에선 항상 존재
+      goldenQa.push(...(await generateGoldenQa(section, k, deps.llm)));
+    }
+  }
+
+  const report = await evaluateGoldenQa(
+    goldenQa,
+    { files: input.files, chapters: input.chapters },
+    deps.llm,
+    deps.threshold ?? DEFAULT_THRESHOLD,
+  );
+  return { report, goldenQa };
 }

@@ -92,4 +92,6 @@ export interface Manifest {
   sections: { id: string; sha256: string; chapterFile: string }[];
   outputs: string[];
   gate: GateReport | { skipped: true };
+  /** eval이 원문 없이 재사용할 골든 QA 원본(DESIGN §6 T8 결정). 게이트 스킵 시 빈 배열. */
+  goldenQa: GoldenQA[];
 }

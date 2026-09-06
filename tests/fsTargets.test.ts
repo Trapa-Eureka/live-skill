@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AssembledFile, Manifest } from "../src/core/index.js";
-import { FsTargetError, readSourceFile, writeSkill } from "../src/adapters/fsTargets.js";
+import {
+  FsTargetError,
+  collectInputFiles,
+  readManifest,
+  readSkillDir,
+  readSourceFile,
+  resolveTargetDir,
+  tempSkillDir,
+  writeSkill,
+} from "../src/adapters/fsTargets.js";
 
 const manifest: Manifest = {
   version: 1,
@@ -13,6 +22,7 @@ const manifest: Manifest = {
   sections: [],
   outputs: ["SKILL.md"],
   gate: { skipped: true },
+  goldenQa: [],
 };
 const files: AssembledFile[] = [{ path: "SKILL.md", content: "# Skill\n", estimatedTokens: 3 }];
 
@@ -96,5 +106,71 @@ describe("readSourceFile", () => {
     const src = await readSourceFile(path);
     expect(src.path).toBe(path);
     expect(new TextDecoder().decode(src.bytes)).toBe("hello");
+  });
+});
+
+describe("collectInputFiles (DESIGN §6 T8 — 폴더 재귀 확장)", () => {
+  it("returns a file path as-is", async () => {
+    const path = join(dir, "a.md");
+    await writeFile(path, "x");
+    expect(await collectInputFiles([path])).toEqual([path]);
+  });
+
+  it("recursively collects every file in a folder, skipping .git/node_modules", async () => {
+    await mkdir(join(dir, "sub"), { recursive: true });
+    await mkdir(join(dir, "node_modules", "pkg"), { recursive: true });
+    await writeFile(join(dir, "a.md"), "a");
+    await writeFile(join(dir, "sub", "b.md"), "b");
+    await writeFile(join(dir, "node_modules", "pkg", "c.md"), "c");
+
+    const found = await collectInputFiles([dir]);
+    expect(found.sort()).toEqual([join(dir, "a.md"), join(dir, "sub", "b.md")].sort());
+  });
+});
+
+describe("readSkillDir / readManifest (validate/eval/report용)", () => {
+  it("reads every file back with a forward-slash relative path", async () => {
+    const outDir = join(dir, "skill");
+    const nested: AssembledFile[] = [
+      ...files,
+      { path: "chapters/ch01-a.md", content: "body\n", estimatedTokens: 1 },
+    ];
+    await writeSkill(outDir, nested, manifest);
+
+    const skillFiles = await readSkillDir(outDir);
+    const byPath = new Map(skillFiles.map((f) => [f.path, f.content]));
+    expect(byPath.get("SKILL.md")).toBe("# Skill\n");
+    expect(byPath.get("chapters/ch01-a.md")).toBe("body\n");
+    expect(byPath.get("manifest.json")).toBeDefined();
+  });
+
+  it("reads manifest.json back as a validated Manifest", async () => {
+    const outDir = join(dir, "skill");
+    await writeSkill(outDir, files, manifest);
+    expect(await readManifest(outDir)).toEqual(manifest);
+  });
+
+  it("rejects a manifest.json that fails schema validation", async () => {
+    const outDir = join(dir, "skill");
+    await mkdir(outDir, { recursive: true });
+    await writeFile(join(outDir, "manifest.json"), JSON.stringify({ not: "a manifest" }));
+    await expect(readManifest(outDir)).rejects.toThrow();
+  });
+});
+
+describe("resolveTargetDir / tempSkillDir (DESIGN §6 T8)", () => {
+  it("defaults to ~/.claude/skills/<slug>", () => {
+    expect(resolveTargetDir("claude", "my-skill")).toContain(join(".claude", "skills", "my-skill"));
+  });
+
+  it("uses ~/.agents/skills/<slug> for the agents target", () => {
+    expect(resolveTargetDir("agents", "my-skill")).toContain(join(".agents", "skills", "my-skill"));
+  });
+
+  it("builds a unique temp dir per slug+timestamp under the OS temp root", () => {
+    const a = tempSkillDir("my-skill", "2026-09-06T00-00-00");
+    const b = tempSkillDir("my-skill", "2026-09-06T00-00-01");
+    expect(a).toContain("my-skill");
+    expect(a).not.toBe(b);
   });
 });

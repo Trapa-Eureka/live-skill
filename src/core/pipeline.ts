@@ -16,6 +16,7 @@ import type {
   DocumentExtractor,
   ExtractError,
   GateReport,
+  GoldenQA,
   LlmProvider,
   Manifest,
   Section,
@@ -45,6 +46,8 @@ export interface CompileResult {
   manifest: Manifest;
   files: AssembledFile[];
   validation: ValidationReport;
+  /** outline이 만든 슬러그 — --out 없이 --target만 줬을 때 CLI가 타깃 경로를 계산하는 데 쓴다(DESIGN §5.1 T8 결정). */
+  slug: string;
 }
 
 interface PerFileSections {
@@ -203,24 +206,27 @@ export async function compile(
   if (!firstAssembly.ok) return firstAssembly;
 
   let gate: GateReport | { skipped: true };
+  let goldenQa: GoldenQA[];
   let files: AssembledFile[];
   if (runsGate) {
     const gateChapters: GateChapter[] = plan.chapters.map((c, i) => ({
       file: chapterFilePath(i, c.title),
       sectionIds: c.sectionIds,
     }));
-    const report = await runGate(
+    const outcome = await runGate(
       { files: firstAssembly.value, chapters: gateChapters, sections },
       { llm: deps.llm, k: deps.config.qaPerSection, threshold: deps.config.gateThreshold },
     );
-    gate = report;
+    gate = outcome.report;
+    goldenQa = outcome.goldenQa;
     // 순수 함수라 verified 값이 확정된 뒤 한 번 더 조립해도 비용이 없다 — SKILL.md의 unverified 표시를
     // 실제 게이트 결과와 맞춘다(DESIGN §5.1).
-    const finalAssembly = assemble(report.passed);
+    const finalAssembly = assemble(outcome.report.passed);
     if (!finalAssembly.ok) return finalAssembly;
     files = finalAssembly.value;
   } else {
     gate = { skipped: true };
+    goldenQa = [];
     files = firstAssembly.value;
   }
 
@@ -242,7 +248,8 @@ export async function compile(
     sections: manifestSections,
     outputs: files.map((f) => f.path),
     gate,
+    goldenQa,
   };
 
-  return ok({ manifest, files, validation });
+  return ok({ manifest, files, validation, slug: plan.slug });
 }

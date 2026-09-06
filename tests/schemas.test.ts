@@ -112,6 +112,7 @@ describe("manifestSchema", () => {
     sections: [{ id: "installation", sha256: sha, chapterFile: "chapters/ch01-installation.md" }],
     outputs: ["SKILL.md", "chapters/ch01-installation.md"],
     gate: { skipped: true },
+    goldenQa: [],
   };
 
   it("round-trips a valid Manifest with a skipped gate", () => {

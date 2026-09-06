@@ -70,4 +70,5 @@ export const manifestSchema = z.object({
   ),
   outputs: z.array(z.string().min(1)),
   gate: z.union([gateReportSchema, z.object({ skipped: z.literal(true) })]),
+  goldenQa: z.array(goldenQaSchema),
 });
