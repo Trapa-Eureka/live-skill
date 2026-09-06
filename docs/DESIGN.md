@@ -107,6 +107,16 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 - 모든 컴파일은 `manifest.json`을 스킬 디렉터리에 남긴다 (§2 스키마).
 - v0.2 `update`는 소스 재해시 → 변한 섹션만 distill·해당 챕터만 재조립·해당 문항만 재평가하는 설계가 되도록, **섹션 id는 안정적**(헤딩 경로 기반 슬러그)이어야 한다. v0.1에서 이 안정성까지 구현·테스트한다.
 
+### 5.1 파이프라인 (`core/pipeline.ts`) — T6 결정 (2026-09-06)
+
+`extract → outline → distill → assemble → validate`를 오케스트레이션한다. **게이트(§4)는 아직 연결하지 않는다** — T7이 아직 없어서다. 그래서 T6가 만드는 manifest는 항상 `gate: { skipped: true }`이고, T7이 이 파이프라인에 게이트 단계를 추가하며 이 필드를 실제 결과로 바꾼다.
+
+- **소스 여러 개일 때 섹션 id 충돌 방지**: 폴더 컴파일(SPEC §5 시나리오 2, 마크다운 30개)처럼 소스 파일이 2개 이상이면, 각 파일의 섹션 id 앞에 그 파일명 기반 슬러그를 붙인다(`{파일슬러그}/{sectionId}`) — 서로 다른 파일에 같은 이름의 섹션(둘 다 "Overview" 등)이 있어도 manifest에서 충돌하지 않게. 소스가 1개면 접두어를 붙이지 않는다(단일 문서 시나리오의 id를 불필요하게 바꾸지 않기 위해).
+- **비용 상한(MAX_LLM_CALLS)**: 컴파일 단계의 호출 수 = 1(outline) + 챕터 수(distill 1회씩). outline 응답으로 챕터 수를 알게 된 직후, distill을 시작하기 전에 이 합이 `config.maxLlmCalls`를 넘으면 즉시 중단하고 챕터 수를 줄이거나 상한을 올리라는 안내와 함께 실패한다(우회 플래그 없음, 가드레일 6). 게이트 단계 자체의 호출 수 산식(§4)은 T7이 이 값 위에 더한다.
+- **거대 입력 가드**: outline을 부르기 전에, 추출된 전체 섹션 텍스트의 `estimateTokens` 합이 `MAX_INPUT_TOKENS`(기본 30,000 — 산출 예산 합계의 몇 배 수준으로 넉넉히 잡은 상수)를 넘으면 LLM 호출 0회로 즉시 거절하고 문서를 나눠서 다시 컴파일하라고 안내한다.
+- **앵커 추출**: distill 응답(마크다운 본문) 안의 `[§sectionId]`를 정규식으로 스캔해 `DistilledChapter.anchors`를 만든다 — 결정론, LLM에게 별도로 묻지 않는다.
+- **출력 쓰기는 파이프라인 밖**: `core/pipeline.ts`는 `AssembledFile[]` + `Manifest`만 반환한다. 실제 디스크 쓰기(`--force`/out 경계 포함)는 `adapters/fsTargets.ts`가 한다 — core는 여전히 외부 IO가 없다.
+
 ## 6. CLI (src/cli/)
 
 | 명령 | 동작 |
