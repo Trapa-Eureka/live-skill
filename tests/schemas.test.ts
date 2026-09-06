@@ -101,34 +101,141 @@ describe("goldenQaSchema", () => {
   });
 });
 
-describe("gateReportSchema", () => {
-  const valid: GateReport = {
-    passRate: 0.9,
-    threshold: 0.9,
-    passed: true,
-    perChapter: [{ file: "chapters/ch01-installation.md", asked: 3, correct: 3 }],
-    failures: [],
-    loadHistory: [
-      {
-        qaId: "qa-1",
-        selectedFile: "chapters/ch01-installation.md",
-        loadedFiles: ["chapters/ch01-installation.md"],
-      },
-    ],
-    coverage: [{ sectionId: "installation", requested: 3, generated: 3 }],
-  };
+// B6 기준 리포트: 챕터 1개, 문항 1개 정답 — 모든 집계가 서로 맞는 최소 리포트.
+const consistentReport: GateReport = {
+  passRate: 1,
+  threshold: 0.9,
+  passed: true,
+  perChapter: [{ file: "chapters/ch01-installation.md", asked: 1, correct: 1 }],
+  failures: [],
+  loadHistory: [
+    {
+      qaId: "installation-q1",
+      selectedFile: "chapters/ch01-installation.md",
+      loadedFiles: ["chapters/ch01-installation.md"],
+    },
+  ],
+  coverage: [{ sectionId: "installation", requested: 3, generated: 1 }],
+};
 
-  it("round-trips a valid GateReport", () => {
-    expect(gateReportSchema.parse(valid)).toEqual(valid);
+describe("gateReportSchema", () => {
+  it("round-trips a consistent GateReport", () => {
+    expect(gateReportSchema.parse(consistentReport)).toEqual(consistentReport);
   });
 
   it("rejects a passRate outside [0, 1]", () => {
-    expect(() => gateReportSchema.parse({ ...valid, passRate: 1.5 })).toThrow();
+    expect(() => gateReportSchema.parse({ ...consistentReport, passRate: 1.5 })).toThrow();
   });
 
   it("rejects an unknown failure reason", () => {
-    const invalid = { ...valid, failures: [{ qaId: "qa-1", reason: "unknown" }] };
+    const invalid = { ...consistentReport, failures: [{ qaId: "qa-1", reason: "unknown" }] };
     expect(() => gateReportSchema.parse(invalid)).toThrow();
+  });
+
+  it("rejects a threshold below the policy floor (B4)", () => {
+    expect(() => gateReportSchema.parse({ ...consistentReport, threshold: 0.3 })).toThrow(/0\.5/u);
+  });
+
+  // B6 (AUD-011, 완료 기준): 상호 모순된 리포트는 형식이 맞아도 거부된다.
+  it.each<[string, Partial<GateReport>, RegExp]>([
+    [
+      "passed=true with passRate 0 (all wrong)",
+      {
+        passRate: 0,
+        passed: true,
+        perChapter: [{ file: "chapters/ch01-installation.md", asked: 1, correct: 0 }],
+        failures: [{ qaId: "installation-q1", reason: "wrong" }],
+      },
+      /passed=true contradicts the verdict rule/u,
+    ],
+    [
+      "correct > asked",
+      { perChapter: [{ file: "chapters/ch01-installation.md", asked: 1, correct: 50 }] },
+      /correct \(50\) exceeds asked \(1\)/u,
+    ],
+    [
+      "passRate that does not match correct/asked",
+      { passRate: 0.5 },
+      /passRate 0\.5 does not match/u,
+    ],
+    [
+      "a graded failure without a matching drop in correct",
+      { failures: [{ qaId: "installation-q1", reason: "wrong" }] },
+      /correct total \(1\) must equal asked \(1\) minus graded failures \(1\)/u,
+    ],
+    [
+      "a failure qaId with no loadHistory entry",
+      {
+        passRate: 0,
+        passed: false,
+        perChapter: [{ file: "chapters/ch01-installation.md", asked: 1, correct: 0 }],
+        failures: [{ qaId: "ghost-q1", reason: "wrong" }],
+      },
+      /failure ghost-q1 has no loadHistory entry/u,
+    ],
+    [
+      "asked total that differs from the loadHistory length",
+      { perChapter: [{ file: "chapters/ch01-installation.md", asked: 2, correct: 2 }] },
+      /asked total \(2\) must equal the number of loadHistory entries \(1\)/u,
+    ],
+    [
+      "coverage generated 0 without a qa_generation_failed failure",
+      {
+        passed: false,
+        coverage: [
+          { sectionId: "installation", requested: 3, generated: 1 },
+          { sectionId: "b", requested: 3, generated: 0 },
+        ],
+      },
+      /qa_generation_failed failures must correspond exactly/u,
+    ],
+    [
+      "a qa_generation_failed failure without a generated-0 coverage entry",
+      { passed: false, failures: [{ qaId: "b-q0", reason: "qa_generation_failed" }] },
+      /qa_generation_failed failures must correspond exactly/u,
+    ],
+    [
+      "passed=true while a section is unverified (B2 rule)",
+      {
+        coverage: [
+          { sectionId: "installation", requested: 3, generated: 1 },
+          { sectionId: "b", requested: 3, generated: 0 },
+        ],
+        failures: [{ qaId: "b-q0", reason: "qa_generation_failed" }],
+      },
+      /passed=true contradicts the verdict rule/u,
+    ],
+    [
+      "coverage generated above requested",
+      { coverage: [{ sectionId: "installation", requested: 1, generated: 2 }] },
+      /generated \(2\) exceeds requested \(1\)/u,
+    ],
+    [
+      "duplicate loadHistory qaIds",
+      {
+        perChapter: [{ file: "chapters/ch01-installation.md", asked: 2, correct: 2 }],
+        loadHistory: [
+          { qaId: "installation-q1", selectedFile: "x", loadedFiles: [] },
+          { qaId: "installation-q1", selectedFile: "x", loadedFiles: [] },
+        ],
+      },
+      /qaIds must be unique/u,
+    ],
+  ])("rejects %s", (_label, patch, message) => {
+    expect(() => gateReportSchema.parse({ ...consistentReport, ...patch })).toThrow(message);
+  });
+
+  it("accepts a consistent failing report (asked 0 → passRate 0, passed false, uncovered section)", () => {
+    const failing: GateReport = {
+      passRate: 0,
+      threshold: 0.9,
+      passed: false,
+      perChapter: [{ file: "chapters/ch01-installation.md", asked: 0, correct: 0 }],
+      failures: [{ qaId: "installation-q0", reason: "qa_generation_failed" }],
+      loadHistory: [],
+      coverage: [{ sectionId: "installation", requested: 3, generated: 0 }],
+    };
+    expect(gateReportSchema.parse(failing)).toEqual(failing);
   });
 });
 
@@ -143,40 +250,38 @@ describe("manifestSchema", () => {
     gate: { skipped: true },
     goldenQa: [],
   };
+  const withGate: Manifest = {
+    ...valid,
+    gate: consistentReport,
+    goldenQa: [
+      {
+        id: "installation-q1",
+        sectionId: "installation",
+        question: "q",
+        refAnswer: "a",
+        anchorQuote: "x",
+      },
+    ],
+  };
 
   it("round-trips a valid Manifest with a skipped gate", () => {
     expect(manifestSchema.parse(valid)).toEqual(valid);
   });
 
-  it("round-trips a valid Manifest with a real GateReport", () => {
-    const withGate: Manifest = {
-      ...valid,
-      gate: {
-        passRate: 1,
-        threshold: 0.9,
-        passed: true,
-        perChapter: [],
-        failures: [{ qaId: "b-q0", reason: "qa_generation_failed" }],
-        loadHistory: [],
-        coverage: [{ sectionId: "b", requested: 3, generated: 0 }],
-      },
-    };
+  it("round-trips a valid Manifest with a consistent GateReport", () => {
     expect(manifestSchema.parse(withGate)).toEqual(withGate);
   });
 
   it("rejects a GateReport without the coverage field (B2 schema)", () => {
-    const missingCoverage = {
-      ...valid,
-      gate: {
-        passRate: 1,
-        threshold: 0.9,
-        passed: true,
-        perChapter: [],
-        failures: [],
-        loadHistory: [],
-      },
+    const withoutCoverage: Omit<GateReport, "coverage"> = {
+      passRate: consistentReport.passRate,
+      threshold: consistentReport.threshold,
+      passed: consistentReport.passed,
+      perChapter: consistentReport.perChapter,
+      failures: consistentReport.failures,
+      loadHistory: consistentReport.loadHistory,
     };
-    expect(() => manifestSchema.parse(missingCoverage)).toThrow();
+    expect(() => manifestSchema.parse({ ...withGate, gate: withoutCoverage })).toThrow();
   });
 
   // B3 (SEC-006·AUD-006): chapterFile은 answerer 허용 목록이 되므로 코드가 만드는 챕터 형식만 통과한다.
@@ -192,14 +297,22 @@ describe("manifestSchema", () => {
     "chapters/",
     "",
   ])("rejects chapterFile %j", (chapterFile) => {
-    const invalid = { ...valid, sections: [{ id: "x", sha256: sha, chapterFile }] };
+    const invalid = {
+      ...valid,
+      sections: [{ id: "x", sha256: sha, chapterFile }],
+      outputs: [...valid.outputs, chapterFile],
+    };
     expect(() => manifestSchema.parse(invalid)).toThrow();
   });
 
   it.each(["chapters/ch01-installation.md", "chapters/ch02-한국어.md", "chapters/ch10-section.md"])(
     "accepts chapterFile %j",
     (chapterFile) => {
-      const ok = { ...valid, sections: [{ id: "x", sha256: sha, chapterFile }] };
+      const ok = {
+        ...valid,
+        sections: [{ id: "x", sha256: sha, chapterFile }],
+        outputs: ["SKILL.md", chapterFile],
+      };
       expect(manifestSchema.parse(ok).sections[0]?.chapterFile).toBe(chapterFile);
     },
   );
@@ -207,17 +320,84 @@ describe("manifestSchema", () => {
   it("accepts every path the assembler itself produces (compile output must stay readable)", () => {
     for (const [i, title] of ["Setup & Operation", "설치 및 문제 해결", "---", "A / B"].entries()) {
       const chapterFile = chapterFilePath(i, title);
-      const ok = { ...valid, sections: [{ id: "x", sha256: sha, chapterFile }] };
+      const ok = {
+        ...valid,
+        sections: [{ id: "x", sha256: sha, chapterFile }],
+        outputs: ["SKILL.md", chapterFile],
+      };
       expect(manifestSchema.parse(ok).sections[0]?.chapterFile).toBe(chapterFile);
     }
   });
 
-  it("rejects a sha256 of the wrong length", () => {
-    const invalid = { ...valid, sourceFiles: [{ path: "x", sha256: "too-short" }] };
-    expect(() => manifestSchema.parse(invalid)).toThrow();
+  it("rejects a sha256 that is not 64 lowercase hex chars (B6)", () => {
+    for (const bad of ["too-short", "A".repeat(64), "x".repeat(64), "0".repeat(63)]) {
+      const invalid = { ...valid, sourceFiles: [{ path: "x", sha256: bad }] };
+      expect(() => manifestSchema.parse(invalid)).toThrow(/hex/u);
+    }
+  });
+
+  it("rejects a createdAt that is not an ISO 8601 timestamp (B6)", () => {
+    for (const bad of ["t", "2026-09-06", "yesterday", ""]) {
+      expect(() => manifestSchema.parse({ ...valid, createdAt: bad })).toThrow();
+    }
   });
 
   it("rejects a manifest version other than 1", () => {
     expect(() => manifestSchema.parse({ ...valid, version: 2 })).toThrow();
+  });
+
+  // B6 (AUD-011, 완료 기준): 섹션·산출물·골든 QA·게이트가 서로를 정확히 가리켜야 한다.
+  it("rejects a chapterFile that is not listed in outputs (B3 cross-reference)", () => {
+    expect(() => manifestSchema.parse({ ...valid, outputs: ["SKILL.md"] })).toThrow(
+      /not listed in outputs/u,
+    );
+  });
+
+  it("rejects duplicate outputs and duplicate section ids", () => {
+    expect(() =>
+      manifestSchema.parse({ ...valid, outputs: [...valid.outputs, "SKILL.md"] }),
+    ).toThrow(/outputs must be unique/u);
+    expect(() =>
+      manifestSchema.parse({ ...valid, sections: [...valid.sections, ...valid.sections] }),
+    ).toThrow(/section ids must be unique/u);
+  });
+
+  it("rejects a golden QA whose sectionId is not a manifest section", () => {
+    const bad = {
+      ...withGate,
+      goldenQa: [{ ...withGate.goldenQa[0], sectionId: "ghost" }],
+    };
+    expect(() => manifestSchema.parse(bad)).toThrow(/not a manifest section/u);
+  });
+
+  it("rejects a loadHistory qaId that is not in goldenQa", () => {
+    expect(() => manifestSchema.parse({ ...withGate, goldenQa: [] })).toThrow(
+      /is not in goldenQa/u,
+    );
+  });
+
+  it("rejects a gate whose coverage does not cover exactly the manifest sections", () => {
+    const bad = {
+      ...withGate,
+      gate: {
+        ...consistentReport,
+        coverage: [...consistentReport.coverage, { sectionId: "b", requested: 3, generated: 1 }],
+      },
+    };
+    expect(() => manifestSchema.parse(bad)).toThrow(/exactly one entry per manifest section/u);
+  });
+
+  it("rejects a gate whose perChapter files differ from the sections' chapter files", () => {
+    const bad = {
+      ...withGate,
+      gate: {
+        ...consistentReport,
+        perChapter: [
+          ...consistentReport.perChapter,
+          { file: "chapters/ch02-extra.md", asked: 0, correct: 0 },
+        ],
+      },
+    };
+    expect(() => manifestSchema.parse(bad)).toThrow(/exactly one entry per distinct chapterFile/u);
   });
 });

@@ -49,6 +49,7 @@
 - [ ] `eval`이 manifest의 기존 QA 재사용 경로로 동작
 - [ ] 유니코드 혼합 샘플: 앵커 문자열 검사·조립 무결성
 - [ ] 게이트 미달 시 종료코드 1, `report`가 마지막 리포트 출력
+- [ ] manifest 의미 검증(B6): `passed=true`인데 `passRate=0`, `correct>asked`, 집계 불일치, 실패 qaId가 로드 이력에 없음, `chapterFile ∉ outputs`, 비ISO `createdAt`, 비16진수 해시 → `readManifest` 거부(사람 말 메시지) / 컴파일이 쓴 실제 manifest는 그대로 통과
 
 **실 추출기 (샘플 파일)**
 - [ ] 자작 PDF/DOCX/MD/HTML 각 1건: 섹션 헤딩 구조 추출 정확성

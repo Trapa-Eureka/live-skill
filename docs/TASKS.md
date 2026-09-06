@@ -122,9 +122,10 @@
 - 완료(2026-09-07, PR #24): `parseGradeVerdict`가 응답 전체를 정규화(앞뒤 공백·마크다운 강조·따옴표·마침표 제거, 대소문자 무시)한 값이 정확히 `CORRECT`일 때만 정답 — 설명이 붙었거나 두 단어가 다 있으면 판정 불가 = wrong. DESIGN §4-3에 기록. 후보 답변의 데이터/지시 분리는 C1에서.
 - 완료 기준: [x] `CORRECT? No, WRONG.` → wrong 테스트(+ 모순·설명·INCORRECT 등 8종 wrong, 장식만 붙은 5종 correct) [x] check 통과(22 files·290 tests)
 
-#### B6 — manifest·GateReport 의미 검증 · 상태: TODO · 원본: AUD-011 · 의존: B3
+#### B6 — manifest·GateReport 의미 검증 · 상태: DONE(2026-09-07) · 원본: AUD-011 · 의존: B3
 - 목표: `manifestSchema.superRefine`으로 `correct ≤ asked`, 챕터 합계 = 전체, `passRate` 재계산 일치, `passed ⇔ passRate ≥ threshold`, failures/loadHistory의 qaId가 goldenQa에 존재, `createdAt` ISO, sha256 16진수, `sections[].chapterFile ∈ outputs` 검증.
-- 완료 기준: [ ] 모순 manifest(예: `passed=true, passRate=0`) 거부 테스트 [ ] 정상 manifest 라운드트립 유지 [ ] check 통과
+- 완료(2026-09-07, PR #25): 판정 규칙을 `core/gateVerdict.ts`(`decidePassed`·하한·EPSILON)로 뽑아 gate.ts와 schemas.ts가 **같은 함수**를 쓰게 함 — 파일의 `passed`는 코드의 판정으로 재계산한 값과 같아야 통과. GateReport 내부(챕터별 `correct ≤ asked`, 유일성, `Σasked = loadHistory`, `Σcorrect = Σasked − 채점 실패`, passRate 재계산, 채점 실패 ⊆ loadHistory, `qa_generation_failed` ⇔ `generated 0`, `generated ≤ requested`, threshold ∈ [0.5, 1])과 Manifest 수준(ISO `createdAt`, 소문자 16진수 64자 해시, outputs·섹션 id 유일, `chapterFile ∈ outputs`, `goldenQa.sectionId ∈ sections`, `loadHistory ⊆ goldenQa`, coverage 집합 = 섹션 집합, perChapter 집합 = 챕터 파일 집합)을 `superRefine`으로 강제. `readManifest`는 위반 시 첫 문제들을 사람 말로 담은 Error(zod 덤프 아님). DESIGN §5·TESTING §4 기록. 진위(서명)는 v0.2 대기열.
+- 완료 기준: [x] 모순 manifest 거부 테스트(`passed=true, passRate=0` 외 리포트 11종·manifest 8종) [x] 정상 manifest 라운드트립 유지(skipped·정상 리포트·실패 리포트 + e2e가 컴파일이 쓴 실제 manifest를 강화된 스키마로 재독) [x] check 통과(22 files·310 tests)
 
 ### C. 프롬프트 주입 경계 — High
 
