@@ -20,3 +20,4 @@ export * from "./gateVerdict.js";
 export * from "./gate.js";
 export * from "./reportFormat.js";
 export * from "./costTracker.js";
+export * from "./concurrency.js";

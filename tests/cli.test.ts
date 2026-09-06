@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/core/config.js";
 import { trackCost } from "../src/core/costTracker.js";
 import { createExtractors } from "../src/adapters/extractors/index.js";
+import { FsTargetError } from "../src/adapters/fsTargets.js";
 import { FixtureExtractor } from "../src/mocks/fixtureExtractor.js";
 import { script } from "../src/mocks/scriptedLlm.js";
 import { runCompile, type CompileDeps } from "../src/cli/compile.js";
@@ -201,7 +202,8 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
       readSkillDir: () => Promise.resolve([chapterFile]),
       readManifest: () => Promise.resolve(manifest),
       collectInputFiles: () => Promise.resolve([]),
-      readSourceFile: (p) => Promise.resolve({ path: p, bytes: new Uint8Array() }),
+      readSourceFiles: (paths) =>
+        Promise.resolve(paths.map((p) => ({ path: p, bytes: new Uint8Array() }))),
       extractors: [],
       llm: script().build(),
       config,
@@ -239,8 +241,8 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
         llm,
         extractors: [extractor],
         collectInputFiles: () => Promise.resolve(["a.md"]),
-        readSourceFile: (p) =>
-          Promise.resolve({ path: p, bytes: new TextEncoder().encode("a.md") }),
+        readSourceFiles: (paths) =>
+          Promise.resolve(paths.map((p) => ({ path: p, bytes: new TextEncoder().encode("a.md") }))),
         config: loadConfig({ QA_PER_SECTION: "1" }),
       }),
     );
@@ -312,13 +314,43 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
         llm,
         extractors: [new FixtureExtractor({ md: doc })],
         collectInputFiles: () => Promise.resolve(["a.md"]),
-        readSourceFile: (p) =>
-          Promise.resolve({ path: p, bytes: new TextEncoder().encode("a.md") }),
+        readSourceFiles: (paths) =>
+          Promise.resolve(paths.map((p) => ({ path: p, bytes: new TextEncoder().encode("a.md") }))),
         config: loadConfig({ QA_PER_SECTION: "1", MAX_LLM_CALLS: "4" }), // 섹션 1개: 2 + 3 = 5 > 4
       }),
     );
     expect(code).toBe(1);
     expect(captured.all.join("\n")).toContain("MAX_LLM_CALLS 상한 4");
+    llm.assertExhausted();
+  });
+
+  it("with --source, refuses oversized input before reading or calling the LLM (D3)", async () => {
+    const captured = lines();
+    const reads: string[] = [];
+    const llm = script().build();
+    const code = await runEval(
+      { skillDir: "dir", source: ["big.pdf"] },
+      baseDeps({
+        out: captured.out,
+        llm,
+        collectInputFiles: () =>
+          Promise.reject(
+            new FsTargetError(
+              "file_too_large",
+              'refusing "big.pdf" — it is 30 MiB, over the per-file limit of 25 MiB. Fix: remove it from the input, or split it into smaller documents.',
+            ),
+          ),
+        readSourceFiles: (paths) => {
+          reads.push(...paths);
+          return Promise.resolve([]);
+        },
+      }),
+    );
+    expect(code).toBe(1);
+    expect(reads).toEqual([]);
+    const text = captured.all.join("\n");
+    expect(text).toContain("--source: 입력을 거부했습니다");
+    expect(text).toContain("25 MiB");
     llm.assertExhausted();
   });
 
@@ -354,8 +386,10 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     return {
       out: () => undefined,
       collectInputFiles: (paths) => Promise.resolve([...paths]),
-      readSourceFile: (p) =>
-        Promise.resolve({ path: p, bytes: new TextEncoder().encode("manual.md") }),
+      readSourceFiles: (paths) =>
+        Promise.resolve(
+          paths.map((p) => ({ path: p, bytes: new TextEncoder().encode("manual.md") })),
+        ),
       extractors: [new FixtureExtractor({ md: doc })],
       llm: script().build(),
       clock,
@@ -507,6 +541,52 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     expect(captured.all.join("\n")).toContain("empty-dir");
   });
 
+  it("refuses oversized input before reading a single file, with the adapter's fix message (D3)", async () => {
+    const captured = lines();
+    const reads: string[] = [];
+    const llm = script().build(); // 대본 0개 — LLM에 닿으면 실패
+    const code = await runCompile(
+      { paths: ["huge-folder"], target: "claude", noGate: false, force: false },
+      baseDeps({
+        out: captured.out,
+        llm,
+        collectInputFiles: () =>
+          Promise.reject(
+            new FsTargetError(
+              "too_many_files",
+              "refusing the input — it has more than 500 files (stopped counting at 501). Fix: point at a smaller folder, or split the documents into several skills.",
+            ),
+          ),
+        readSourceFiles: (paths) => {
+          reads.push(...paths);
+          return Promise.resolve([]);
+        },
+      }),
+    );
+    expect(code).toBe(1);
+    expect(reads).toEqual([]); // 읽기 전 거부
+    const text = captured.all.join("\n");
+    expect(text).toContain("입력을 거부했습니다");
+    expect(text).toContain("more than 500 files");
+    expect(text).toContain("Fix:");
+    llm.assertExhausted();
+  });
+
+  it("keeps the path-check hint for plain read errors such as ENOENT", async () => {
+    const captured = lines();
+    const code = await runCompile(
+      { paths: ["missing.md"], target: "claude", noGate: true, force: false },
+      baseDeps({
+        out: captured.out,
+        collectInputFiles: () =>
+          Promise.reject(new Error("ENOENT: no such file, lstat 'missing.md'")),
+      }),
+    );
+    expect(code).toBe(1);
+    expect(captured.all.join("\n")).toContain("경로를 확인하세요");
+    expect(captured.all.join("\n")).toContain("ENOENT");
+  });
+
   it("returns 1 and never writes when the pipeline itself fails", async () => {
     const captured = lines();
     const writes: string[] = [];
@@ -515,7 +595,8 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
       baseDeps({
         out: captured.out,
         extractors: createExtractors(), // 진짜 라우팅 — .xlsx는 지원하지 않는다
-        readSourceFile: (p) => Promise.resolve({ path: p, bytes: new Uint8Array() }),
+        readSourceFiles: (paths) =>
+          Promise.resolve(paths.map((p) => ({ path: p, bytes: new Uint8Array() }))),
         writeSkill: (dir) => {
           writes.push(dir);
           return Promise.resolve();

@@ -146,9 +146,10 @@
 - 완료(2026-09-07, PR #28): `eval` 두 경로 다 compile과 같은 두 겹 — 사전 추정(재사용 `estimateEvalCalls` = 문항 수 × 3, `--source`는 게이트 산식)이 상한을 넘으면 LLM 호출 0회로 종료 1, 통과해도 `trackCost(llm, { maxCalls })` 래퍼로만 호출해 실행 중 상한에 닿으면 "재채점 중단"으로 보고. 끝나면 실측 "LLM 호출 N회" 출력. `manifest.goldenQa`는 스키마에서 `MAX_GOLDEN_QA_ENTRIES`(1,000)개로 제한(문자열 길이는 C1의 2,000자). `smoke`는 `compile()`을 그대로 부르므로 D1로 이미 적용. DESIGN §2·§6 갱신.
 - 완료 기준: [x] eval 상한 초과 중단 테스트(재사용 사전 추정 거부·실행 중 상한 중단·`--source` 사전 추정 거부·성공 시 호출 수 출력, goldenQa 1,001개 거부/1,000개 허용) [x] check 통과(22 files·338 tests)
 
-#### D3 — 입력 크기 사전 제한 · 상태: TODO · 원본: 001-015, SEC-011, AUD-014
+#### D3 — 입력 크기 사전 제한 · 상태: DONE(2026-09-07) · 원본: 001-015, SEC-011, AUD-014
 - 목표: 읽기 전에 `stat` 기반 파일 수·파일별/총 바이트 제한, 제한된 동시성으로 읽기, 불필요한 Buffer 복사 제거.
-- 완료 기준: [ ] 초과 시 읽기 전 거부 + 수정 방법 메시지 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #29): `INPUT_LIMITS`(파일 500개 · 파일당 25 MiB · 총 100 MiB, env 아닌 상수)를 두 겹으로 강제. (1) `collectInputFiles`가 걷는 동안 이미 하는 `lstat`의 크기로 개수·파일별·누적 바이트를 세고 넘는 순간 `too_many_files`/`file_too_large`/`input_too_large`(원인 + Fix)로 멈춘다 — 파일은 하나도 열지 않는다. (2) `readFileNoFollow`가 연 뒤 `fstat` 크기를 재확인하고 정확히 그만큼만 읽으며(`readExactly` — 검사 뒤 파일이 자라도 초과 읽기 없음), 새 `readSourceFiles`가 `core/concurrency.ts`의 순수 `mapConcurrent`(동시 4개, 입력 순서 보존, 실패 시 새 작업 중단)로 읽으면서 누적 바이트를 다시 강제. compile·eval `--source`가 `readSourceFiles`를 쓰고 `describeInputFailure`로 어댑터의 거부 메시지를 그대로 보인다. 복사 제거: `Buffer.alloc` 전용 버퍼를 `SourceFile.bytes`에 그대로(`new Uint8Array` 복사 삭제), DOCX는 `asBuffer` 뷰. DESIGN §6·§7 갱신.
+- 완료 기준: [x] 초과 시 읽기 전 거부 + 수정 방법 메시지 테스트(실 fs: 개수·파일별·총합 각각 거부/경계 허용, 권한 000 파일도 EACCES가 아니라 크기로 거부 = stat만 봄; open 시 재확인; 읽기 중 누적 상한; CLI: compile/eval이 읽기·LLM 0회로 종료 1 + "Fix:" 출력; `mapConcurrent` 동시성·순서·실패 전파) [x] check 통과(23 files·357 tests)
 
 #### D4 — 파서 자원 격리 · 상태: TODO · 원본: SEC-011, AUD-014
 - 목표: DOCX 압축 해제 누적 바이트 상한(메타데이터가 아닌 실측), 타임아웃 시 결과 폐기 보장. worker/subprocess 격리는 착수 시 범위 결정(과하면 v0.2 대기열).

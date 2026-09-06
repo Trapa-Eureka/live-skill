@@ -19,6 +19,7 @@ import {
 } from "../core/index.js";
 import type { SourceFile } from "../core/pipeline.js";
 import type { SkillFile } from "../core/validator.js";
+import { describeInputFailure } from "./inputFailure.js";
 
 export interface EvalOptions {
   skillDir: string;
@@ -30,7 +31,7 @@ export interface EvalDeps {
   readSkillDir: (dir: string) => Promise<SkillFile[]>;
   readManifest: (dir: string) => Promise<Manifest>;
   collectInputFiles: (paths: readonly string[]) => Promise<string[]>;
-  readSourceFile: (path: string) => Promise<SourceFile>;
+  readSourceFiles: (paths: readonly string[]) => Promise<SourceFile[]>;
   extractors: readonly DocumentExtractor[];
   llm: LlmProvider;
   config: Config;
@@ -111,10 +112,9 @@ export async function runEval(opts: EvalOptions, deps: EvalDeps): Promise<number
   let sources: SourceFile[];
   try {
     const absolutePaths = await deps.collectInputFiles(opts.source);
-    sources = await Promise.all(absolutePaths.map((p) => deps.readSourceFile(p)));
+    sources = await deps.readSourceFiles(absolutePaths);
   } catch (e) {
-    const detail = e instanceof Error ? e.message : "unknown error";
-    deps.out(`--source 경로를 읽을 수 없습니다. 수정 방법: 경로를 확인하세요. (${detail})`);
+    deps.out(`--source: ${describeInputFailure(e)}`);
     return 1;
   }
   const sections = [];

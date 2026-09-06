@@ -1,5 +1,6 @@
 // T6 완료 기준: --force 없이 기존 스킬 디렉터리 덮어쓰기 거부 / --out 밖 쓰기 시도 없음 (실제 fs 사용).
 import {
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
@@ -16,13 +17,17 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AssembledFile, Manifest } from "../src/core/index.js";
 import {
   FsTargetError,
+  INPUT_LIMITS,
+  INPUT_READ_CONCURRENCY,
   collectInputFiles,
   readManifest,
   readSkillDir,
   readSourceFile,
+  readSourceFiles,
   resolveTargetDir,
   tempSkillDir,
   writeSkill,
+  type InputLimits,
 } from "../src/adapters/fsTargets.js";
 
 const manifest: Manifest = {
@@ -118,6 +123,102 @@ describe("readSourceFile", () => {
     const src = await readSourceFile(path);
     expect(src.path).toBe(path);
     expect(new TextDecoder().decode(src.bytes)).toBe("hello");
+  });
+
+  it("hands back a dedicated buffer without an extra copy (D3): the bytes own their whole ArrayBuffer", async () => {
+    const path = join(dir, "sample.txt");
+    await writeFile(path, "hello");
+    const src = await readSourceFile(path);
+    expect(src.bytes.byteOffset).toBe(0);
+    expect(src.bytes.buffer.byteLength).toBe(src.bytes.byteLength); // 풀 공유 슬라이스가 아니다
+  });
+});
+
+describe("input size limits (D3, 완료 기준) — 읽기 전 거부 + 수정 방법", () => {
+  const tiny: InputLimits = { maxFiles: 2, maxFileBytes: 5, maxTotalBytes: 8 };
+
+  it("ships with the DESIGN §6 D3 constants", () => {
+    expect(INPUT_LIMITS).toEqual({
+      maxFiles: 500,
+      maxFileBytes: 25 * 1024 * 1024,
+      maxTotalBytes: 100 * 1024 * 1024,
+    });
+    expect(INPUT_READ_CONCURRENCY).toBe(4);
+  });
+
+  it("collectInputFiles refuses a folder with more than maxFiles files, before opening any", async () => {
+    for (const name of ["a.md", "b.md", "c.md"]) await writeFile(join(dir, name), "x");
+    await expect(collectInputFiles([dir], tiny)).rejects.toMatchObject({ kind: "too_many_files" });
+    await expect(collectInputFiles([dir], tiny)).rejects.toThrow(/more than 2 files.*Fix:/u);
+  });
+
+  it("collectInputFiles refuses a single file over maxFileBytes, naming it", async () => {
+    await writeFile(join(dir, "ok.md"), "abc");
+    await writeFile(join(dir, "big.md"), "123456");
+    await expect(collectInputFiles([dir], tiny)).rejects.toMatchObject({ kind: "file_too_large" });
+    await expect(collectInputFiles([dir], tiny)).rejects.toThrow(
+      /big\.md.*over the per-file limit.*Fix:/u,
+    );
+  });
+
+  it("collectInputFiles refuses when the files together exceed maxTotalBytes even though each is small", async () => {
+    await writeFile(join(dir, "a.md"), "12345");
+    await writeFile(join(dir, "b.md"), "12345");
+    await expect(collectInputFiles([dir], tiny)).rejects.toMatchObject({ kind: "input_too_large" });
+    await expect(collectInputFiles([dir], tiny)).rejects.toThrow(/over the limit.*Fix:/u);
+  });
+
+  it("collectInputFiles accepts input exactly at the limits", async () => {
+    await writeFile(join(dir, "a.md"), "1234");
+    await writeFile(join(dir, "b.md"), "1234");
+    expect((await collectInputFiles([dir], tiny)).length).toBe(2);
+  });
+
+  it("the pre-read check is stat-only: an unreadable oversized file is refused as too large, not with EACCES", async () => {
+    if (process.getuid?.() === 0) return; // root는 권한 비트를 무시한다
+    const big = join(dir, "big.md");
+    await writeFile(big, "123456", { mode: 0o000 });
+    try {
+      await expect(collectInputFiles([dir], tiny)).rejects.toMatchObject({
+        kind: "file_too_large",
+      });
+    } finally {
+      await chmod(big, 0o600);
+    }
+  });
+
+  it("readSourceFile re-checks the per-file limit at open time (defence in depth)", async () => {
+    const path = join(dir, "big.md");
+    await writeFile(path, "123456");
+    await expect(readSourceFile(path, tiny)).rejects.toMatchObject({ kind: "file_too_large" });
+    expect(new TextDecoder().decode((await readSourceFile(join(dir, "big.md"))).bytes)).toBe(
+      "123456",
+    ); // 기본 상한으로는 물론 읽힌다
+  });
+
+  it("readSourceFiles enforces the running total while reading, keeps input order, and bounds concurrency", async () => {
+    await writeFile(join(dir, "a.md"), "12345");
+    await writeFile(join(dir, "b.md"), "12345");
+    const paths = [join(dir, "b.md"), join(dir, "a.md")];
+    await expect(readSourceFiles(paths, { limits: tiny })).rejects.toMatchObject({
+      kind: "input_too_large",
+    });
+
+    const roomy = { ...tiny, maxTotalBytes: 10 };
+    const read = await readSourceFiles(paths, { limits: roomy, concurrency: 1 });
+    expect(read.map((s) => s.path)).toEqual(paths);
+    await expect(
+      readSourceFiles([...paths, join(dir, "a.md")], { limits: roomy }),
+    ).rejects.toMatchObject({
+      kind: "too_many_files",
+    });
+  });
+
+  it("readSkillDir goes through the same limits", async () => {
+    await writeFile(join(dir, "SKILL.md"), "123456");
+    await expect(readSkillDir(dir)).resolves.toHaveLength(1); // 기본 상한 안
+    for (const name of ["a.md", "b.md", "c.md"]) await writeFile(join(dir, name), "x");
+    expect((await readSkillDir(dir)).length).toBe(4); // 기본 상한(500개)은 충분히 넓다
   });
 });
 

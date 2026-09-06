@@ -4,6 +4,8 @@
 // A2(DESIGN §6): 사용자가 직접 넘긴 루트(입력 경로·outDir)는 그대로 믿되 realpath로 고정하고, 그 아래에서는
 // 심볼릭 링크와 일반 파일이 아닌 항목을 거부한다. 파일은 O_NOFOLLOW로 열어 lstat 검사와 open 사이에
 // 링크로 바뀐 경우까지 막는다(중간 디렉터리 교체 경쟁은 A3의 staging 교체가 이어받는다).
+// D3(DESIGN §6): 입력은 읽기 전에 lstat 크기로 파일 수·파일별/총 바이트 상한을 검사해 거부하고, 읽을 때도
+// fstat 크기를 재확인해 정확히 그만큼만, 제한된 동시성으로 읽는다.
 import { homedir, tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
@@ -17,12 +19,14 @@ import {
   rename,
   rm,
   rmdir,
+  type FileHandle,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import {
   SLUG_MAX_LENGTH,
   SLUG_PATTERN,
   manifestSchema,
+  mapConcurrent,
   type AssembledFile,
   type Manifest,
 } from "../core/index.js";
@@ -30,7 +34,37 @@ import type { SourceFile } from "../core/pipeline.js";
 import type { SkillFile } from "../core/validator.js";
 
 export type FsTargetErrorKind =
-  "already_exists" | "escapes_out_dir" | "unsafe_slug" | "symlink_refused" | "not_regular_file";
+  | "already_exists"
+  | "escapes_out_dir"
+  | "unsafe_slug"
+  | "symlink_refused"
+  | "not_regular_file"
+  | "too_many_files"
+  | "file_too_large"
+  | "input_too_large";
+
+/** 입력 크기 상한(DESIGN §6 D3) — 토큰 상한보다 훨씬 넉넉한 메모리 폭탄 방지선. env가 아니라 상수다. */
+export interface InputLimits {
+  /** 입력 파일 최대 개수. */
+  maxFiles: number;
+  /** 파일 하나의 최대 바이트. */
+  maxFileBytes: number;
+  /** 입력 파일 바이트 합의 최대. */
+  maxTotalBytes: number;
+}
+
+const MIB = 1024 * 1024;
+export const INPUT_LIMITS: InputLimits = {
+  maxFiles: 500,
+  maxFileBytes: 25 * MIB,
+  maxTotalBytes: 100 * MIB,
+};
+/** 동시에 열어 읽는 입력 파일 수(D3). */
+export const INPUT_READ_CONCURRENCY = 4;
+
+function mib(bytes: number): string {
+  return `${String(Math.round((bytes / MIB) * 10) / 10)} MiB`;
+}
 
 export class FsTargetError extends Error {
   readonly kind: FsTargetErrorKind;
@@ -59,6 +93,27 @@ function notRegularFile(path: string): FsTargetError {
   return new FsTargetError(
     "not_regular_file",
     `refusing "${path}" — it is not a regular file or directory. Fix: remove it from the input, or point at a folder that contains only documents.`,
+  );
+}
+
+function tooManyFiles(max: number): FsTargetError {
+  return new FsTargetError(
+    "too_many_files",
+    `refusing the input — it has more than ${String(max)} files (stopped counting at ${String(max + 1)}). Fix: point at a smaller folder, or split the documents into several skills.`,
+  );
+}
+
+function fileTooLarge(path: string, size: number, max: number): FsTargetError {
+  return new FsTargetError(
+    "file_too_large",
+    `refusing "${path}" — it is ${mib(size)}, over the per-file limit of ${mib(max)}. Fix: remove it from the input, or split it into smaller documents.`,
+  );
+}
+
+function inputTooLarge(files: number, total: number, max: number): FsTargetError {
+  return new FsTargetError(
+    "input_too_large",
+    `refusing the input — the first ${String(files)} files already total ${mib(total)}, over the limit of ${mib(max)}. Fix: point at a smaller folder, or split the documents into several skills.`,
   );
 }
 
@@ -124,11 +179,30 @@ async function openNoFollow(path: string, flags: number) {
   }
 }
 
-async function readFileNoFollow(path: string): Promise<Buffer> {
+/** fstat 시점 크기만큼만 읽는다 — 그 사이 파일이 자라도 읽는 양은 size를 넘지 않는다(줄었으면 읽힌 만큼만).
+ * Buffer.alloc은 전용 ArrayBuffer를 쓰므로(풀 공유 없음) 호출자가 복사 없이 Uint8Array로 그대로 쓴다. */
+async function readExactly(handle: FileHandle, size: number): Promise<Buffer> {
+  const buf = Buffer.alloc(size);
+  let offset = 0;
+  while (offset < size) {
+    const { bytesRead } = await handle.read(buf, offset, size - offset, offset);
+    if (bytesRead === 0) break;
+    offset += bytesRead;
+  }
+  return offset === size ? buf : buf.subarray(0, offset);
+}
+
+/** no-follow로 열어(A2) 정규 파일인지·크기 상한 안인지 fstat으로 확인한 뒤(D3) 딱 그만큼 읽는다. */
+async function readFileNoFollow(
+  path: string,
+  maxBytes: number = INPUT_LIMITS.maxFileBytes,
+): Promise<Buffer> {
   const handle = await openNoFollow(path, constants.O_RDONLY);
   try {
-    if (!(await handle.stat()).isFile()) throw notRegularFile(path);
-    return await handle.readFile();
+    const info = await handle.stat();
+    if (!info.isFile()) throw notRegularFile(path);
+    if (info.size > maxBytes) throw fileTooLarge(path, info.size, maxBytes);
+    return await readExactly(handle, info.size);
   } finally {
     await handle.close();
   }
@@ -260,20 +334,54 @@ export async function writeSkill(
   }
 }
 
-/** 소스 파일 하나를 디스크에서 읽어 core/pipeline.ts가 받는 SourceFile 형태로 만든다. 링크는 거부한다(A2) —
- * collectInputFiles가 돌려준 실제 경로를 그대로 넘기면 된다. */
-export async function readSourceFile(path: string): Promise<SourceFile> {
-  const bytes = await readFileNoFollow(path);
-  return { path, bytes: new Uint8Array(bytes) };
+/** 소스 파일 하나를 디스크에서 읽어 core/pipeline.ts가 받는 SourceFile 형태로 만든다. 링크는 거부한다(A2),
+ * 파일별 상한을 넘으면 거부한다(D3) — collectInputFiles가 돌려준 실제 경로를 그대로 넘기면 된다.
+ * 돌려주는 Buffer는 Uint8Array라 복사 없이 그대로 넣는다. */
+export async function readSourceFile(
+  path: string,
+  limits: InputLimits = INPUT_LIMITS,
+): Promise<SourceFile> {
+  const bytes = await readFileNoFollow(path, limits.maxFileBytes);
+  return { path, bytes };
+}
+
+export interface ReadSourceFilesOptions {
+  limits?: InputLimits;
+  concurrency?: number;
+}
+
+/** 여러 소스 파일을 제한된 동시성으로 읽는다(D3). collectInputFiles가 lstat으로 이미 거른 뒤라도 그 사이
+ * 파일이 바뀌었을 수 있으니 개수·파일별·누적 바이트를 실제 읽은 양으로 다시 강제한다. 결과는 입력 순서. */
+export async function readSourceFiles(
+  paths: readonly string[],
+  opts: ReadSourceFilesOptions = {},
+): Promise<SourceFile[]> {
+  const limits = opts.limits ?? INPUT_LIMITS;
+  if (paths.length > limits.maxFiles) throw tooManyFiles(limits.maxFiles);
+  let total = 0;
+  let read = 0;
+  return mapConcurrent(paths, opts.concurrency ?? INPUT_READ_CONCURRENCY, async (path) => {
+    const src = await readSourceFile(path, limits);
+    total += src.bytes.byteLength;
+    read += 1;
+    if (total > limits.maxTotalBytes) throw inputTooLarge(read, total, limits.maxTotalBytes);
+    return src;
+  });
 }
 
 const IGNORED_DIRS = new Set([".git", "node_modules"]);
 
 /** 파일이면 그대로, 폴더면 재귀적으로 안의 모든 파일 경로를 모은다(DESIGN §6 T8 — 셸 글롭은 셸이 편다).
  * A2: 사용자가 넘긴 각 경로는 그대로 믿고(링크여도 됨) realpath로 고정한다. 그 아래에서는 링크·비정규
- * 파일을 거부하므로 링크 순환도 생길 수 없다. 돌려주는 경로는 전부 실제 경로다. */
-export async function collectInputFiles(paths: readonly string[]): Promise<string[]> {
+ * 파일을 거부하므로 링크 순환도 생길 수 없다. 돌려주는 경로는 전부 실제 경로다.
+ * D3: 걷는 동안 lstat 크기로 파일 수·파일별·누적 바이트를 세고, 상한을 넘는 순간 멈춘다 — 파일은 하나도
+ * 열지 않는다(읽기 전 거부). */
+export async function collectInputFiles(
+  paths: readonly string[],
+  limits: InputLimits = INPUT_LIMITS,
+): Promise<string[]> {
   const out: string[] = [];
+  let total = 0;
   async function walk(p: string, root: string): Promise<void> {
     const info = await lstat(p);
     if (info.isSymbolicLink()) throw symlinkRefused(p, root);
@@ -286,6 +394,11 @@ export async function collectInputFiles(paths: readonly string[]): Promise<strin
       return;
     }
     if (!info.isFile()) throw notRegularFile(p);
+    if (out.length >= limits.maxFiles) throw tooManyFiles(limits.maxFiles);
+    if (info.size > limits.maxFileBytes) throw fileTooLarge(p, info.size, limits.maxFileBytes);
+    total += info.size;
+    if (total > limits.maxTotalBytes)
+      throw inputTooLarge(out.length + 1, total, limits.maxTotalBytes);
     out.push(p);
   }
   for (const p of paths) {
