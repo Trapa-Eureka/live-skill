@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/core/config.js";
 import type { ExtractedDoc, SkillPlan } from "../src/core/index.js";
 import { compile, MAX_INPUT_TOKENS } from "../src/core/pipeline.js";
+import { trackCost } from "../src/core/costTracker.js";
 import { createExtractors } from "../src/adapters/extractors/index.js";
 import { FixtureExtractor, syntheticDoc } from "../src/mocks/fixtureExtractor.js";
 import { script } from "../src/mocks/scriptedLlm.js";
@@ -210,7 +211,7 @@ describe("compile — MAX_LLM_CALLS cap (TESTING §4, 비용 누수 가드)", ()
   });
 
   it("counts the gate's own upper-bound cost when gate runs (default), aborting before any distill or gate call", async () => {
-    // outline(1) + 챕터 2개(distill) + 게이트 상한선(섹션 2개 * (1+3*3)=20, DESIGN §4 T7 산식) = 23 > 10
+    // outline(1) + 챕터 2개(distill) + 게이트 상한선(섹션 2개 * (2+3*3)=22, DESIGN §4 D1 정정 산식) = 25 > 10
     const tightConfig = loadConfig({ MAX_LLM_CALLS: "10" });
     const extractor = new FixtureExtractor({ md: twoSectionDoc });
     const llm = script().outline(twoChapterPlan).build();
@@ -223,9 +224,54 @@ describe("compile — MAX_LLM_CALLS cap (TESTING §4, 비용 누수 가드)", ()
     });
     expect(result).toMatchObject({
       ok: false,
-      error: { kind: "call_cap_exceeded", estimated: 23, limit: 10 },
+      error: { kind: "call_cap_exceeded", stage: "preflight", estimated: 25, limit: 10 },
     });
     expect(llm.calls.filter((c) => c.role !== "outline")).toEqual([]);
+  });
+
+  it("enforces the cap during the run too: a cap tripped mid-run becomes call_cap_exceeded(runtime), nothing is returned (D1)", async () => {
+    // 사전 추정은 통과시키되(상한 300) 주입한 LlmProvider 자체가 2회에서 막히게 해 실행 중 경로를 밟는다 —
+    // 산식이 맞는 한 파이프라인의 자체 상한은 밟히지 않으므로, 어떤 상한이든 실행 중에 터졌을 때의 처리를 본다.
+    const extractor = new FixtureExtractor({ md: twoSectionDoc });
+    const inner = script()
+      .outline(twoChapterPlan)
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .distill("b", "Check the fault LED. [§b]") // 3번째 호출 — 상한 2에 막혀 대본에 닿지 않는다
+      .build();
+    const capped = trackCost(inner, { maxCalls: 2 });
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm: capped.llm,
+      clock,
+      config,
+      gate: "skip",
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { kind: "call_cap_exceeded", stage: "runtime", estimated: 2, limit: 2 },
+    });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toContain("stopped mid-run");
+    expect(inner.calls).toHaveLength(2); // outline + distill 1개까지만 실제로 나갔다
+  });
+
+  it("reports the actual number of LLM calls made (CompileResult.llmCalls)", async () => {
+    const extractor = new FixtureExtractor({ md: twoSectionDoc });
+    const llm = script()
+      .outline(twoChapterPlan)
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .distill("b", "Check the fault LED. [§b]")
+      .build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config,
+      gate: "skip",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.value.llmCalls).toBe(3);
   });
 });
 

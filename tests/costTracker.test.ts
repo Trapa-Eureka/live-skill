@@ -21,6 +21,26 @@ describe("trackCost", () => {
     llm.assertExhausted();
   });
 
+  it("maxCalls를 넘기는 호출은 감싸인 provider에 닿기 전에 LlmCallCapError로 막는다 (D1)", async () => {
+    const llm = script()
+      .outline({ slug: "a", title: "A", chapters: [] })
+      .outline({ slug: "b", title: "B", chapters: [] })
+      .build(); // 3번째 대본은 없다 — 상한이 막지 못하면 exhausted로 실패한다
+    const tracked = trackCost(llm, { maxCalls: 2 });
+    const req = { system: "[live-skill:outline] tag", prompt: "p", maxTokens: 10 };
+
+    await tracked.llm.complete(req);
+    await tracked.llm.complete(req);
+    await expect(tracked.llm.complete(req)).rejects.toMatchObject({
+      name: "LlmCallCapError",
+      calls: 2,
+      limit: 2,
+    });
+    await expect(tracked.llm.complete(req)).rejects.toThrow(/MAX_LLM_CALLS=2/u);
+    expect(tracked.summary().calls).toBe(2); // 막힌 호출은 세지 않는다
+    llm.assertExhausted();
+  });
+
   it("여러 번 호출하면 누적된다", async () => {
     const llm = script()
       .outline({ slug: "a", title: "A", chapters: [] })

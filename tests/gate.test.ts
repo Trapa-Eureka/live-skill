@@ -11,6 +11,7 @@ import {
   type GateChapter,
 } from "../src/core/gate.js";
 import type { GoldenQA, Section } from "../src/core/index.js";
+import { trackCost } from "../src/core/costTracker.js";
 import { script } from "../src/mocks/scriptedLlm.js";
 
 const sectionA: Section = {
@@ -614,7 +615,58 @@ describe("evaluateGoldenQa — threshold floor and zero questions (B4, SEC-007·
 });
 
 describe("estimateGateCalls", () => {
-  it("computes sections*(1 + 3k) as the upper-bound call estimate (DESIGN §4 T7 결정)", () => {
-    expect(estimateGateCalls(5, 3)).toBe(5 * (1 + 3 * 3));
+  it("computes sections*(2 + 3k) — one qaGen retry per section is part of the bound (DESIGN §4 D1 정정)", () => {
+    expect(estimateGateCalls(5, 3)).toBe(5 * (2 + 3 * 3));
+  });
+
+  it("is a true upper bound: a gate where every section needs the qaGen retry never exceeds it", async () => {
+    // 섹션 2개, k=1: 각 섹션 qaGen 2회(1차 실패 → 재생성) + 문항 2개 × 3 = 4 + 6 = 10 = estimateGateCalls(2, 1)
+    const llm = script()
+      .qaRaw("{bad")
+      .qa([
+        { question: "How much current?", refAnswer: "500 mA", anchorQuote: "500 mA of current" },
+      ])
+      .qaRaw("{bad")
+      .qa([{ question: "LED?", refAnswer: "blinks red", anchorQuote: "blinks red" }])
+      .selectChapter("chapters/ch01-installation.md")
+      .answer("500 mA")
+      .grade("correct")
+      .selectChapter("chapters/ch02-troubleshooting.md")
+      .answer("blinks red")
+      .grade("correct")
+      .build();
+    await runGate(
+      { files: [skillMd, chapter1, chapter2], chapters, sections: [sectionA, sectionB] },
+      { llm, k: 1 },
+    );
+    expect(llm.calls).toHaveLength(estimateGateCalls(2, 1));
+    llm.assertExhausted();
+  });
+});
+
+describe("runGate under a call cap (D1, 완료 기준: 상한 6에 7번째 호출 차단)", () => {
+  it("throws LlmCallCapError before the 7th call and never reaches the underlying provider for it", async () => {
+    const inner = script()
+      .qa([
+        { question: "How much current?", refAnswer: "500 mA", anchorQuote: "500 mA of current" },
+      ])
+      .qa([{ question: "LED?", refAnswer: "blinks red", anchorQuote: "blinks red" }])
+      .selectChapter("chapters/ch01-installation.md")
+      .answer("500 mA")
+      .grade("correct")
+      .selectChapter("chapters/ch02-troubleshooting.md")
+      // 7번째 호출(answer)부터는 대본을 아예 주지 않는다 — 상한이 막지 못했다면 exhausted로 실패했을 것이다
+      .build();
+    const capped = trackCost(inner, { maxCalls: 6 });
+
+    await expect(
+      runGate(
+        { files: [skillMd, chapter1, chapter2], chapters, sections: [sectionA, sectionB] },
+        { llm: capped.llm, k: 1 },
+      ),
+    ).rejects.toMatchObject({ name: "LlmCallCapError", calls: 6, limit: 6 });
+    expect(capped.summary().calls).toBe(6);
+    expect(inner.calls).toHaveLength(6);
+    inner.assertExhausted();
   });
 });

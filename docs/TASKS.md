@@ -136,9 +136,10 @@
 
 ### D. 비용·자원 상한 — Medium
 
-#### D1 — 비용 상한 실행 중 강제 · 상태: TODO · 원본: 001-007, SEC-008, AUD-009
+#### D1 — 비용 상한 실행 중 강제 · 상태: DONE(2026-09-07) · 원본: 001-007, SEC-008, AUD-009
 - 목표: 추정식에 qaGen 재생성 포함(`sections × 2`). `core/costTracker.ts`를 확장해 상한 직전 호출에서 중단하는 예산 래퍼를 만들고 compile이 사용 → `call_cap_exceeded`. DESIGN §4 산식 갱신.
-- 완료 기준: [ ] DESIGN §4 갱신 [ ] 상한 6에 7번째 호출 차단 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #27): `estimateGateCalls`를 `sections × 2 + sections × k × 3`으로 정정(재생성 1회 포함 — 모든 섹션이 재생성을 타는 게이트가 정확히 이 수에 닿음을 테스트로 확인). `trackCost(llm, { maxCalls })`가 상한을 넘기는 호출을 provider에 닿기 전에 `LlmCallCapError`로 막고, `compile()`이 outline·distill·게이트 전부를 이 래퍼로만 불러 실행 중 상한을 강제 — 터지면 `call_cap_exceeded`(`stage: "runtime"`, 실측 호출 수)로 반환, 사전 추정 실패는 `stage: "preflight"`. `CompileResult.llmCalls`(실측)를 CLI가 "LLM 호출 N회"로 출력. DESIGN §4·§5.1·§7 갱신. eval·smoke 적용은 D2.
+- 완료 기준: [x] DESIGN §4 갱신 [x] 상한 6에 7번째 호출 차단 테스트(runGate 8회 필요 게이트를 상한 6 래퍼로 → 7번째에서 `LlmCallCapError`, provider 도달 6회; 래퍼 단위 테스트; 파이프라인 실행 중 경로 → `runtime` 오류) [x] check 통과(22 files·332 tests)
 
 #### D2 — eval 경로 상한 검사 · 상태: TODO · 원본: SEC-008, AUD-009 · 의존: D1
 - 목표: eval 재사용/`--source` 경로 모두 D1 래퍼 적용 + `manifest.goldenQa` 개수·문자열 길이 상한.
