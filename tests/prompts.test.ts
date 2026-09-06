@@ -107,14 +107,31 @@ describe("gradePrompt / parseGradeVerdict (보수 채점)", () => {
     expect(system).toMatch(/불확실/u);
   });
 
-  it("parses a bare CORRECT as correct", () => {
+  it("parses a bare CORRECT as correct, tolerating only trivial decoration", () => {
     expect(parseGradeVerdict("CORRECT")).toBe("correct");
     expect(parseGradeVerdict("correct.")).toBe("correct");
+    expect(parseGradeVerdict("  Correct\n")).toBe("correct");
+    expect(parseGradeVerdict("**CORRECT**")).toBe("correct");
+    expect(parseGradeVerdict('"CORRECT"')).toBe("correct");
   });
 
   it("treats anything else — including empty or off-format text — as wrong", () => {
     expect(parseGradeVerdict("WRONG")).toBe("wrong");
     expect(parseGradeVerdict("I'm not sure, maybe correct?")).toBe("wrong");
     expect(parseGradeVerdict("")).toBe("wrong");
+  });
+
+  // B5 (SEC-010·AUD-013, 완료 기준): 접두사만 보던 시절엔 아래가 전부 "correct"였다.
+  it.each([
+    "CORRECT? No, WRONG.",
+    "CORRECT WRONG",
+    "CORRECT because the answer matches the anchor.",
+    "Correct, but the second half contradicts the source, so WRONG",
+    "CORRECTLY answered? No.",
+    "INCORRECT",
+    "Not CORRECT",
+    "CORRECT\n\nExplanation: ...",
+  ])("grades %j as wrong — the whole response must be the single word CORRECT", (raw) => {
+    expect(parseGradeVerdict(raw)).toBe("wrong");
   });
 });
