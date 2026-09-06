@@ -102,9 +102,10 @@
 - 완료(2026-09-07, PR #20): `core/outlineCoverage.ts` 신설 — `isSubstantiveSection`(본문 `trim() !== ""`)으로 파이프라인이 모집단을 먼저 확정해 outline에 그것만 보여주고, 파싱 직후 `checkOutlineCoverage`가 누락·미지 id·섹션 중복 배정·chapter id 중복 네 가지를 한 번에 모아 `outline_invalid`(detail 포함)로 끝낸다 — distill·게이트 비용 전. `normalizeText`가 HTML 주석(`<!-- … -->`)을 지워 주석만 있던 선두 "유령 섹션"이 모집단에 끼지 않는다(자체 제작 픽스처의 가드레일 4 주석). e2e 대본은 갱신 없이 정책과 일치했고, smoke 미달 대본은 일부 섹션만 넣던 것을 4섹션 전부로 고쳐 마지막 문항 오답(3/4=75%)으로 미달을 만들도록 바꿈.
 - 완료 기준: [x] DESIGN §5.1 정책 갱신 [x] 누락·중복·미지 ID 각각 거부 테스트(+chapter id 중복, 컨테이너 섹션 미제공/참조 시 거부; 단위 7종 + pipeline 6종) [x] 기존 e2e·pipeline 대본을 정책에 맞게 갱신(smoke 미달 대본·주석 제거 테스트) [x] check 통과(22 files·248 tests)
 
-#### B2 — qaGen 실패 커버리지 · 상태: TODO · 원본: SEC-005, AUD-005
+#### B2 — qaGen 실패 커버리지 · 상태: DONE(2026-09-07) · 원본: SEC-005, AUD-005
 - 목표: 재생성으로도 유효 QA를 못 만든 섹션을 분모에서 빼지 않고 `qa_generation_failed` 실패 사유로 기록, 섹션 커버리지 미달이면 verified 배포 금지. DESIGN §4의 "문항 제외" 정책과 TESTING §3을 함께 수정.
-- 완료 기준: [ ] DESIGN §4·TESTING §3 정책 갱신 [ ] 두 챕터 중 하나 qaGen 2회 실패 → `passed=false` + 실패 목록 기록 테스트 [ ] 판별력 테스트 5종 유지 [ ] check 통과
+- 완료(2026-09-07, PR #21): 정책을 "제외"에서 "미검증"으로 — `GateReport.coverage[{sectionId, requested, generated}]`를 추가하고 `evaluateGoldenQa`가 모집단(챕터별 sectionIds)마다 유효 문항 수를 세어, `generated === 0`인 섹션은 `failures`에 `{ qaId: "<sectionId>-q0", reason: "qa_generation_failed" }`로 올리고 `passed`의 별도 필요조건으로 삼는다(passRate는 여전히 실제로 물은 문항 기준 — 못 만든 문항을 오답으로 꾸미지 않음). `eval` 재사용 경로도 같은 함수를 타므로 manifest에서 QA가 빠진 섹션은 통과 불가(`requested`는 그때의 `config.qaPerSection`). `report` 출력에 "미검증 섹션"·"문항 부족" 절 추가. `generateGoldenQa`의 계약(0..k, 재생성 1회)은 그대로.
+- 완료 기준: [x] DESIGN §2·§4·TESTING §3·§4 정책 갱신 [x] 두 챕터 중 하나 qaGen 2회 실패 → `passed=false` + 실패 목록 기록 테스트(+ 부족분만 있으면 통과, eval 재사용 경로에서 QA 없는 섹션 거부) [x] 판별력 테스트 5종 유지(6종째로 추가) [x] check 통과(22 files·253 tests)
 
 #### B3 — manifest 챕터 허용 목록 · 상태: TODO · 원본: SEC-006, AUD-006
 - 목표: `manifest.sections[].chapterFile`을 `chapters/*.md` 패턴으로 스키마 제한. gate 로더는 `chapters/` 아래 일반 파일만 로드하고 `manifest.json`·기타 파일은 answerer 컨텍스트에서 원천 제외. `readSkillDir` 결과와 `outputs` 상호 대조.

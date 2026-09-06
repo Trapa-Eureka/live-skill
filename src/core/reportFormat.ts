@@ -12,6 +12,19 @@ export function formatGateReport(report: GateReport): string {
   for (const c of report.perChapter) {
     lines.push(`  - ${c.file}: ${String(c.correct)}/${String(c.asked)} 정답`);
   }
+  // B2: 문항을 하나도 못 만든 섹션은 미검증 — 통과율과 무관하게 통과 불가. 부족분은 참고 정보.
+  const uncovered = report.coverage.filter((c) => c.generated === 0);
+  if (uncovered.length > 0) {
+    lines.push("", "미검증 섹션(문항 생성 실패 — 통과 불가):");
+    for (const c of uncovered) lines.push(`  - ${c.sectionId}`);
+  }
+  const short = report.coverage.filter((c) => c.generated > 0 && c.generated < c.requested);
+  if (short.length > 0) {
+    lines.push("", "문항 부족(생성/요청):");
+    for (const c of short) {
+      lines.push(`  - ${c.sectionId}: ${String(c.generated)}/${String(c.requested)}`);
+    }
+  }
   if (report.failures.length > 0) {
     lines.push("", "실패 문항:");
     for (const f of report.failures) lines.push(`  - ${f.qaId}: ${f.reason}`);

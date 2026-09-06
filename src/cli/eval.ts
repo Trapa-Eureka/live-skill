@@ -48,7 +48,7 @@ export async function runEval(opts: EvalOptions, deps: EvalDeps): Promise<number
     // 재사용 경로 — 원문 없이, qaGen도 없이 manifest의 QA를 그대로 다시 채점한다.
     const report = await evaluateGoldenQa(
       manifest.goldenQa,
-      { files, chapters },
+      { files, chapters, qaPerSection: deps.config.qaPerSection },
       deps.llm,
       deps.config.gateThreshold,
     );

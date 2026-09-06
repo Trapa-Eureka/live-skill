@@ -81,12 +81,44 @@ describe("runReport", () => {
         perChapter: [],
         failures: [],
         loadHistory: [],
+        coverage: [],
       },
       goldenQa: [],
     };
     const deps: ReportDeps = { out: captured.out, readManifest: () => Promise.resolve(manifest) };
     expect(await runReport(undefined, deps)).toBe(0);
     expect(captured.all.join("\n")).toContain("FAILED");
+  });
+
+  it("lists unverified sections (qa_generation_failed) and shortfalls in the printed report (B2)", async () => {
+    const captured = lines();
+    const manifest: Manifest = {
+      version: 1,
+      createdAt: "t",
+      sourceFiles: [],
+      sections: [],
+      outputs: [],
+      gate: {
+        passRate: 1,
+        threshold: 0.9,
+        passed: false,
+        perChapter: [{ file: "chapters/ch01-a.md", asked: 1, correct: 1 }],
+        failures: [{ qaId: "b-q0", reason: "qa_generation_failed" }],
+        loadHistory: [],
+        coverage: [
+          { sectionId: "a", requested: 3, generated: 1 },
+          { sectionId: "b", requested: 3, generated: 0 },
+        ],
+      },
+      goldenQa: [],
+    };
+    await runReport("dir", { out: captured.out, readManifest: () => Promise.resolve(manifest) });
+    const text = captured.all.join("\n");
+    expect(text).toContain("FAILED");
+    expect(text).toContain("미검증 섹션");
+    expect(text).toContain("  - b");
+    expect(text).toContain("a: 1/3");
+    expect(text).toContain("b-q0: qa_generation_failed");
   });
 
   it("prints the skipped-gate message when the gate was skipped", async () => {
@@ -157,6 +189,7 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
       perChapter: [],
       failures: [],
       loadHistory: [],
+      coverage: [],
     },
     goldenQa,
   };

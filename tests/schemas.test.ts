@@ -114,6 +114,7 @@ describe("gateReportSchema", () => {
         loadedFiles: ["chapters/ch01-installation.md"],
       },
     ],
+    coverage: [{ sectionId: "installation", requested: 3, generated: 3 }],
   };
 
   it("round-trips a valid GateReport", () => {
@@ -154,11 +155,27 @@ describe("manifestSchema", () => {
         threshold: 0.9,
         passed: true,
         perChapter: [],
+        failures: [{ qaId: "b-q0", reason: "qa_generation_failed" }],
+        loadHistory: [],
+        coverage: [{ sectionId: "b", requested: 3, generated: 0 }],
+      },
+    };
+    expect(manifestSchema.parse(withGate)).toEqual(withGate);
+  });
+
+  it("rejects a GateReport without the coverage field (B2 schema)", () => {
+    const missingCoverage = {
+      ...valid,
+      gate: {
+        passRate: 1,
+        threshold: 0.9,
+        passed: true,
+        perChapter: [],
         failures: [],
         loadHistory: [],
       },
     };
-    expect(manifestSchema.parse(withGate)).toEqual(withGate);
+    expect(() => manifestSchema.parse(missingCoverage)).toThrow();
   });
 
   it("rejects a sha256 of the wrong length", () => {
