@@ -149,6 +149,8 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 - **`eval`의 재사용 경로**: `--source` 없이 호출하면 `manifest.goldenQa`(§2 갱신)를 그대로 재사용해 `core/gate.ts`의 `evaluateGoldenQa()`(qaGen 생략, chapter 선택→앵커 확인→답변→채점만)를 돌린다 — 원문도 추출기도 필요 없다. `--source`가 있으면 그 경로를 재추출해 섹션을 얻고(섹션 id 안정성 덕분에 manifest의 챕터별 sectionIds와 다시 맞출 수 있다, §5), `runGate()`로 qaGen부터 새로 한다. 두 경로 다 manifest를 덮어쓰지 않는다 — `eval`은 읽기 전용 진단이다.
 - **`validate`/`report`/`eval`(재사용 경로)는 LLM 0회 또는 0~섹션 단위 최소 호출**: `validate`는 완전히 LLM 없이 동작(완료 기준). `eval` 재사용 경로도 qaGen을 생략하니 게이트 전체보다 호출이 훨씬 적다.
 
+**T9 결정(2026-09-06) — e2e-mock의 범위**: `tests/pipeline.test.ts`(T6)는 이미 "실 추출기 + core `compile()` + ScriptedLlm" 조합을 검증하지만 CLI·실 파일시스템은 거치지 않는다. T9는 그 위 계층 — `run<Command>()`와 `adapters/fsTargets.ts`의 실제 함수(`collectInputFiles`/`readSourceFile`/`writeSkill`/`readSkillDir`/`readManifest`/`resolveTargetDir`/`tempSkillDir`)를 그대로 연결해 SPEC §5 시나리오 1·2를 재현한다("mock"은 LLM 하나뿐 — 가드레일 3). 자체 제작 픽스처 3종을 새로 추가했다: `fixtures/docs/e2e-scenario1-manual.md`(1개 파일, 3섹션 2챕터, 전 문항 정답 → 게이트 통과 → `--out`으로 지정한 스크래치 디렉터리에 실제로 쓰고 그 디렉터리를 다시 `validate`/`report`로 실제로 읽어 검증), `e2e-scenario2-sop-{a,b}.md`(2개 파일 폴더, 각 1섹션 1챕터 → 한 챕터는 정답, 다른 챕터는 grader가 의도적으로 WRONG 처리 → 게이트 미달 → 실 `tempSkillDir()`에 보존된 산출물을 다시 읽어 `perChapter`가 정확히 그 챕터를 약한 챕터로 지목하는지 확인). 두 시나리오 모두 QA 앵커 문구를 실제 원문 텍스트와 스크립트한 distill 본문 양쪽에 그대로 포함시켜 "게이트가 원문에 실재하는 인용만 인정한다"는 가정과 어긋나지 않게 했다.
+
 ## 7. 환경변수·설정 (.env.example로 커밋)
 
 ```
