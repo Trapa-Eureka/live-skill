@@ -247,8 +247,7 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
       clock,
       config: loadConfig({ QA_PER_SECTION: "1" }),
       resolveTargetDir: (target, slug) => `/target/${target}/${slug}`,
-      tempSkillDir: (slug, ts) => `/tmp/live-skill-${slug}-${ts}`,
-      timestamp: () => "2026-09-06T00-00-00",
+      tempSkillDir: (slug) => Promise.resolve(`/tmp/live-skill-${slug}-abc123`),
       writeSkill: () => Promise.resolve(),
       ...overrides,
     };
@@ -281,7 +280,7 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     expect(captured.all.join("\n")).toContain("컴파일 완료");
   });
 
-  it("gate fails: writes to a temp dir with force, exit 1 (완료 기준: 임시 디렉터리 보존)", async () => {
+  it("gate fails: writes to a fresh temp dir with the user's --force only, exit 1 (완료 기준: 임시 디렉터리 보존)", async () => {
     const captured = lines();
     const writes: { dir: string; force: boolean | undefined }[] = [];
     const llm = script()
@@ -304,8 +303,35 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
       }),
     );
     expect(code).toBe(1);
-    expect(writes).toEqual([{ dir: "/tmp/live-skill-manual-2026-09-06T00-00-00", force: true }]);
+    // A1: 임시 디렉터리는 mkdtemp가 새로 만든 빈 디렉터리라 force 특례가 사라졌다 — 사용자가 준 값(false)만 전달.
+    expect(writes).toEqual([{ dir: "/tmp/live-skill-manual-abc123", force: false }]);
     expect(captured.all.join("\n")).toContain("임시 디렉터리");
+  });
+
+  it("returns 1 with the adapter's message when target-dir resolution rejects the slug (A1)", async () => {
+    const captured = lines();
+    const writes: string[] = [];
+    const llm = script()
+      .outline(plan)
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .build();
+    const code = await runCompile(
+      { paths: ["manual.md"], target: "claude", noGate: true, force: false },
+      baseDeps({
+        out: captured.out,
+        llm,
+        resolveTargetDir: () => {
+          throw new Error("refusing slug — unsafe");
+        },
+        writeSkill: (dir) => {
+          writes.push(dir);
+          return Promise.resolve();
+        },
+      }),
+    );
+    expect(code).toBe(1);
+    expect(writes).toEqual([]); // 경로를 못 정하면 아무것도 쓰지 않는다
+    expect(captured.all.join("\n")).toContain("unsafe");
   });
 
   it("--no-gate skips the gate entirely: manifest.gate skipped, writes with the given --force", async () => {

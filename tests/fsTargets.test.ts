@@ -167,10 +167,39 @@ describe("resolveTargetDir / tempSkillDir (DESIGN §6 T8)", () => {
     expect(resolveTargetDir("agents", "my-skill")).toContain(join(".agents", "skills", "my-skill"));
   });
 
-  it("builds a unique temp dir per slug+timestamp under the OS temp root", () => {
-    const a = tempSkillDir("my-skill", "2026-09-06T00-00-00");
-    const b = tempSkillDir("my-skill", "2026-09-06T00-00-01");
-    expect(a).toContain("my-skill");
-    expect(a).not.toBe(b);
+  it("creates a fresh, empty, unique temp dir under the OS temp root (mkdtemp)", async () => {
+    const a = await tempSkillDir("my-skill");
+    const b = await tempSkillDir("my-skill");
+    try {
+      expect(a).toContain("live-skill-my-skill-");
+      expect(a).not.toBe(b);
+      expect(await readdir(a)).toEqual([]); // 비어 있으니 force 없이 바로 쓸 수 있다
+      expect(join(a, "..")).toBe(join(tmpdir(), "."));
+    } finally {
+      await rm(a, { recursive: true, force: true });
+      await rm(b, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("resolveTargetDir / tempSkillDir — slug 경로 탈출 차단 (A1, 완료 기준)", () => {
+  const unsafe = ["../../outside", "a/b", "..", ".", "/abs", "Manual", "a b", "a".repeat(65)];
+
+  it.each(unsafe)("resolveTargetDir refuses unsafe slug %j without touching the fs", (slug) => {
+    expect(() => resolveTargetDir("claude", slug)).toThrow(FsTargetError);
+    expect(() => resolveTargetDir("claude", slug)).toThrow(/unsafe_slug|refusing slug/u);
+  });
+
+  it.each(unsafe)("tempSkillDir refuses unsafe slug %j and creates nothing", async (slug) => {
+    const before = (await readdir(tmpdir())).filter((n) => n.startsWith("live-skill-")).length;
+    await expect(tempSkillDir(slug)).rejects.toMatchObject({ kind: "unsafe_slug" });
+    const after = (await readdir(tmpdir())).filter((n) => n.startsWith("live-skill-")).length;
+    expect(after).toBe(before);
+  });
+
+  it("a valid slug resolves to a direct child of the skills root, never above it", () => {
+    const dir = resolveTargetDir("claude", "my-skill");
+    const root = join(dir, "..");
+    expect(root.endsWith(join(".claude", "skills"))).toBe(true);
   });
 });

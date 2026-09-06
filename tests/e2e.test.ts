@@ -50,7 +50,6 @@ function realDeps(overrides: Partial<CompileDeps> & Pick<CompileDeps, "llm">): C
     config: loadConfig({ QA_PER_SECTION: "1" }),
     resolveTargetDir,
     tempSkillDir,
-    timestamp: () => new Date().toISOString().replace(/[:.]/gu, "-"),
     writeSkill,
     ...overrides,
   };

@@ -11,9 +11,18 @@ export const chapterPlanSchema = z.object({
   sectionIds: z.array(z.string().min(1)).min(1),
 });
 
+/** slug 형식 — 소문자·숫자·하이픈 단일 경로 구성요소(DESIGN §2, A1). `/`·`.`·`..`·절대 경로가 여기서 걸러진다.
+ * Agent Skills 표준의 name 규칙(소문자·숫자·하이픈, 64자 이하)과 같다. */
+export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+export const SLUG_MAX_LENGTH = 64;
+export const slugSchema = z
+  .string()
+  .max(SLUG_MAX_LENGTH)
+  .regex(SLUG_PATTERN, "slug must be lowercase letters, digits and single hyphens only");
+
 /** SkillPlan — outline 단계 LLM 응답. */
 export const skillPlanSchema = z.object({
-  slug: z.string().min(1),
+  slug: slugSchema,
   title: z.string().min(1),
   chapters: z.array(chapterPlanSchema).min(1),
 });

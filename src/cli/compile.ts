@@ -30,8 +30,8 @@ export interface CompileDeps {
   clock: Clock;
   config: Config;
   resolveTargetDir: (target: "claude" | "agents", slug: string) => string;
-  tempSkillDir: (slug: string, timestamp: string) => string;
-  timestamp: () => string;
+  /** 새로 만든 빈 임시 디렉터리를 돌려준다(mkdtemp) — DESIGN §6 A1. */
+  tempSkillDir: (slug: string) => Promise<string>;
   writeSkill: (
     outDir: string,
     files: readonly AssembledFile[],
@@ -71,12 +71,21 @@ export async function runCompile(opts: CompileOptions, deps: CompileDeps): Promi
   const { manifest, files, slug } = result.value;
   const gate = manifest.gate;
   const gateFailed = "passed" in gate && !gate.passed;
-  const outDir = gateFailed
-    ? deps.tempSkillDir(slug, deps.timestamp())
-    : (opts.out ?? deps.resolveTargetDir(opts.target, slug));
+
+  // 경로 해석도 slug 검사·루트 경계 검사로 실패할 수 있다(A1) — 쓰기 실패와 같은 방식으로 보고한다.
+  let outDir: string;
+  try {
+    outDir = gateFailed
+      ? await deps.tempSkillDir(slug)
+      : (opts.out ?? deps.resolveTargetDir(opts.target, slug));
+  } catch (e) {
+    deps.out(e instanceof Error ? e.message : "출력 경로를 정할 수 없습니다.");
+    return 1;
+  }
 
   try {
-    await deps.writeSkill(outDir, files, manifest, { force: gateFailed ? true : opts.force });
+    // 임시 디렉터리는 mkdtemp가 방금 만든 빈 디렉터리라 force가 필요 없다 — 두 경로 모두 사용자의 --force만 존중한다.
+    await deps.writeSkill(outDir, files, manifest, { force: opts.force });
   } catch (e) {
     deps.out(e instanceof Error ? e.message : "스킬 파일을 쓰는 데 실패했습니다.");
     return 1;
