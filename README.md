@@ -39,6 +39,10 @@ npm run cli -- compile ./samples/manual.pdf   # 컴파일 + 품질 게이트 실
 npm run cli -- eval ~/.claude/skills/manual   # 기존 스킬 재평가
 ```
 
+## 실 LLM 스모크 (사람 전용, `docs/TESTING.md` §5)
+
+`.env`에 `ANTHROPIC_API_KEY`를 채운 뒤 `npm run smoke`를 실행하면 실 Claude로 `samples/manual.pdf`를 컴파일해 게이트 리포트와 비용(호출 수·추정 토큰) 요약을 출력한다(파일은 쓰지 않는다, 진단 전용). 통과율·약한 챕터가 타당한지 확인하고, 임계치·k 튜닝이 필요하면 SPEC §8에 메모를 남긴다.
+
 ## 상태
 
 - 2026-09-06: 문서 단계 (코드 미작성). T0부터 시작.

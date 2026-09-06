@@ -16,3 +16,4 @@ export * from "./anchors.js";
 export * from "./pipeline.js";
 export * from "./gate.js";
 export * from "./reportFormat.js";
+export * from "./costTracker.js";
