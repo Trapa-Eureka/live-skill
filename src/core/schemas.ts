@@ -2,6 +2,15 @@
 // 경계에서 zod 파싱"). DistilledChapter는 LLM의 원본 markdown 본문 + 결정론적 앵커 추출 결과라 별도 스키마가
 // 필요 없다.
 import { z } from "zod";
+import { GATE_THRESHOLD_FLOOR, PASS_EPSILON, decidePassed } from "./gateVerdict.js";
+
+function unique(values: readonly string[]): boolean {
+  return new Set(values).size === values.length;
+}
+
+function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  return a.size === b.size && [...a].every((x) => b.has(x));
+}
 
 /** ChapterPlan — outline(SkillPlan)의 챕터 하나. */
 export const chapterPlanSchema = z.object({
@@ -54,53 +63,197 @@ export const gateFailureReasonSchema = z.enum([
   "qa_generation_failed",
 ]);
 
-/** GateReport — 품질 게이트 최종 리포트, manifest.gate에 내장된다. */
-export const gateReportSchema = z.object({
-  passRate: z.number().min(0).max(1),
-  threshold: z.number().min(0).max(1),
-  passed: z.boolean(),
-  perChapter: z.array(
-    z.object({
-      file: z.string().min(1),
-      asked: z.number().int().nonnegative(),
-      correct: z.number().int().nonnegative(),
-    }),
-  ),
-  failures: z.array(
-    z.object({
-      qaId: z.string().min(1),
-      reason: gateFailureReasonSchema,
-    }),
-  ),
-  loadHistory: z.array(
-    z.object({
-      qaId: z.string().min(1),
-      selectedFile: z.string(),
-      loadedFiles: z.array(z.string()),
-    }),
-  ),
-  coverage: z.array(
-    z.object({
-      sectionId: z.string().min(1),
-      requested: z.number().int().nonnegative(),
-      generated: z.number().int().nonnegative(),
-    }),
-  ),
-});
+/** GateReport — 품질 게이트 최종 리포트, manifest.gate에 내장된다. 형식 검사 뒤 의미 검사(B6, AUD-011):
+ * 집계가 서로 맞고, `passed`가 gateVerdict의 판정 규칙과 일치하며, 실패 목록이 로드 이력·coverage와 대응해야
+ * 한다 — 조작된 manifest가 `passed=true, passRate=0` 같은 모순으로 report/eval을 속이지 못하게. */
+export const gateReportSchema = z
+  .object({
+    passRate: z.number().min(0).max(1),
+    threshold: z.number().min(GATE_THRESHOLD_FLOOR).max(1), // 정책 하한(B4) — 하한 아래 임계치로 "통과"한 리포트는 무효
+    passed: z.boolean(),
+    perChapter: z.array(
+      z.object({
+        file: z.string().min(1),
+        asked: z.number().int().nonnegative(),
+        correct: z.number().int().nonnegative(),
+      }),
+    ),
+    failures: z.array(
+      z.object({
+        qaId: z.string().min(1),
+        reason: gateFailureReasonSchema,
+      }),
+    ),
+    loadHistory: z.array(
+      z.object({
+        qaId: z.string().min(1),
+        selectedFile: z.string(),
+        loadedFiles: z.array(z.string()),
+      }),
+    ),
+    coverage: z.array(
+      z.object({
+        sectionId: z.string().min(1),
+        requested: z.number().int().nonnegative(),
+        generated: z.number().int().nonnegative(),
+      }),
+    ),
+  })
+  .superRefine((r, ctx) => {
+    const issue = (message: string, path: (string | number)[]): void => {
+      ctx.addIssue({ code: "custom", message, path });
+    };
 
-/** Manifest — 컴파일 산출 manifest.json, 파일 IO 경계에서 파싱한다. */
-export const manifestSchema = z.object({
-  version: z.literal(1),
-  createdAt: z.string().min(1),
-  sourceFiles: z.array(z.object({ path: z.string().min(1), sha256: z.string().length(64) })),
-  sections: z.array(
-    z.object({
-      id: z.string().min(1),
-      sha256: z.string().length(64),
-      chapterFile: chapterFileSchema,
-    }),
-  ),
-  outputs: z.array(z.string().min(1)),
-  gate: z.union([gateReportSchema, z.object({ skipped: z.literal(true) })]),
-  goldenQa: z.array(goldenQaSchema),
-});
+    r.perChapter.forEach((c, i) => {
+      if (c.correct > c.asked) {
+        issue(`correct (${String(c.correct)}) exceeds asked (${String(c.asked)})`, [
+          "perChapter",
+          i,
+        ]);
+      }
+    });
+    if (!unique(r.perChapter.map((c) => c.file)))
+      issue("chapter files must be unique", ["perChapter"]);
+
+    const asked = r.perChapter.reduce((n, c) => n + c.asked, 0);
+    const correct = r.perChapter.reduce((n, c) => n + c.correct, 0);
+    const loadIds = r.loadHistory.map((l) => l.qaId);
+    if (!unique(loadIds)) issue("qaIds must be unique", ["loadHistory"]);
+    if (asked !== r.loadHistory.length) {
+      issue(
+        `perChapter asked total (${String(asked)}) must equal the number of loadHistory entries (${String(r.loadHistory.length)})`,
+        ["loadHistory"],
+      );
+    }
+
+    const failIds = r.failures.map((f) => f.qaId);
+    if (!unique(failIds)) issue("qaIds must be unique", ["failures"]);
+    const graded = r.failures.filter((f) => f.reason !== "qa_generation_failed");
+    const loadSet = new Set(loadIds);
+    for (const f of graded) {
+      if (!loadSet.has(f.qaId)) issue(`failure ${f.qaId} has no loadHistory entry`, ["failures"]);
+    }
+    if (correct !== asked - graded.length) {
+      issue(
+        `perChapter correct total (${String(correct)}) must equal asked (${String(asked)}) minus graded failures (${String(graded.length)})`,
+        ["perChapter"],
+      );
+    }
+
+    const expectedRate = asked === 0 ? 0 : correct / asked;
+    if (Math.abs(r.passRate - expectedRate) > PASS_EPSILON) {
+      issue(
+        `passRate ${String(r.passRate)} does not match correct/asked = ${String(expectedRate)}`,
+        ["passRate"],
+      );
+    }
+
+    if (!unique(r.coverage.map((c) => c.sectionId)))
+      issue("sectionIds must be unique", ["coverage"]);
+    r.coverage.forEach((c, i) => {
+      if (c.generated > c.requested) {
+        issue(`generated (${String(c.generated)}) exceeds requested (${String(c.requested)})`, [
+          "coverage",
+          i,
+        ]);
+      }
+    });
+    const uncovered = r.coverage.filter((c) => c.generated === 0);
+    const expectedGenFail = new Set(uncovered.map((c) => `${c.sectionId}-q0`));
+    const actualGenFail = new Set(
+      r.failures.filter((f) => f.reason === "qa_generation_failed").map((f) => f.qaId),
+    );
+    if (!sameSet(expectedGenFail, actualGenFail)) {
+      issue(
+        "qa_generation_failed failures must correspond exactly to coverage entries with generated 0 (qaId <sectionId>-q0)",
+        ["failures"],
+      );
+    }
+
+    const expectedPassed = decidePassed({
+      asked,
+      passRate: r.passRate,
+      threshold: r.threshold,
+      uncoveredSections: uncovered.length,
+    });
+    if (r.passed !== expectedPassed) {
+      issue(
+        `passed=${String(r.passed)} contradicts the verdict rule (asked ${String(asked)}, passRate ${String(r.passRate)}, threshold ${String(r.threshold)}, unverified sections ${String(uncovered.length)} → ${String(expectedPassed)})`,
+        ["passed"],
+      );
+    }
+  });
+
+/** 소문자 16진수 64자 — core/hash.ts sha256Hex의 출력 형식 그대로(B6). */
+export const sha256Schema = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/u, "must be a 64-character lowercase hex SHA-256");
+
+/** Manifest — 컴파일 산출 manifest.json, 파일 IO 경계에서 파싱한다. 의미 검사(B6): 섹션·산출물·골든 QA·
+ * 게이트 리포트가 서로를 정확히 가리켜야 한다(chapterFile ∈ outputs, loadHistory ⊆ goldenQa, coverage = 섹션 집합,
+ * perChapter = 챕터 파일 집합). */
+export const manifestSchema = z
+  .object({
+    version: z.literal(1),
+    createdAt: z.iso.datetime(),
+    sourceFiles: z.array(z.object({ path: z.string().min(1), sha256: sha256Schema })),
+    sections: z.array(
+      z.object({
+        id: z.string().min(1),
+        sha256: sha256Schema,
+        chapterFile: chapterFileSchema,
+      }),
+    ),
+    outputs: z.array(z.string().min(1)),
+    gate: z.union([gateReportSchema, z.object({ skipped: z.literal(true) })]),
+    goldenQa: z.array(goldenQaSchema),
+  })
+  .superRefine((m, ctx) => {
+    const issue = (message: string, path: (string | number)[]): void => {
+      ctx.addIssue({ code: "custom", message, path });
+    };
+
+    if (!unique(m.outputs)) issue("outputs must be unique", ["outputs"]);
+    if (!unique(m.sections.map((s) => s.id))) issue("section ids must be unique", ["sections"]);
+    const outputSet = new Set(m.outputs);
+    m.sections.forEach((s, i) => {
+      if (!outputSet.has(s.chapterFile)) {
+        issue(`chapterFile "${s.chapterFile}" is not listed in outputs`, [
+          "sections",
+          i,
+          "chapterFile",
+        ]);
+      }
+    });
+
+    const sectionIds = new Set(m.sections.map((s) => s.id));
+    if (!unique(m.goldenQa.map((q) => q.id))) issue("qa ids must be unique", ["goldenQa"]);
+    m.goldenQa.forEach((q, i) => {
+      if (!sectionIds.has(q.sectionId)) {
+        issue(`sectionId "${q.sectionId}" is not a manifest section`, ["goldenQa", i, "sectionId"]);
+      }
+    });
+
+    if (!("passed" in m.gate)) return;
+    const gate = m.gate;
+    const qaIds = new Set(m.goldenQa.map((q) => q.id));
+    gate.loadHistory.forEach((l, i) => {
+      if (!qaIds.has(l.qaId)) {
+        issue(`qaId "${l.qaId}" is not in goldenQa`, ["gate", "loadHistory", i]);
+      }
+    });
+    if (!sameSet(sectionIds, new Set(gate.coverage.map((c) => c.sectionId)))) {
+      issue("gate.coverage must have exactly one entry per manifest section", ["gate", "coverage"]);
+    }
+    if (
+      !sameSet(
+        new Set(m.sections.map((s) => s.chapterFile)),
+        new Set(gate.perChapter.map((c) => c.file)),
+      )
+    ) {
+      issue("gate.perChapter must have exactly one entry per distinct chapterFile", [
+        "gate",
+        "perChapter",
+      ]);
+    }
+  });

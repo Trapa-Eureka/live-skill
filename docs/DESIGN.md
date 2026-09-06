@@ -119,6 +119,8 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 
 ## 5. Manifest와 v0.2 준비
 
+**B6 결정(2026-09-07, AUD-011) — manifest는 형식만이 아니라 의미까지 검사한다**: 예전 스키마는 `passed=true, passRate=0, asked=1, correct=50` 같은 모순도 통과시켰고 `createdAt`은 아무 문자열, 해시는 길이만 봤다 — 외부 스킬 디렉터리의 manifest를 조작하면 `report`가 거짓 PASSED를 그대로 읽었다. `readManifest` 경계에서 zod `superRefine`으로 다음을 강제한다. **GateReport 내부**: `correct ≤ asked`(챕터별), 챕터 파일·qaId·sectionId 유일, `Σasked = loadHistory 길이`, `Σcorrect = Σasked − 채점 실패 수`, `passRate = Σcorrect/Σasked`(질문 0개면 0), 채점 실패의 qaId는 loadHistory에 존재, `qa_generation_failed` 실패 ⇔ `coverage.generated = 0`인 섹션(`<sectionId>-q0`), `generated ≤ requested`, `threshold ∈ [0.5, 1]`(B4), 그리고 **`passed`는 `core/gateVerdict.ts`의 `decidePassed`(gate.ts가 실제 판정에 쓰는 바로 그 함수)로 재계산한 값과 같아야 한다** — 판정 규칙을 한 곳에 두어 "코드의 판정"과 "파일의 판정"이 어긋날 수 없게 했다. **Manifest 수준**: `createdAt`은 ISO 8601, 해시는 소문자 16진수 64자(`sha256Hex` 출력 그대로), outputs·섹션 id 유일, `sections[].chapterFile ∈ outputs`(B3에서 미룬 상호 참조), `goldenQa[].sectionId ∈ sections`, 게이트를 돌렸다면 `loadHistory` qaId ⊆ `goldenQa`, `coverage`의 섹션 집합 = `sections` 집합, `perChapter`의 파일 집합 = 챕터 파일 집합. 위반하면 `readManifest`가 첫 문제들을 사람 말로 담은 Error를 던진다(zod 덤프 노출 안 함). 진위(누가 만들었나)는 여전히 검증하지 않는다 — manifest 서명/신뢰 저장소는 v0.2 대기열. 컴파일 파이프라인이 만드는 manifest는 이 규칙을 전부 만족한다(e2e가 실제 파일을 다시 읽어 확인).
+
 - 모든 컴파일은 `manifest.json`을 스킬 디렉터리에 남긴다 (§2 스키마).
 - v0.2 `update`는 소스 재해시 → 변한 섹션만 distill·해당 챕터만 재조립·해당 문항만 재평가하는 설계가 되도록, **섹션 id는 안정적**(헤딩 경로 기반 슬러그)이어야 한다. v0.1에서 이 안정성까지 구현·테스트한다.
 

@@ -1,7 +1,7 @@
 // 설정 — 예산·게이트 임계치·k(섹션당 질문 수)·LLM 호출 상한(DESIGN §7). env 병합은 이 파일이 결정론으로
 // 처리한다: 실제 .env 파일 읽기(IO)는 adapters/ 몫, 여기서는 이미 병합된 env 레코드를 받아 파싱만 한다.
 import { z } from "zod";
-import { DEFAULT_THRESHOLD, GATE_THRESHOLD_FLOOR } from "./gate.js";
+import { DEFAULT_THRESHOLD, GATE_THRESHOLD_FLOOR } from "./gateVerdict.js";
 
 const DEFAULT_BUDGETS = {
   skillMd: 4000,

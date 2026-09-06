@@ -16,24 +16,13 @@ import type {
   Manifest,
   Section,
 } from "./types.js";
+// 판정 규칙(임계치 하한·통과 조건)은 gateVerdict.ts가 단일 출처다 — schemas.ts의 manifest 의미 검증(B6)과 공유.
+import { DEFAULT_THRESHOLD, assertGateThreshold, decidePassed } from "./gateVerdict.js";
 import { isChapterFilePath } from "./schemas.js";
 import type { SkillFile } from "./validator.js";
 import { z } from "zod";
 
 export const DEFAULT_K = 3;
-export const DEFAULT_THRESHOLD = 0.9;
-/** 정책 하한(B4, DESIGN §7): 절반 미만 정답을 "verified"라 부를 수는 없다. config가 강제하고 여기서도 재검사한다 —
- * 값을 바꾸려면 코드가 아니라 DESIGN §7과 CLAUDE.md 가드레일 1 검토가 먼저다. */
-export const GATE_THRESHOLD_FLOOR = 0.5;
-
-/** threshold가 정책 범위 [FLOOR, 1] 안인지 — 경계(config)를 거치지 않은 호출자까지 막는다. */
-export function assertGateThreshold(threshold: number): void {
-  if (!(threshold >= GATE_THRESHOLD_FLOOR && threshold <= 1)) {
-    throw new Error(
-      `gate threshold ${String(threshold)} is outside the allowed range [${String(GATE_THRESHOLD_FLOOR)}, 1]. Fix: set GATE_THRESHOLD between ${String(GATE_THRESHOLD_FLOOR)} and 1 (default ${String(DEFAULT_THRESHOLD)}); the floor is a product policy (DESIGN §7), not a tunable.`,
-    );
-  }
-}
 
 export interface GateChapter {
   file: string;
@@ -279,14 +268,17 @@ export async function evaluateGoldenQa(
   const correct = outcomes.filter((o) => o.correct).length;
   const passRate = asked === 0 ? 0 : correct / asked;
 
-  // 부동소수 오차 방지: 수학적으로 임계치와 같은 비율(예: 9/10 = 0.9)이 이진 부동소수 반올림 때문에
-  // 근소하게 못 미치는 것으로 계산되는 사고를 막는다 — 임계치 자체를 낮추는 것과는 다르다(가드레일 1).
-  const EPSILON = 1e-9;
   return {
     passRate,
     threshold,
-    // B4: 질문이 하나도 없으면 threshold와 무관하게 미통과 — 검증된 게 아무것도 없다(asked > 0은 명시적 조건).
-    passed: asked > 0 && passRate >= threshold - EPSILON && uncovered.length === 0,
+    // 통과 조건(질문 존재·임계치·미검증 섹션 없음, B2·B4)은 gateVerdict.decidePassed 하나에 있다 — manifest
+    // 의미 검증(B6)이 같은 함수로 재계산해 파일의 판정과 코드의 판정이 어긋날 수 없다.
+    passed: decidePassed({
+      asked,
+      passRate,
+      threshold,
+      uncoveredSections: uncovered.length,
+    }),
     perChapter,
     failures,
     loadHistory,

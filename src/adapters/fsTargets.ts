@@ -311,7 +311,19 @@ export async function readSkillDir(dir: string): Promise<SkillFile[]> {
 /** dir/manifest.json을 읽어 검증된 Manifest로 돌려준다. 없거나 스키마에 안 맞거나 링크면 던진다. */
 export async function readManifest(dir: string): Promise<Manifest> {
   const raw = (await readFileNoFollow(join(dir, "manifest.json"))).toString("utf-8");
-  return manifestSchema.parse(JSON.parse(raw) as unknown);
+  const result = manifestSchema.safeParse(JSON.parse(raw) as unknown);
+  if (!result.success) {
+    // B6: 형식뿐 아니라 의미(집계 일치·판정 규칙·상호 참조)까지 어긋난 manifest는 여기서 거부된다 — 조작·손상된
+    // manifest가 report/eval에 거짓 PASSED를 주입하는 길을 막는다. zod 원시 덤프 대신 첫 문제들을 사람 말로.
+    const detail = result.error.issues
+      .slice(0, 5)
+      .map((i) => `${i.path.map(String).join(".") || "manifest"}: ${i.message}`)
+      .join("; ");
+    throw new Error(
+      `manifest.json in "${dir}" is not a valid live-skill manifest — ${detail}. Fix: re-run compile; if the file was edited by hand, restore it from the compile output.`,
+    );
+  }
+  return result.data;
 }
 
 /** slug는 outline(LLM)이 준 값이라 스키마(core/schemas.ts)를 통과했더라도 여기서 다시 검사한다 — 어댑터는
