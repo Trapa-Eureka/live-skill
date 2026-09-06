@@ -29,86 +29,96 @@ function baseDeps(overrides: Partial<SmokeDeps> & Pick<SmokeDeps, "llm">): Smoke
   };
 }
 
+// samples/manual.pdf의 실제 추출 결과(본문 있는 섹션 4개)를 전부 덮는 계획 — B1 이후 outline은 모집단을 정확히
+// 한 번씩 덮어야 하므로 일부만 넣은 계획은 게이트 이전에 outline_invalid로 끝난다.
+const manualPlan: SkillPlan = {
+  slug: "skillsync-x200",
+  title: "SkillSync X200 User Manual (Fixture)",
+  chapters: [
+    {
+      id: "overview",
+      file: "ignored",
+      title: "Overview",
+      sectionIds: ["skillsync-x200-user-manual-fixture", "overview"],
+    },
+    {
+      id: "installation-troubleshooting",
+      file: "ignored",
+      title: "Installation & Troubleshooting",
+      sectionIds: ["installation", "troubleshooting"],
+    },
+  ],
+};
+
+/** 4문항 대본 — 마지막 문항의 채점만 바꿔 통과/미달을 만든다. */
+function manualScript(lastVerdict: "correct" | "wrong") {
+  return script()
+    .outline(manualPlan)
+    .distill(
+      "ch01",
+      "The SkillSync X200 is a fictional bench-top controller used only as a sample for this " +
+        "project. [§skillsync-x200-user-manual-fixture]\n\n" +
+        "The X200 reads sensor input over a serial bus and reports status through three LEDs: " +
+        "power, link, and fault. [§overview]",
+    )
+    .distill(
+      "ch02",
+      "Mount the unit on a flat, grounded surface. [§installation]\n\n" +
+        "If the link LED never turns solid, hold the control button for five seconds to reboot. " +
+        "[§troubleshooting]",
+    )
+    .qa([
+      {
+        question: "What kind of device is the SkillSync X200?",
+        refAnswer: "A fictional bench-top controller sample.",
+        anchorQuote:
+          "The SkillSync X200 is a fictional bench-top controller used only as a sample for this project.",
+      },
+    ])
+    .qa([
+      {
+        question: "Which three LEDs does the X200 report status through?",
+        refAnswer: "Power, link, and fault.",
+        anchorQuote:
+          "The X200 reads sensor input over a serial bus and reports status through three LEDs: power, link, and fault.",
+      },
+    ])
+    .qa([
+      {
+        question: "Where should the unit be mounted?",
+        refAnswer: "On a flat, grounded surface.",
+        anchorQuote: "Mount the unit on a flat, grounded surface.",
+      },
+    ])
+    .qa([
+      {
+        question: "What do you do if the link LED never turns solid?",
+        refAnswer: "Hold the control button for five seconds to reboot.",
+        anchorQuote: "hold the control button for five seconds to reboot.",
+      },
+    ])
+    .selectChapter("chapters/ch01-overview.md")
+    .answer("A fictional bench-top controller sample.")
+    .grade("correct")
+    .selectChapter("chapters/ch01-overview.md")
+    .answer("Power, link, and fault.")
+    .grade("correct")
+    .selectChapter("chapters/ch02-installation-troubleshooting.md")
+    .answer("On a flat, grounded surface.")
+    .grade("correct")
+    .selectChapter("chapters/ch02-installation-troubleshooting.md")
+    .answer(
+      lastVerdict === "correct"
+        ? "Hold the control button for five seconds to reboot."
+        : "Unplug it and wait a day.",
+    )
+    .grade(lastVerdict)
+    .build();
+}
+
 describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
   it("게이트 통과: 리포트와 비용 요약을 찍고 0을 반환한다", async () => {
-    const plan: SkillPlan = {
-      slug: "skillsync-x200",
-      title: "SkillSync X200 User Manual (Fixture)",
-      chapters: [
-        {
-          id: "overview",
-          file: "ignored",
-          title: "Overview",
-          sectionIds: ["skillsync-x200-user-manual-fixture", "overview"],
-        },
-        {
-          id: "installation-troubleshooting",
-          file: "ignored",
-          title: "Installation & Troubleshooting",
-          sectionIds: ["installation", "troubleshooting"],
-        },
-      ],
-    };
-
-    const llm = script()
-      .outline(plan)
-      .distill(
-        "ch01",
-        "The SkillSync X200 is a fictional bench-top controller used only as a sample for this " +
-          "project. [§skillsync-x200-user-manual-fixture]\n\n" +
-          "The X200 reads sensor input over a serial bus and reports status through three LEDs: " +
-          "power, link, and fault. [§overview]",
-      )
-      .distill(
-        "ch02",
-        "Mount the unit on a flat, grounded surface. [§installation]\n\n" +
-          "If the link LED never turns solid, hold the control button for five seconds to reboot. " +
-          "[§troubleshooting]",
-      )
-      .qa([
-        {
-          question: "What kind of device is the SkillSync X200?",
-          refAnswer: "A fictional bench-top controller sample.",
-          anchorQuote:
-            "The SkillSync X200 is a fictional bench-top controller used only as a sample for this project.",
-        },
-      ])
-      .qa([
-        {
-          question: "Which three LEDs does the X200 report status through?",
-          refAnswer: "Power, link, and fault.",
-          anchorQuote:
-            "The X200 reads sensor input over a serial bus and reports status through three LEDs: power, link, and fault.",
-        },
-      ])
-      .qa([
-        {
-          question: "Where should the unit be mounted?",
-          refAnswer: "On a flat, grounded surface.",
-          anchorQuote: "Mount the unit on a flat, grounded surface.",
-        },
-      ])
-      .qa([
-        {
-          question: "What do you do if the link LED never turns solid?",
-          refAnswer: "Hold the control button for five seconds to reboot.",
-          anchorQuote: "hold the control button for five seconds to reboot.",
-        },
-      ])
-      .selectChapter("chapters/ch01-overview.md")
-      .answer("A fictional bench-top controller sample.")
-      .grade("correct")
-      .selectChapter("chapters/ch01-overview.md")
-      .answer("Power, link, and fault.")
-      .grade("correct")
-      .selectChapter("chapters/ch02-installation-troubleshooting.md")
-      .answer("On a flat, grounded surface.")
-      .grade("correct")
-      .selectChapter("chapters/ch02-installation-troubleshooting.md")
-      .answer("Hold the control button for five seconds to reboot.")
-      .grade("correct")
-      .build();
-
+    const llm = manualScript("correct");
     const captured = lines();
     const code = await runSmoke({ path: samplePath }, baseDeps({ out: captured.out, llm }));
 
@@ -119,50 +129,16 @@ describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
     expect(output).toContain("비용 요약: LLM 호출 19회");
   });
 
-  it("게이트 미달: 리포트와 비용 요약을 찍고 1을 반환한다", async () => {
-    const plan: SkillPlan = {
-      slug: "skillsync-x200",
-      title: "SkillSync X200 User Manual (Fixture)",
-      chapters: [
-        {
-          id: "overview",
-          file: "ignored",
-          title: "Overview",
-          sectionIds: ["overview"],
-        },
-      ],
-    };
-    const llm = script()
-      .outline(plan)
-      .distill(
-        "ch01",
-        "The X200 reads sensor input over a serial bus and reports status through three LEDs: " +
-          "power, link, and fault. [§overview]",
-      )
-      .qa([
-        {
-          question: "Which three LEDs does the X200 report status through?",
-          refAnswer: "Power, link, and fault.",
-          anchorQuote:
-            "The X200 reads sensor input over a serial bus and reports status through three LEDs: power, link, and fault.",
-        },
-      ])
-      .selectChapter("chapters/ch01-overview.md")
-      .answer("It doesn't have any status indicators.")
-      .grade("wrong")
-      .build();
-
+  it("게이트 미달(3/4 = 75% < 90%): 리포트와 비용 요약을 찍고 1을 반환한다", async () => {
+    const llm = manualScript("wrong");
     const captured = lines();
-    const code = await runSmoke(
-      { path: samplePath },
-      baseDeps({ out: captured.out, llm, config: loadConfig({ QA_PER_SECTION: "1" }) }),
-    );
+    const code = await runSmoke({ path: samplePath }, baseDeps({ out: captured.out, llm }));
 
     expect(code).toBe(1);
     llm.assertExhausted();
     const output = captured.all.join("\n");
     expect(output).toContain("FAILED");
-    expect(output).toContain("비용 요약: LLM 호출 6회");
+    expect(output).toContain("비용 요약: LLM 호출 19회");
   });
 
   it("경로를 읽을 수 없으면 수정 방법 담긴 메시지와 함께 1을 반환하고, LLM은 한 번도 부르지 않는다", async () => {

@@ -345,6 +345,120 @@ describe("compile — outline schema violation", () => {
   });
 });
 
+describe("compile — outline coverage (B1, 완료 기준: 누락·중복·미지 id 각각 거부)", () => {
+  async function compileWithPlan(plan: SkillPlan, doc: ExtractedDoc = twoSectionDoc) {
+    const extractor = new FixtureExtractor({ md: doc });
+    const llm = script().outline(plan).build(); // distill 대본 없음 — 여기서 끝나야 한다
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config,
+    });
+    llm.assertExhausted();
+    return result;
+  }
+
+  it("rejects an outline that silently drops a section (the old '100% on the easy half' hole)", async () => {
+    const result = await compileWithPlan({
+      ...twoChapterPlan,
+      chapters: [{ id: "a", file: "ignored", title: "Installation", sectionIds: ["a"] }],
+    });
+    expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toContain("unassigned sections: b");
+  });
+
+  it("rejects an outline that references an unknown section id", async () => {
+    const result = await compileWithPlan({
+      ...twoChapterPlan,
+      chapters: [
+        { id: "a", file: "ignored", title: "Installation", sectionIds: ["a"] },
+        { id: "b", file: "ignored", title: "Troubleshooting", sectionIds: ["b", "ghost"] },
+      ],
+    });
+    expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toContain("unknown section ids: ghost");
+  });
+
+  it("rejects an outline that assigns the same section twice", async () => {
+    const result = await compileWithPlan({
+      ...twoChapterPlan,
+      chapters: [
+        { id: "a", file: "ignored", title: "Installation", sectionIds: ["a", "b"] },
+        { id: "b", file: "ignored", title: "Troubleshooting", sectionIds: ["b"] },
+      ],
+    });
+    expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toContain("sections assigned more than once: b");
+  });
+
+  it("rejects duplicate chapter ids", async () => {
+    const result = await compileWithPlan({
+      ...twoChapterPlan,
+      chapters: [
+        { id: "same", file: "ignored", title: "Installation", sectionIds: ["a"] },
+        { id: "same", file: "ignored", title: "Troubleshooting", sectionIds: ["b"] },
+      ],
+    });
+    expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toContain("duplicate chapter ids: same");
+  });
+
+  it("does not offer heading-only sections to the outline and does not require them (정책: 실질 섹션만)", async () => {
+    const withContainer: ExtractedDoc = {
+      sections: [
+        { id: "install", heading: "Installation", level: 1, text: "" }, // 하위 헤딩만 거느린 컨테이너
+        { id: "install/mount", heading: "Mounting", level: 2, text: "Mount it." },
+      ],
+    };
+    const extractor = new FixtureExtractor({ md: withContainer });
+    const llm = script()
+      .outline({
+        slug: "s",
+        title: "S",
+        chapters: [{ id: "c", file: "x", title: "Mounting", sectionIds: ["install/mount"] }],
+      })
+      .distill("c", "Mount it. [§install/mount]")
+      .build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config,
+      gate: "skip",
+    });
+    expect(result.ok).toBe(true);
+    const outlineCall = llm.calls.find((c) => c.role === "outline");
+    expect(outlineCall?.prompt).not.toContain("§install]"); // 컨테이너 id는 outline 프롬프트에 없다
+    expect(outlineCall?.prompt).toContain("install/mount");
+    llm.assertExhausted();
+  });
+
+  it("rejects an outline that assigns a heading-only section (it is not in the population)", async () => {
+    const withContainer: ExtractedDoc = {
+      sections: [
+        { id: "install", heading: "Installation", level: 1, text: "" },
+        { id: "install/mount", heading: "Mounting", level: 2, text: "Mount it." },
+      ],
+    };
+    const result = await compileWithPlan(
+      {
+        slug: "s",
+        title: "S",
+        chapters: [{ id: "c", file: "x", title: "All", sectionIds: ["install", "install/mount"] }],
+      },
+      withContainer,
+    );
+    expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toContain("unknown section ids: install");
+  });
+});
+
 describe("compile — real HTML extractor on the mixed-unicode fixture (TESTING §4)", () => {
   it("keeps Korean/Tagalog headings and anchor strings intact end to end", async () => {
     const bytes = readFileSync(join(process.cwd(), "fixtures/docs/mixed-unicode.html"));
