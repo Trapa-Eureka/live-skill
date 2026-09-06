@@ -48,6 +48,10 @@ export function distillPrompt(
     "요약이 아니라 구조 추출이다: 프레임워크·규칙·절차·안티패턴을 뽑아라.",
     COMMON_RULES,
     "모든 주장·수치·절차 뒤에는 근거가 된 섹션의 앵커 각주 [§sectionId]를 붙인다 — 앵커 없는 문장은 검증할 수 없다(DESIGN §3).",
+    "본문 안에서 다음 표기가 있으면(없어도 무방) assembler가 별도 파일로 모은다(DESIGN §3 T4 결정) — 표기가 아닌 문장에는 절대 쓰지 않는다:",
+    "- 용어 정의: 줄 맨 앞에 `**용어** — 정의` (원문 용어 그대로, glossary.md로 모인다)",
+    "- 재사용 가능한 기법·절차·안티패턴: 줄 맨 앞에 `- [PATTERN] ...` / `- [PROCEDURE] ...` / `- [ANTI-PATTERN] ...` (patterns.md로 모인다)",
+    "- 즉답 가능한 결정 규칙: 줄 맨 앞에 `- [RULE] ...` (cheatsheet.md로 모인다)",
     `결과는 약 ${String(budgetTokens)} 토큰 이내의 마크다운 본문만 출력한다(설명·코드펜스 없이).`,
   ].join("\n");
   const prompt = sections.map((s) => sectionExcerpt(s, 2000)).join("\n\n");
