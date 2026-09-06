@@ -107,9 +107,10 @@
 - 완료(2026-09-07, PR #21): 정책을 "제외"에서 "미검증"으로 — `GateReport.coverage[{sectionId, requested, generated}]`를 추가하고 `evaluateGoldenQa`가 모집단(챕터별 sectionIds)마다 유효 문항 수를 세어, `generated === 0`인 섹션은 `failures`에 `{ qaId: "<sectionId>-q0", reason: "qa_generation_failed" }`로 올리고 `passed`의 별도 필요조건으로 삼는다(passRate는 여전히 실제로 물은 문항 기준 — 못 만든 문항을 오답으로 꾸미지 않음). `eval` 재사용 경로도 같은 함수를 타므로 manifest에서 QA가 빠진 섹션은 통과 불가(`requested`는 그때의 `config.qaPerSection`). `report` 출력에 "미검증 섹션"·"문항 부족" 절 추가. `generateGoldenQa`의 계약(0..k, 재생성 1회)은 그대로.
 - 완료 기준: [x] DESIGN §2·§4·TESTING §3·§4 정책 갱신 [x] 두 챕터 중 하나 qaGen 2회 실패 → `passed=false` + 실패 목록 기록 테스트(+ 부족분만 있으면 통과, eval 재사용 경로에서 QA 없는 섹션 거부) [x] 판별력 테스트 5종 유지(6종째로 추가) [x] check 통과(22 files·253 tests)
 
-#### B3 — manifest 챕터 허용 목록 · 상태: TODO · 원본: SEC-006, AUD-006
+#### B3 — manifest 챕터 허용 목록 · 상태: DONE(2026-09-07) · 원본: SEC-006, AUD-006
 - 목표: `manifest.sections[].chapterFile`을 `chapters/*.md` 패턴으로 스키마 제한. gate 로더는 `chapters/` 아래 일반 파일만 로드하고 `manifest.json`·기타 파일은 answerer 컨텍스트에서 원천 제외. `readSkillDir` 결과와 `outputs` 상호 대조.
-- 완료 기준: [ ] `chapterFile: "manifest.json"` manifest → 거부 테스트 [ ] 격리 테스트(refAnswer 마커가 answerer 요청에 없음) [ ] check 통과
+- 완료(2026-09-07, PR #22): 세 겹 — (1) 스키마 `chapterFileSchema`(`^chapters/[\p{L}\p{N}-]+\.md$`, assembler `chapterFilePath()`가 만드는 유일한 형태)로 `readManifest` 단계에서 `manifest.json`·`SKILL.md`·`chapters/../x`·하위 디렉터리 거부; (2) `evaluateGoldenQa`는 스키마를 믿지 않고 챕터 목록 중 형식에 맞는 파일만 허용 집합으로 삼아 그 집합의 파일만 로드 가능 — 나머지는 선택해도 `not_found`, 로드 이력 빈 배열, SKILL.md만 인덱스로 별도 제공; (3) `eval`은 LLM 전에 `missingChapterFiles`로 manifest 챕터의 실제 존재를 확인해 없으면 원인·수정 방법과 종료코드 1. outputs와의 상호 참조 검증은 B6(스키마 superRefine)에서.
+- 완료 기준: [x] `chapterFile: "manifest.json"` manifest → 거부 테스트(거부 10종·허용 3종 + assembler 산출 경로 호환) [x] 격리 테스트(조작된 챕터 목록이 manifest.json을 가리켜도 not_found·answer 미호출·모든 프롬프트에 refAnswer 마커 부재; 디스크에 있어도 목록에 없는 챕터는 not_found) [x] check 통과(22 files·271 tests)
 
 #### B4 — threshold 하한·질문 0개 실패 · 상태: TODO · 원본: SEC-007, AUD-008
 - 목표: 질문 0개는 threshold와 무관하게 실패. `GATE_THRESHOLD`의 정책 하한을 DESIGN §7에 명시하고 config가 강제(공백 문자열은 미설정 처리, 범위 밖은 설정 오류).

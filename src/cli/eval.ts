@@ -4,6 +4,7 @@ import {
   chaptersFromManifest,
   evaluateGoldenQa,
   formatGateReport,
+  missingChapterFiles,
   runGate,
   type Config,
   type DocumentExtractor,
@@ -43,6 +44,15 @@ export async function runEval(opts: EvalOptions, deps: EvalDeps): Promise<number
     return 1;
   }
   const chapters = chaptersFromManifest(manifest);
+
+  // B3: manifest가 가리키는 챕터가 실제로 이 디렉터리에 있는지 — LLM을 부르기 전에 결정론으로 확인한다.
+  const missing = missingChapterFiles(chapters, files);
+  if (missing.length > 0) {
+    deps.out(
+      `manifest.json이 가리키는 챕터 파일이 "${opts.skillDir}"에 없습니다: ${missing.join(", ")}. 수정 방법: 이 디렉터리의 manifest가 맞는지 확인하거나 compile을 다시 실행하세요.`,
+    );
+    return 1;
+  }
 
   if (opts.source === undefined || opts.source.length === 0) {
     // 재사용 경로 — 원문 없이, qaGen도 없이 manifest의 QA를 그대로 다시 채점한다.

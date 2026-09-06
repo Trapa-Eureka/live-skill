@@ -6,6 +6,7 @@ import {
   estimateGateCalls,
   evaluateGoldenQa,
   generateGoldenQa,
+  missingChapterFiles,
   runGate,
   type GateChapter,
 } from "../src/core/gate.js";
@@ -495,6 +496,72 @@ describe("runGate — 문항 생성 실패 주입 (B2, SEC-005·AUD-005 — 완�
       generated: 0,
     });
     llm.assertExhausted();
+  });
+});
+
+describe("evaluateGoldenQa — 챕터 허용 목록은 코드가 쥔다 (B3, SEC-006·AUD-006, 가드레일 2 — 완료 기준)", () => {
+  const SECRET = "SECRET_REFERENCE_MARKER_7f3a";
+  const qa: GoldenQA = {
+    id: "a-q1",
+    sectionId: "a",
+    question: "How much current?",
+    refAnswer: `500 mA ${SECRET}`,
+    anchorQuote: "500 mA of current",
+  };
+  const manifestJson = {
+    path: "manifest.json",
+    content: JSON.stringify({ goldenQa: [qa] }), // 정답이 든 파일 — answerer에게 절대 보이면 안 된다
+  };
+
+  it("never loads manifest.json even when a (tampered) chapter list names it — not_found, no answer call, no leak", async () => {
+    const tamperedChapters: GateChapter[] = [
+      { file: "manifest.json", sectionIds: ["a"] }, // 스키마를 우회해 직접 넣은 경우까지 가정
+    ];
+    const llm = script().selectChapter("manifest.json").build(); // answer/grade 대본 없음
+
+    const report = await evaluateGoldenQa(
+      [qa],
+      { files: [skillMd, chapter1, manifestJson], chapters: tamperedChapters, qaPerSection: 1 },
+      llm,
+    );
+
+    expect(report.failures).toEqual([{ qaId: "a-q1", reason: "not_found" }]);
+    expect(report.loadHistory).toEqual([
+      { qaId: "a-q1", selectedFile: "manifest.json", loadedFiles: [] },
+    ]);
+    expect(report.passed).toBe(false);
+    for (const call of llm.calls) {
+      expect(call.prompt).not.toContain(SECRET);
+      expect(call.system).not.toContain(SECRET);
+    }
+    llm.assertExhausted();
+  });
+
+  it("treats a real chapter file that is not in the chapter list as not_found (allow-list, not directory listing)", async () => {
+    const llm = script().selectChapter("chapters/ch02-troubleshooting.md").build();
+    const report = await evaluateGoldenQa(
+      [qa],
+      {
+        files: [skillMd, chapter1, chapter2], // ch02는 디스크에 있지만
+        chapters: [{ file: "chapters/ch01-installation.md", sectionIds: ["a"] }], // 목록엔 없다
+        qaPerSection: 1,
+      },
+      llm,
+    );
+    expect(report.failures).toEqual([{ qaId: "a-q1", reason: "not_found" }]);
+    llm.assertExhausted();
+  });
+
+  it("missingChapterFiles lists manifest chapters that are not on disk", () => {
+    expect(
+      missingChapterFiles(
+        [
+          { file: "chapters/ch01-installation.md", sectionIds: ["a"] },
+          { file: "chapters/ch09-gone.md", sectionIds: ["z"] },
+        ],
+        [skillMd, chapter1],
+      ),
+    ).toEqual(["chapters/ch09-gone.md"]);
   });
 });
 
