@@ -1,6 +1,6 @@
 // T9 완료 기준: SPEC §5 시나리오 1·2를 "CLI 레벨" e2e-mock으로 검증한다. tests/pipeline.test.ts(T6)가
 // 이미 실 추출기 + core compile()을 조합했지만, 여기서는 그 위 계층 — 실제 run<Command>()와
-// adapters/fsTargets.ts의 진짜 함수(collectInputFiles/readSourceFile/writeSkill/readSkillDir/
+// adapters/fsTargets.ts의 진짜 함수(collectInputFiles/readSourceFiles/writeSkill/readSkillDir/
 // readManifest/resolveTargetDir/tempSkillDir)까지 그대로 연결한다. mock은 LLM 하나뿐이다(가드레일 3:
 // ScriptedLlm만, 실 네트워크 0건). 픽스처는 자체 제작(가드레일 4) — DESIGN §6 T9 결정 참고.
 import { mkdtemp, rm } from "node:fs/promises";
@@ -12,7 +12,7 @@ import {
   collectInputFiles,
   readManifest,
   readSkillDir,
-  readSourceFile,
+  readSourceFiles,
   resolveTargetDir,
   tempSkillDir,
   writeSkill,
@@ -44,7 +44,7 @@ function realDeps(overrides: Partial<CompileDeps> & Pick<CompileDeps, "llm">): C
   return {
     out: () => undefined,
     collectInputFiles,
-    readSourceFile,
+    readSourceFiles,
     extractors: createExtractors(),
     clock: { now: () => new Date() },
     config: loadConfig({ QA_PER_SECTION: "1" }),

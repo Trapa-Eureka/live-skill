@@ -10,6 +10,7 @@ import {
   createExtractors,
   findExtractor,
 } from "../src/adapters/extractors/index.js";
+import { asBuffer } from "../src/adapters/extractors/bytes.js";
 import type { ExtractedDoc } from "../src/core/index.js";
 
 const FIXTURES = join(process.cwd(), "fixtures", "docs");
@@ -108,5 +109,25 @@ describe("edge cases (TESTING §4)", () => {
     const doc = await extractOk("oversized.md");
     const totalChars = doc.sections.reduce((n, s) => n + s.text.replace(/\s+/gu, "").length, 0);
     expect(totalChars).toBeGreaterThan(100_000);
+  });
+});
+
+describe("asBuffer (D3 — 복사 없는 Buffer 뷰)", () => {
+  it("returns a Buffer that is a view over the same memory, and the same object for a Buffer", () => {
+    const backing = new Uint8Array([0, 1, 2, 3, 4, 5]);
+    const view = backing.subarray(2, 5);
+    const buf = asBuffer(view);
+    expect(Buffer.isBuffer(buf)).toBe(true);
+    expect([...buf]).toEqual([2, 3, 4]);
+    buf[0] = 99;
+    expect(backing[2]).toBe(99); // 같은 메모리 — 복사가 아니다
+
+    const original = Buffer.from("hi");
+    expect(asBuffer(original)).toBe(original);
+  });
+
+  it("DocxExtractor still reads the real onboarding DOCX through the view", async () => {
+    const doc = await extractOk("sample.docx");
+    expect(doc.sections.length).toBeGreaterThan(0);
   });
 });

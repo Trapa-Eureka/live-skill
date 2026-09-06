@@ -4,6 +4,7 @@ import JSZip from "jszip";
 import mammoth from "mammoth";
 import type { DocumentExtractor, ExtractError, ExtractedDoc, Result } from "../../core/index.js";
 import { err, ok, structureText, toExtractedDoc } from "../../core/index.js";
+import { asBuffer } from "./bytes.js";
 import { EXTRACT_TIMEOUT_MS, withDeadline } from "./limits.js";
 import { hasExtension } from "./route.js";
 
@@ -135,7 +136,7 @@ export class DocxExtractor implements DocumentExtractor {
         return err({ kind: "corrupt", detail: "zip_budget" });
       }
       const result = await mammoth.convertToHtml(
-        { buffer: Buffer.from(bytes) },
+        { buffer: asBuffer(bytes) }, // D3: 복사 대신 뷰 — mammoth는 읽기만 한다
         { convertImage: dropImages },
       );
       html = result.value;

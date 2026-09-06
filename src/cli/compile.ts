@@ -12,6 +12,7 @@ import {
   type Manifest,
 } from "../core/index.js";
 import type { SourceFile } from "../core/pipeline.js";
+import { describeInputFailure } from "./inputFailure.js";
 
 export interface CompileOptions {
   paths: string[];
@@ -23,8 +24,10 @@ export interface CompileOptions {
 
 export interface CompileDeps {
   out: (line: string) => void;
+  /** 입력 경로를 펼치고 크기 상한을 읽기 전에 검사한다(D3) — 넘으면 FsTargetError로 거부. */
   collectInputFiles: (paths: readonly string[]) => Promise<string[]>;
-  readSourceFile: (path: string) => Promise<SourceFile>;
+  /** 제한된 동시성으로 읽는다(D3) — 입력 순서 보존. */
+  readSourceFiles: (paths: readonly string[]) => Promise<SourceFile[]>;
   extractors: readonly DocumentExtractor[];
   llm: LlmProvider;
   clock: Clock;
@@ -48,10 +51,9 @@ export async function runCompile(opts: CompileOptions, deps: CompileDeps): Promi
       deps.out(`지정한 경로에서 파일을 찾지 못했습니다: ${opts.paths.join(", ")}`);
       return 1;
     }
-    sources = await Promise.all(absolutePaths.map((p) => deps.readSourceFile(p)));
+    sources = await deps.readSourceFiles(absolutePaths);
   } catch (e) {
-    const detail = e instanceof Error ? e.message : "unknown error";
-    deps.out(`입력 경로를 읽을 수 없습니다. 수정 방법: 경로를 확인하세요. (${detail})`);
+    deps.out(describeInputFailure(e));
     return 1;
   }
 
