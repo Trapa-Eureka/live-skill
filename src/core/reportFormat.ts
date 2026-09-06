@@ -1,0 +1,39 @@
+// 게이트/검증 리포트를 사람이 읽을 텍스트로 바꾼다 — 순수 문자열 포맷팅, 외부 IO 없음. `report`/`validate`/
+// `compile`/`eval` CLI가 전부 이 함수들만 호출한다("cli는 조립만", DESIGN §6).
+import type { GateReport } from "./types.js";
+import type { ValidationReport } from "./validator.js";
+
+export function formatGateReport(report: GateReport): string {
+  const lines: string[] = [
+    `게이트: ${report.passed ? "PASSED" : "FAILED"} (passRate ${(report.passRate * 100).toFixed(1)}% / 임계치 ${(report.threshold * 100).toFixed(0)}%)`,
+    "",
+    "챕터별:",
+  ];
+  for (const c of report.perChapter) {
+    lines.push(`  - ${c.file}: ${String(c.correct)}/${String(c.asked)} 정답`);
+  }
+  if (report.failures.length > 0) {
+    lines.push("", "실패 문항:");
+    for (const f of report.failures) lines.push(`  - ${f.qaId}: ${f.reason}`);
+  }
+  return lines.join("\n");
+}
+
+export function formatSkippedGate(): string {
+  return "게이트: SKIPPED (--no-gate) — 산출물은 unverified 표시로 배포됐습니다.";
+}
+
+export function formatValidationReport(report: ValidationReport): string {
+  const lines: string[] = [`검증: ${report.passed ? "PASSED" : "FAILED"}`];
+  if (report.issues.length === 0) {
+    lines.push("문제 없음.");
+    return lines.join("\n");
+  }
+  lines.push("");
+  for (const issue of report.issues) {
+    lines.push(
+      `  [${issue.severity.toUpperCase()}] ${issue.file} (${issue.code}): ${issue.message}`,
+    );
+  }
+  return lines.join("\n");
+}

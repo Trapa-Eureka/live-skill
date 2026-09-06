@@ -4,11 +4,12 @@ import { describe, expect, it } from "vitest";
 import type { AssembledFile } from "../src/core/assembler.js";
 import {
   estimateGateCalls,
+  evaluateGoldenQa,
   generateGoldenQa,
   runGate,
   type GateChapter,
 } from "../src/core/gate.js";
-import type { Section } from "../src/core/index.js";
+import type { GoldenQA, Section } from "../src/core/index.js";
 import { script } from "../src/mocks/scriptedLlm.js";
 
 const sectionA: Section = {
@@ -65,7 +66,7 @@ describe("runGate — normal script (게이트 판별력 1/5)", () => {
       .grade("correct")
       .build();
 
-    const report = await runGate(
+    const { report } = await runGate(
       { files: [skillMd, chapter1, chapter2], chapters, sections: [sectionA, sectionB] },
       { llm, k: 1 },
     );
@@ -98,7 +99,7 @@ describe("runGate — 챕터 누락 주입 (게이트 판별력 2/5, 삭제·완
       .selectChapter("chapters/ch02-troubleshooting.md")
       .build();
 
-    const report = await runGate(
+    const { report } = await runGate(
       { files: filesWithoutChapter2, chapters, sections: [sectionA, sectionB] },
       { llm, k: 1 },
     );
@@ -141,7 +142,7 @@ describe("runGate — 오답 증류 주입 (게이트 판별력 3/5, 삭제·완
       .grade("wrong") // grader가 refAnswer("red")와 모순됨을 잡아낸다
       .build();
 
-    const report = await runGate(
+    const { report } = await runGate(
       { files: [skillMd, chapter1, corruptedChapter2], chapters, sections: [sectionA, sectionB] },
       { llm, k: 1 },
     );
@@ -169,7 +170,7 @@ describe("runGate — anchor_missing: 선택된 챕터에 앵커 문구 자체�
       .selectChapter("chapters/ch02-troubleshooting.md")
       .build(); // answer/grade는 대본에 없다 — 호출되면 테스트가 실패한다
 
-    const report = await runGate(
+    const { report } = await runGate(
       {
         files: [skillMd, brokenChapter2],
         chapters: [{ file: "chapters/ch02-troubleshooting.md", sectionIds: ["b"] }],
@@ -179,6 +180,45 @@ describe("runGate — anchor_missing: 선택된 챕터에 앵커 문구 자체�
     );
 
     expect(report.failures).toEqual([{ qaId: "b-q1", reason: "anchor_missing" }]);
+    llm.assertExhausted();
+  });
+});
+
+describe("evaluateGoldenQa — reuse path (T8 eval, qaGen 생략)", () => {
+  it("grades already-generated QA without ever calling qaGen", async () => {
+    const qas: GoldenQA[] = [
+      {
+        id: "a-q1",
+        sectionId: "a",
+        question: "How much current?",
+        refAnswer: "500 mA",
+        anchorQuote: "500 mA of current",
+      },
+      {
+        id: "b-q1",
+        sectionId: "b",
+        question: "LED behavior?",
+        refAnswer: "blinks red",
+        anchorQuote: "blinks red",
+      },
+    ];
+    const llm = script()
+      .selectChapter("chapters/ch01-installation.md")
+      .answer("500 mA")
+      .grade("correct")
+      .selectChapter("chapters/ch02-troubleshooting.md")
+      .answer("blinks red")
+      .grade("correct")
+      .build(); // qa 대본은 아예 없다 — 호출되면 exhausted로 실패한다
+
+    const report = await evaluateGoldenQa(
+      qas,
+      { files: [skillMd, chapter1, chapter2], chapters },
+      llm,
+    );
+
+    expect(report.passRate).toBe(1);
+    expect(report.passed).toBe(true);
     llm.assertExhausted();
   });
 });
@@ -231,7 +271,7 @@ describe("runGate — 임계치 경계, 부동소수 처리 (게이트 판별력
 
   it("passes at exactly 90% (9/10 correct)", async () => {
     const llm = buildScript(9);
-    const report = await runGate(
+    const { report } = await runGate(
       { files: [skillMd, ...tenFiles], chapters: tenChapters, sections: tenSections },
       { llm, k: 1, threshold: 0.9 },
     );
@@ -241,7 +281,7 @@ describe("runGate — 임계치 경계, 부동소수 처리 (게이트 판별력
 
   it("fails when short by exactly one question (8/10 correct)", async () => {
     const llm = buildScript(8);
-    const report = await runGate(
+    const { report } = await runGate(
       { files: [skillMd, ...tenFiles], chapters: tenChapters, sections: tenSections },
       { llm, k: 1, threshold: 0.9 },
     );
@@ -307,7 +347,7 @@ describe("runGate — answerer isolation (완료 기준: 격리 2항목 전부)"
       .build();
 
     const chapter1Only: GateChapter = { file: "chapters/ch01-installation.md", sectionIds: ["a"] };
-    const report = await runGate(
+    const { report } = await runGate(
       { files: [skillMd, chapter1], chapters: [chapter1Only], sections: [sectionA] },
       { llm, k: 1 },
     );
