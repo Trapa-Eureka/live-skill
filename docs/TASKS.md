@@ -56,9 +56,10 @@
 - 완료(2026-09-06, PR #13): `tests/e2e.test.ts` 신설 — T6의 `pipeline.test.ts`가 이미 검증한 "실 추출기 + core `compile()`" 조합보다 한 계층 위, `run<Command>()` + `adapters/fsTargets.ts`의 진짜 함수(collectInputFiles/readSourceFile/writeSkill/readSkillDir/readManifest/resolveTargetDir/tempSkillDir)까지 실제로 연결해 CLI 레벨에서 검증한다. mock은 ScriptedLlm 하나뿐(가드레일 3). 자체 제작 픽스처 3종 추가: `fixtures/docs/e2e-scenario1-manual.md`(시나리오 1 — 3섹션 2챕터 전 정답 → `--out` 스크래치 디렉터리에 실제로 쓰고 그 디렉터리를 다시 `validate`/`report`로 재확인, 게이트 통과), `e2e-scenario2-sop-{a,b}.md`(시나리오 2 — 2개 파일 폴더, 한 챕터만 grader가 의도적으로 WRONG 처리 → 게이트 미달 → 실 `tempSkillDir()`가 고른 os.tmpdir() 경로에 보존된 산출물을 다시 읽어 `perChapter`/`failures`가 정확히 그 챕터를 지목하는지 확인). DESIGN §6에 T9 결정 기록.
 - 완료 기준: [x] 시나리오 2종 통과 [x] core ≥ 90% 리포트 첨부(stmt 97.83%/branch 89.22%/func 98.13%/line 99.31%, `npm run test:coverage`) [x] check 통과(19 files·175 tests)
 
-### T10 — 스모크 · 상태: TODO · 의존: T9
+### T10 — 스모크 · 상태: DONE(2026-09-06) · 의존: T9
 - 목표: `scripts/smoke.ts` — 실 Claude로 samples/manual.pdf 컴파일 + 게이트 리포트 출력, 비용(호출 수·토큰) 요약 출력.
-- 완료 기준: [ ] dry 구조(대본)로 스크립트 자체 테스트 [ ] 사람 실행 절차 README 5줄 이내 [ ] check 통과
+- 완료(2026-09-06, PR #14): `src/cli/index.ts`와 같은 원칙으로 로직(`src/cli/smoke.ts`의 `runSmoke(opts, deps)`)과 조립(`scripts/smoke.ts`)을 분리 — `compile()`을 직접 호출해 게이트 리포트만 출력하고 파일은 쓰지 않는다(진단 전용). `core/costTracker.ts`(`trackCost()`)는 `LlmProvider`를 감싸 호출 수·`estimateTokens()` 기반 추정 토큰을 센다 — `LlmProvider`/`ScriptedLlm` 인터페이스는 그대로 두고 순수 위임+카운팅만 추가(DESIGN §9).
+- 완료 기준: [x] dry 구조(대본)로 스크립트 자체 테스트 — `tests/smoke.test.ts`가 실 `samples/manual.pdf`를 실 추출기로 읽되 `runSmoke`에 ScriptedLlm을 주입해 통과·미달·경로 오류·미지원 형식 4가지를 검증(실 네트워크 0건, 가드레일 3) [x] 사람 실행 절차 README 5줄 이내(README "실 LLM 스모크" 절) [x] check 통과(20 files·181 tests)
 
 ### T11 — 공개 준비 · 상태: TODO · 의존: T10
 - 목표: npm 패키지명 가용성 조사(live-skill + 후보 2개, SPEC §8 기록), 영어 README 초안(내부 docs 한국어 유지), GHA `ci.yml`(npm run check), 60초 데모 시나리오(자작 샘플 사용).

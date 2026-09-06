@@ -170,3 +170,9 @@ live-skill/
   src/{core,adapters,mocks,cli}/
   tests/
 ```
+
+## 9. 스모크 (scripts/smoke.ts) — 사람 전용
+
+**T10 결정(2026-09-06)**: `compile` CLI와 똑같이 파이프라인을 돌리되, 목적이 "사람이 통과율·약한 챕터 타당성을 눈으로 확인"하는 것뿐이라 **아무 파일도 쓰지 않는다** — `core/pipeline.ts`의 `compile()`을 직접 호출해 `manifest.gate`만 출력하고 끝난다(`writeSkill`·타깃 디렉터리 해석 전부 생략). `src/cli/*.ts`와 같은 원칙으로 로직(`src/cli/smoke.ts`의 `runSmoke(opts, deps)`)과 조립(`scripts/smoke.ts`)을 분리해 `src/cli/index.ts`가 테스트에서 제외되는 것과 똑같이 `scripts/smoke.ts`도 dry 테스트 대상에서 빠지고, `runSmoke`만 `tests/smoke.test.ts`가 ScriptedLlm으로 돌린다(가드레일 3).
+
+**비용 요약**: `ClaudeLlmProvider`는 응답 텍스트만 반환하고 실 토큰 사용량을 노출하지 않는다 — SDK 응답의 `usage` 필드까지 인터페이스에 얹으면 `LlmProvider`/`ScriptedLlm` 전체가 실 사용량 개념을 알아야 해서 범위가 커진다. 대신 `core/costTracker.ts`의 `trackCost()`가 주어진 `LlmProvider`를 감싸 호출마다 `estimateTokens()`(기존 예산 계산기)로 system+prompt+응답을 근사 합산한다 — 순수 위임+카운팅이라 `core/`에 둬도 가드레일과 충돌하지 않고, `ScriptedLlm`으로도 그대로 검증된다. 정확한 실 사용량이 아니라 "이 정도 규모"를 사람이 가늠하기 위한 근사치임을 출력 문구(`~`)로 명시한다.
