@@ -11,10 +11,11 @@
 
 ---
 
-### T0 — 프로젝트 스캐폴딩 · 상태: TODO
+### T0 — 프로젝트 스캐폴딩 · 상태: DONE(2026-09-06)
 - 목표: TS strict + ESLint + Prettier + Vitest + 스크립트(`check/test/typecheck/lint/cli/smoke`), package.json `bin` 설정(npx 실행 전제), `.env.example`, `.gitignore`.
 - 참고 자료(2026-09-06 확인, 같은 저자 실전 레포): `../msg-agent`가 이 스택(TS strict+`noUncheckedIndexedAccess`, ESLint flat config+`typescript-eslint` strictTypeChecked, Prettier, Vitest+coverage 임계치, `tsx` 기반 cli/smoke, `check`/`prepublishOnly` 스크립트)을 npm 배포 수준까지 이미 구현해 뒀다 — `package.json`·`tsconfig.json`·`eslint.config.js`·`vitest.config.ts`를 이식하고 이 레포에 안 맞는 의존성(grammy·franc 등 메시징 전용)만 제거하는 편이 처음부터 설계하는 것보다 빠르고 검증됨. `.gitignore`·`LICENSE`(MIT, 저작권자 `Trapa-Eureka`)는 docs 분석 세션에서 이미 루트에 추가됨. 상세: `docs/PUBLISHING.md` §1.
-- 완료 기준: [ ] `npm run check` 통과 [ ] 더미 테스트 1개 [ ] `npm run cli -- --help` 동작 [ ] git init + 첫 커밋
+- 완료(2026-09-06, PR #2): `package.json`(`bin: live-skill`)·`tsconfig(.build).json`·`eslint.config.js`·`vitest.config.ts`·`.env.example`를 msg-agent 이식으로 작성, `src/cli/index.ts`(commander, compile/validate/eval/report 4종 스텁)·`src/version.ts`·`scripts/check-tarball.sh`(msg-agent 이식)·`scripts/smoke.ts`(T10 전까지 스텁) 추가.
+- 완료 기준: [x] `npm run check` 통과 [x] 더미 테스트 1개(`tests/version.test.ts`) [x] `npm run cli -- --help` 동작 [x] git init + 첫 커밋
 
 ### T1 — 도메인 타입 + config · 상태: TODO · 의존: T0
 - 목표: `core/types.ts`(DESIGN §2 전체 — SkillPlan/DistilledChapter/GoldenQA/GateReport/Manifest), config zod(예산·임계치·k·상한, env 병합), 섹션 id 슬러그 규칙(헤딩 경로 기반, 안정성).
