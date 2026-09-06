@@ -3,6 +3,7 @@
 // 필요 없다.
 import { z } from "zod";
 import { GATE_THRESHOLD_FLOOR, PASS_EPSILON, decidePassed } from "./gateVerdict.js";
+import { MULTI_LINE_PATTERN, SINGLE_LINE_PATTERN } from "./modelText.js";
 
 function unique(values: readonly string[]): boolean {
   return new Set(values).size === values.length;
@@ -12,12 +13,30 @@ function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   return a.size === b.size && [...a].every((x) => b.has(x));
 }
 
+// C1(DESIGN §4): 모델 출력 필드의 길이·제어문자 제한 — 제목은 프롬프트 데이터 블록과 SKILL.md에, id는 manifest에,
+// QA 문구는 프롬프트·manifest에 그대로 실린다. 개행이 낀 "한 줄 필드"나 제어문자는 형식을 깨는 통로라 경계에서 막는다.
+export const MAX_TITLE_CHARS = 200;
+export const MAX_ID_CHARS = 200;
+export const MAX_QA_FIELD_CHARS = 2000;
+const singleLine = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .regex(SINGLE_LINE_PATTERN, "must be a single line without control characters");
+const multiLine = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .regex(MULTI_LINE_PATTERN, "control characters other than newline/tab are not allowed");
+
 /** ChapterPlan — outline(SkillPlan)의 챕터 하나. */
 export const chapterPlanSchema = z.object({
-  id: z.string().min(1),
+  id: singleLine(MAX_ID_CHARS),
   file: z.string().min(1),
-  title: z.string().min(1),
-  sectionIds: z.array(z.string().min(1)).min(1),
+  title: singleLine(MAX_TITLE_CHARS),
+  sectionIds: z.array(singleLine(MAX_ID_CHARS)).min(1),
 });
 
 /** slug 형식 — 소문자·숫자·하이픈 단일 경로 구성요소(DESIGN §2, A1). `/`·`.`·`..`·절대 경로가 여기서 걸러진다.
@@ -32,7 +51,7 @@ export const slugSchema = z
 /** SkillPlan — outline 단계 LLM 응답. */
 export const skillPlanSchema = z.object({
   slug: slugSchema,
-  title: z.string().min(1),
+  title: singleLine(MAX_TITLE_CHARS),
   chapters: z.array(chapterPlanSchema).min(1),
 });
 
@@ -47,13 +66,18 @@ export function isChapterFilePath(path: string): boolean {
   return CHAPTER_FILE_PATTERN.test(path);
 }
 
-/** GoldenQA — qaGen 단계 LLM 응답 한 항목. */
-export const goldenQaSchema = z.object({
-  id: z.string().min(1),
-  sectionId: z.string().min(1),
-  question: z.string().min(1),
-  refAnswer: z.string().min(1),
-  anchorQuote: z.string().min(1),
+/** qaGen 단계 LLM 응답 한 항목(id 없음) — gate.ts가 파싱하고 id를 붙인다. */
+export const qaGenItemSchema = z.object({
+  question: multiLine(MAX_QA_FIELD_CHARS),
+  refAnswer: multiLine(MAX_QA_FIELD_CHARS),
+  anchorQuote: multiLine(MAX_QA_FIELD_CHARS),
+});
+export const qaGenResponseSchema = z.object({ items: z.array(qaGenItemSchema) });
+
+/** GoldenQA — 검증된 골든 Q&A(manifest.goldenQa). */
+export const goldenQaSchema = qaGenItemSchema.extend({
+  id: singleLine(MAX_ID_CHARS),
+  sectionId: singleLine(MAX_ID_CHARS),
 });
 
 export const gateFailureReasonSchema = z.enum([

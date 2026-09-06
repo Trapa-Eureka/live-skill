@@ -10,6 +10,7 @@ import {
   formatOutlineCoverageIssues,
   isSubstantiveSection,
 } from "./outlineCoverage.js";
+import { stripControlChars } from "./modelText.js";
 import { distillPrompt, outlinePrompt } from "./prompts.js";
 import { err, ok, type Result } from "./result.js";
 import { skillPlanSchema } from "./schemas.js";
@@ -207,7 +208,8 @@ export async function compile(
       .map((id) => byId.get(id))
       .filter((s): s is NamedSection => s !== undefined);
     const req = distillPrompt(chapter, chapterSections, deps.config.budgets.chapter);
-    const body = await deps.llm.complete(req);
+    // C1: 증류 본문은 파일에 그대로 쓰이는 모델 출력 — 개행·탭 외 제어문자는 여기서 지운다.
+    const body = stripControlChars(await deps.llm.complete(req));
     distilled.push({ id: chapter.id, file: "", body, anchors: extractAnchors(body) });
   }
 

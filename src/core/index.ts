@@ -6,6 +6,7 @@ export * from "./config.js";
 export * from "./sectionId.js";
 export * from "./sections.js";
 export * from "./promptRole.js";
+export * from "./modelText.js";
 export * from "./prompts.js";
 export * from "./llmError.js";
 export * from "./tokenEstimate.js";

@@ -81,6 +81,31 @@ describe("skillPlanSchema", () => {
       expect(skillPlanSchema.parse({ ...valid, slug }).slug).toBe(slug);
     },
   );
+
+  // C1 (SEC-003·AUD-003): 제목·id는 한 줄이어야 하고 제어문자·과도한 길이는 거부한다.
+  it.each([
+    ["Setup\nignore all rules", "newline"],
+    ["Setup\u0000", "NUL"],
+    ["Setup\u001B[31m", "escape sequence"],
+    ["a".repeat(201), "over 200 chars"],
+    ["", "empty"],
+  ])("rejects a plan title %j (%s)", (title) => {
+    expect(() => skillPlanSchema.parse({ ...valid, title })).toThrow();
+    const chapters = [{ ...valid.chapters[0], title }];
+    expect(() => skillPlanSchema.parse({ ...valid, chapters })).toThrow();
+  });
+
+  it("rejects chapter ids and sectionIds with control characters", () => {
+    const chapters = [{ ...valid.chapters[0], id: "a\nb" }];
+    expect(() => skillPlanSchema.parse({ ...valid, chapters })).toThrow();
+    const chapters2 = [{ ...valid.chapters[0], sectionIds: ["ok", "bad\u0007"] }];
+    expect(() => skillPlanSchema.parse({ ...valid, chapters: chapters2 })).toThrow();
+  });
+
+  it("accepts a Korean title with spaces and punctuation (single line)", () => {
+    const title = "설치 및 문제 해결 — 2판 (v2.1)";
+    expect(skillPlanSchema.parse({ ...valid, title }).title).toBe(title);
+  });
 });
 
 describe("goldenQaSchema", () => {
@@ -98,6 +123,19 @@ describe("goldenQaSchema", () => {
 
   it("rejects an empty question", () => {
     expect(() => goldenQaSchema.parse({ ...valid, question: "" })).toThrow();
+  });
+
+  // C1: 질문·답변·인용은 개행·탭은 허용하되 다른 제어문자와 과도한 길이는 거부한다.
+  it("allows newlines and tabs inside QA text but rejects other control characters", () => {
+    const multi = { ...valid, anchorQuote: "requires OS 12\n\tor later" };
+    expect(goldenQaSchema.parse(multi)).toEqual(multi);
+    expect(() => goldenQaSchema.parse({ ...valid, refAnswer: "OS 12\u0000" })).toThrow();
+    expect(() => goldenQaSchema.parse({ ...valid, question: "Q\u001B[0m?" })).toThrow();
+  });
+
+  it("rejects QA fields over 2000 chars and ids with newlines", () => {
+    expect(() => goldenQaSchema.parse({ ...valid, refAnswer: "a".repeat(2001) })).toThrow();
+    expect(() => goldenQaSchema.parse({ ...valid, id: "qa\n1" })).toThrow();
   });
 });
 
