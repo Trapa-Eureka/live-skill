@@ -22,9 +22,18 @@ function blocked(message: string): never {
   process.exit(1);
 }
 
+// `npm publish --dry-run` exports npm_config_dry_run=true to its lifecycle scripts, so a nested
+// `npm pack` inherits it and writes no tarball ("npm pack produced no .tgz"). The override makes the
+// real pack below actually produce a file; the explicit `--dry-run` flag on the first call still wins.
+const childEnv = { ...process.env, npm_config_dry_run: "false" };
+
 function run(cmd: string, args: readonly string[]): string {
   try {
-    return execFileSync(cmd, [...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return execFileSync(cmd, [...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: childEnv,
+    });
   } catch (e) {
     return blocked(
       `\`${cmd} ${args.join(" ")}\` failed: ${e instanceof Error ? e.message : String(e)}`,
