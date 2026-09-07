@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/core/config.js";
 import type { ExtractedDoc, SkillPlan } from "../src/core/index.js";
-import { compile, MAX_INPUT_TOKENS } from "../src/core/pipeline.js";
+import { compile } from "../src/core/pipeline.js";
+import { MAX_INPUT_TOKENS } from "../src/core/tokenEstimate.js";
 import { trackCost } from "../src/core/costTracker.js";
 import { createExtractors } from "../src/adapters/extractors/index.js";
 import { FixtureExtractor, syntheticDoc } from "../src/mocks/fixtureExtractor.js";
@@ -171,6 +172,37 @@ describe("compile — empty document (TESTING §4)", () => {
     expect(result).toMatchObject({ ok: false, error: { kind: "extract_failed" } });
     if (result.ok) throw new Error("expected failure");
     expect(result.error.message).toContain("scanned image");
+  });
+});
+
+describe("compile — distill receives whole sections (F1, 완료 기준)", () => {
+  it("sends the tail of a section longer than 2,000 characters to the distill model, unabridged", async () => {
+    const tail = "TAIL-RULE: torque the M3 screws to 0.6 N·m.";
+    const text = `${"Mount the unit. ".repeat(200)}${tail}`;
+    expect(text.length).toBeGreaterThan(2000);
+    const long: ExtractedDoc = {
+      sections: [{ id: "a", heading: "Installation", level: 1, text }],
+    };
+    const plan: SkillPlan = {
+      slug: "manual",
+      title: "Manual",
+      chapters: [{ id: "a", file: "ignored", title: "Installation", sectionIds: ["a"] }],
+    };
+    const llm = script().outline(plan).distill("a", "Mount the unit. [§a]").build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [new FixtureExtractor({ md: long })],
+      llm,
+      clock,
+      config,
+      gate: "skip",
+    });
+    expect(result.ok).toBe(true);
+    const distill = llm.calls.find((c) => c.role === "distill");
+    expect(distill?.prompt).toContain(text); // 전문 그대로
+    expect(distill?.prompt).toContain(tail);
+    expect(distill?.prompt).not.toContain("…");
+    const outline = llm.calls.find((c) => c.role === "outline");
+    expect(outline?.prompt).toContain("…"); // outline은 발췌 — 구조 결정에는 앞부분으로 충분
   });
 });
 

@@ -175,9 +175,10 @@
 
 ### F. 추출·증류 정확성 (001 고유) — High/Medium
 
-#### F1 — distill 2,000자 잘림 제거 · 상태: TODO · 원본: 001-005 · High
+#### F1 — distill 2,000자 잘림 제거 · 상태: DONE(2026-09-07) · 원본: 001-005 · High
 - 목표: 입력 예산 내에서는 섹션 전문을 전달. 초과 시 명시적 청크 분할·병합 또는 사용자 경고.
-- 완료 기준: [ ] 2,000자 초과 섹션의 뒷부분이 distill 프롬프트에 포함되는 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #34): `distillPrompt`의 `sections` 블록이 섹션 **전문**을 담는다(400자 발췌는 outline 전용으로만 남김). 청크 분할·병합은 두지 않음 — `compile()`이 outline 전에 전체 입력을 `MAX_INPUT_TOKENS`(30k, `core/tokenEstimate.ts`로 이동해 prompts·pipeline 공용)로 막으므로 챕터 원문이 그 값을 넘는 일은 구조적으로 없고, `distillPrompt`는 그 불변식을 명시적으로 검사해 넘으면 조용히 자르는 대신 throw(호출자 버그로 드러남). DESIGN §5.1 기록.
+- 완료 기준: [x] 2,000자 초과 섹션의 뒷부분이 distill 프롬프트에 포함되는 테스트(프롬프트 단위: 전문 포함·`…` 없음·상한 초과 throw·outline은 발췌 유지; 파이프라인: 실제 `compile()`이 보낸 distill 요청에 뒷부분 그대로) [x] check 통과(26 files·425 tests)
 
 #### F2 — 섹션 ID 충돌 · 상태: TODO · 원본: 001-006 · High
 - 목표: 최종 ID 집합 기준으로 충돌 없는 접미사 생성(`A, A, A-2` → 3개 고유). 다중 소스 namespace를 basename 대신 입력 루트 상대 경로(또는 안정 해시) 기반으로.

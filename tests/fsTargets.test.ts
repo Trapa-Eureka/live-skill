@@ -493,10 +493,13 @@ describe("resolveTargetDir / tempSkillDir — slug 경로 탈출 차단 (A1, 완
   });
 
   it.each(unsafe)("tempSkillDir refuses unsafe slug %j and creates nothing", async (slug) => {
-    const before = (await readdir(tmpdir())).filter((n) => n.startsWith("live-skill-")).length;
+    // 공용 os.tmpdir()은 병렬 워커(e2e·smoke)도 `live-skill-…` 디렉터리를 만들었다 지우므로 전체 개수는 경쟁한다 —
+    // 이 slug로 만들어질 수 있는 이름(`live-skill-<slug>-*`)만 센다.
+    const mine = async (): Promise<number> =>
+      (await readdir(tmpdir())).filter((n) => n.startsWith(`live-skill-${slug}-`)).length;
+    const before = await mine();
     await expect(tempSkillDir(slug)).rejects.toMatchObject({ kind: "unsafe_slug" });
-    const after = (await readdir(tmpdir())).filter((n) => n.startsWith("live-skill-")).length;
-    expect(after).toBe(before);
+    expect(await mine()).toBe(before);
   });
 
   it("a valid slug resolves to a direct child of the skills root, never above it", () => {
