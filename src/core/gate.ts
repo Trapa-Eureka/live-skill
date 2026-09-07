@@ -20,6 +20,7 @@ import type {
 // gateVerdict.ts is the single source of the verdict rules (threshold floor, pass condition), shared
 // with the manifest semantic validation in schemas.ts (B6).
 import { DEFAULT_THRESHOLD, assertGateThreshold, decidePassed } from "./gateVerdict.js";
+import { parseJsonResponse } from "./jsonResponse.js";
 import { isChapterFilePath, qaGenResponseSchema } from "./schemas.js";
 import type { SkillFile } from "./validator.js";
 
@@ -91,7 +92,8 @@ function parseQaGenItems(
   raw: string,
 ): { question: string; refAnswer: string; anchorQuote: string }[] {
   try {
-    return qaGenResponseSchema.parse(JSON.parse(raw) as unknown).items;
+    // L2: tolerate a fence/prose envelope; the item schema itself stays strict.
+    return qaGenResponseSchema.parse(parseJsonResponse(raw)).items;
   } catch {
     return []; // parse failure = zero items; the regeneration loop naturally retries
   }
