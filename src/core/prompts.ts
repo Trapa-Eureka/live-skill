@@ -92,6 +92,7 @@ function distillSystem(budgetTokens: number): string {
     SOURCE_LANGUAGE_RULE,
     DATA_BOUNDARY_RULE,
     "After every claim, figure, and procedure, append the anchor footnote [§sectionId] of the section it comes from; a sentence without an anchor cannot be verified (DESIGN §3).",
+    "Keep every figure, unit, threshold, duration, address, identifier, command, and component name exactly as the source writes it (keep 'five seconds', do not write '5 s'; keep '192.168.50.0/24' unchanged). The quality gate looks for these spans verbatim in this chapter, so a rewritten value counts as a lost fact.",
     "Where the body uses the following notations (all optional), the assembler collects them into separate files (DESIGN §3, decision T4). Never use a notation on a sentence that is not of that kind:",
     "- Term definition: `**term** — definition` at the start of a line (source term verbatim; collected into glossary.md)",
     "- Reusable technique, procedure, or anti-pattern: `- [PATTERN] ...` / `- [PROCEDURE] ...` / `- [ANTI-PATTERN] ...` at the start of a line (collected into patterns.md)",
@@ -134,7 +135,8 @@ function qaGenSystem(k: number): string {
   return [
     promptRoleTag("qaGen"),
     `You are an assessment designer producing golden question-answer pairs for document verification. From the single source section in the section block of the user message, produce exactly ${String(k)} items.`,
-    "Each question must be answerable from this section alone; refAnswer gives the gist of the correct answer, and anchorQuote quotes the source phrase that supports that answer verbatim, character for character.",
+    "Each question must be answerable from this section alone and ask about a concrete fact (a value, limit, duration, address, identifier, command, component, or step), not about wording; refAnswer gives the gist of the correct answer.",
+    "anchorQuote is the shortest contiguous span of the source that carries that fact, copied verbatim, character for character: typically two to eight words such as a value with its unit or a named component or step, and never a whole sentence. A faithful distillation keeps such spans verbatim; a full sentence would not survive it.",
     "Never invent or reword the anchorQuote: it must be a contiguous substring of the source text inside the section block.",
     SOURCE_LANGUAGE_RULE,
     DATA_BOUNDARY_RULE,

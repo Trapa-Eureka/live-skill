@@ -73,6 +73,12 @@ describe("distillPrompt", () => {
     expect(prompt).toContain(section.text);
   });
 
+  it("tells the writer to keep values, units, identifiers, and names verbatim (L4: the gate looks for them)", () => {
+    const { system } = distillPrompt(chapter, [section]);
+    expect(system).toContain("exactly as the source writes it");
+    expect(system).toContain("verbatim in this chapter");
+  });
+
   it("scales maxTokens with the chapter budget", () => {
     expect(distillPrompt(chapter, [section], 2000).maxTokens).toBeGreaterThan(
       distillPrompt(chapter, [section], 500).maxTokens,
@@ -120,6 +126,12 @@ describe("qaGenPrompt", () => {
     expect(system).toContain("exactly 3");
     expect(system).toContain("anchorQuote");
     expect(prompt).toContain(section.text);
+  });
+
+  it("asks for the shortest fact-bearing span as the anchor, never a whole sentence (L4)", () => {
+    const { system } = qaGenPrompt(section, 3);
+    expect(system).toContain("shortest contiguous span");
+    expect(system).toContain("never a whole sentence");
   });
 });
 
