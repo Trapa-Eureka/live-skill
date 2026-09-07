@@ -1,195 +1,195 @@
 # 001 — Comprehensive Code Review
 
-검토일: 2026-09-06  
-검토 범위: `/Volumes/DevWork/work/live-skill` 전체 (`src/`, 테스트, 스크립트, 설정, 잠금 파일, 관련 Markdown 문서 및 픽스처)  
-검토 관점: 정확성, 복잡성, 성능, 오류 처리, 타입 안전성, 유지보수성, 불필요한 코드, 동시성 및 경쟁 조건
+Review date: 2026-09-06  
+Review scope: all of `/Volumes/DevWork/work/live-skill` (`src/`, tests, scripts, configuration, lock file, related Markdown documents and fixtures)  
+Review lens: correctness, complexity, performance, error handling, type safety, maintainability, unnecessary code, concurrency and race conditions
 
-## 요약
+## Summary
 
-- Critical: 0건
-- High: 6건
-- Medium: 11건
-- Low: 2건
-- 합계: 19건
+- Critical: 0
+- High: 6
+- Medium: 11
+- Low: 2
+- Total: 19
 
-검토 과정에서 파일을 쓰지 않는 메모리 내 재현을 통해 주요 결함을 확인했다. 원문 섹션을 아웃라인에서 누락해도 게이트가 통과했고, `MAX_LLM_CALLS=6`에서 실제 7회 호출이 발생했으며, 구조 검증에 실패한 산출물도 CLI가 성공으로 처리했다. 여러 파일을 원문으로 제공한 `eval`은 섹션 ID 불일치로 질문을 하나도 평가하지 못했다.
+During the review, the main defects were confirmed through in-memory reproductions that write no files. The gate passed even when a source section was dropped from the outline; with `MAX_LLM_CALLS=6`, 7 calls were actually made; and the CLI treated an output that failed structural validation as a success. An `eval` run given multiple files as the source could not evaluate a single question because of a section ID mismatch.
 
 ## Critical
 
-확인된 사항 없음.
+None found.
 
 ## High
 
-### 001. LLM이 반환한 slug로 출력 디렉터리를 벗어날 수 있음
+### 001. An LLM-returned slug can escape the output directory
 
-- 파일: `src/adapters/fsTargets.ts`
-- 관련 행: 122–129
-- 연관 파일: `src/core/schemas.ts` 15–18
-- 문제: `slug`를 비어 있지 않은 문자열로만 검증한 뒤 파일시스템 경로에 직접 결합한다. `../../outside` 같은 값은 스킬 타깃이나 임시 디렉터리 밖으로 해석된다.
-- 영향: LLM 출력 또는 조작된 계획으로 의도하지 않은 위치에 산출물을 쓸 수 있다. 게이트 실패 경로에서는 `force: true`까지 사용하므로 기존 파일을 덮어쓸 위험도 있다.
-- 권장 수정: slug를 안전한 단일 경로 구성요소 형식으로 제한하고 `/`, `\\`, `.`, `..` 및 절대 경로를 거부한다. 결합 후에는 최종 경로가 허용된 타깃 디렉터리 내부인지 다시 검증한다.
+- File: `src/adapters/fsTargets.ts`
+- Lines: 122–129
+- Related file: `src/core/schemas.ts` 15–18
+- Problem: `slug` is validated only as a non-empty string and then joined directly into a filesystem path. A value such as `../../outside` resolves outside the skill target or the temporary directory.
+- Impact: LLM output or a manipulated plan can write outputs to an unintended location. The gate-failure path even uses `force: true`, so existing files may be overwritten as well.
+- Recommendation: Restrict the slug to a safe single-path-component format and reject `/`, `\\`, `.`, `..`, and absolute paths. After joining, verify again that the final path lies inside the permitted target directory.
 
-### 002. 출력 경계 검사가 심볼릭 링크를 막지 못함
+### 002. The output boundary check does not block symbolic links
 
-- 파일: `src/adapters/fsTargets.ts`
-- 관련 행: 34–43, 69–72
-- 문제: `resolveWithinOutDir()`는 문자열상의 상대 경로만 확인한다. 이후 `mkdir()`와 `writeFile()`은 기존 심볼릭 링크를 따라갈 수 있다.
-- 영향: 출력 디렉터리 안의 `chapters/` 또는 개별 파일이 외부 경로를 가리키면, 특히 `--force` 실행 시 출력 폴더 밖 파일을 덮어쓸 수 있다.
-- 권장 수정: 각 경로 구성요소에 대해 `lstat()`으로 링크 여부를 확인하고, 허용할 경우에도 `realpath()` 기준으로 출력 루트 내부인지 검증한다. 가능하면 링크를 따라가지 않는 원자적 파일 생성 방식을 사용한다.
+- File: `src/adapters/fsTargets.ts`
+- Lines: 34–43, 69–72
+- Problem: `resolveWithinOutDir()` only checks that the path is relative as a string. The subsequent `mkdir()` and `writeFile()` may follow an existing symbolic link.
+- Impact: If `chapters/` or an individual file inside the output directory points to an external path, files outside the output folder can be overwritten, especially in a `--force` run.
+- Recommendation: Check each path component with `lstat()` for links, and even where links are allowed, verify against `realpath()` that the target lies inside the output root. Where possible, use an atomic file-creation method that does not follow links.
 
-### 003. 구조 검증에 실패한 스킬도 성공으로 배포됨
+### 003. A skill that fails structural validation is still deployed as a success
 
-- 파일: `src/core/pipeline.ts`
-- 관련 행: 233–254
-- 연관 파일: `src/cli/compile.ts` 71–93
-- 문제: `validateSkill()` 결과를 계산하고 반환만 할 뿐, CLI가 `validation.passed`를 확인하지 않는다.
-- 영향: 토큰 예산 초과, 잘못된 frontmatter 또는 깨진 링크가 있어도 파일을 쓰고 종료코드 0을 반환할 수 있다. 구조 오류가 명확한 경우에도 의미 게이트를 먼저 실행해 LLM 비용을 낭비한다.
-- 권장 수정: 의미 게이트 전에 구조 검증을 수행하고 error가 있으면 컴파일 배포를 중단한다. `--no-gate`에서도 구조 검증은 강제하고 리포트를 사용자에게 출력한다.
+- File: `src/core/pipeline.ts`
+- Lines: 233–254
+- Related file: `src/cli/compile.ts` 71–93
+- Problem: The `validateSkill()` result is only computed and returned; the CLI never checks `validation.passed`.
+- Impact: Even with a token budget overrun, invalid frontmatter, or broken links, the files may be written and exit code 0 returned. Even when the structural error is obvious, the semantic gate runs first and wastes LLM cost.
+- Recommendation: Run structural validation before the semantic gate and abort compile deployment when there is an error. Enforce structural validation even under `--no-gate` and print the report to the user.
 
-### 004. 아웃라인에서 누락한 원문이 평가 대상에서도 사라짐
+### 004. Source text dropped from the outline also disappears from the evaluation
 
-- 파일: `src/core/pipeline.ts`
-- 관련 행: 159–169, 185–193
-- 연관 파일: `src/core/gate.ts` 250–258
-- 문제: 아웃라인의 `sectionIds`가 입력 섹션 전체를 정확히 한 번씩 포함하는지 확인하지 않는다. 존재하지 않는 section ID, 중복 배정, 중복 chapter ID도 허용한다.
-- 영향: 모델이 어려운 원문 섹션을 누락하면 해당 내용은 증류, manifest, QA 생성 및 게이트에서 모두 사라진다. 불완전한 스킬이 100% 통과할 수 있어 제품의 핵심 품질 보장을 무너뜨린다.
-- 권장 수정: outline 파싱 직후 입력 섹션과 계획의 section ID를 집합 및 빈도 기준으로 비교한다. 모든 입력 섹션의 정확히 한 번 배정, 알 수 없는 ID 부재, chapter ID 유일성을 강제한다.
+- File: `src/core/pipeline.ts`
+- Lines: 159–169, 185–193
+- Related file: `src/core/gate.ts` 250–258
+- Problem: There is no check that the outline's `sectionIds` contain every input section exactly once. Nonexistent section IDs, duplicate assignments, and duplicate chapter IDs are all accepted.
+- Impact: If the model drops a difficult source section, that content vanishes from distillation, the manifest, QA generation, and the gate alike. An incomplete skill can pass at 100%, which breaks the product's core quality guarantee.
+- Recommendation: Immediately after parsing the outline, compare the input sections with the plan's section IDs as a set and by frequency. Enforce that every input section is assigned exactly once, that no unknown IDs are present, and that chapter IDs are unique.
 
-### 005. 증류 시 각 섹션의 2,000자 이후 내용을 버림
+### 005. Distillation discards everything after the first 2,000 characters of each section
 
-- 파일: `src/core/prompts.ts`
-- 관련 행: 18–21, 57
-- 문제: `distillPrompt()`가 각 섹션을 `sectionExcerpt(s, 2000)`으로 잘라 모델에 전달한다.
-- 영향: 전체 입력이 허용 토큰 예산 이내여도 섹션 뒤쪽의 규칙, 수치, 절차가 증류 모델에 전달되지 않는다. 반면 QA 생성은 전체 원문을 사용하므로 정보 손실 또는 피할 수 없는 게이트 실패가 발생한다.
-- 권장 수정: 입력 예산 내에서는 섹션 전문을 전달한다. 초과 시에는 명시적인 청크 분할, 부분 증류 및 병합 전략을 사용하고 누락을 사용자에게 알린다.
+- File: `src/core/prompts.ts`
+- Lines: 18–21, 57
+- Problem: `distillPrompt()` truncates each section with `sectionExcerpt(s, 2000)` before passing it to the model.
+- Impact: Even when the whole input fits within the permitted token budget, rules, figures, and procedures near the end of a section never reach the distillation model. QA generation, on the other hand, uses the full source text, so the result is information loss or unavoidable gate failures.
+- Recommendation: Pass the full section text whenever it fits within the input budget. When it does not, use an explicit chunking, partial-distillation, and merge strategy and notify the user of any omission.
 
-### 006. 섹션 ID 충돌로 서로 다른 원문이 덮어써짐
+### 006. Section ID collisions overwrite different source texts
 
-- 파일: `src/core/sectionId.ts`
-- 관련 행: 42–45
-- 연관 파일: `src/core/pipeline.ts` 76–78, 185
-- 문제: 중복 ID 접미사를 기존 헤딩 슬러그와 대조하지 않는다. 예를 들어 `A`, `A`, `A-2`가 `a`, `a-2`, `a-2`가 된다. 여러 파일도 basename만 namespace로 사용하므로 서로 다른 폴더의 같은 파일명끼리 충돌한다.
-- 영향: `Map` 생성 시 앞선 섹션이 덮어써져 증류할 원문, manifest 해시 및 평가 대상이 잘못된다.
-- 권장 수정: 생성 완료된 전체 ID를 기준으로 충돌 없는 후보를 반복 생성한다. 다중 소스 namespace에는 basename 대신 입력 루트 기준 상대 경로 또는 안정적인 경로 해시를 사용한다.
+- File: `src/core/sectionId.ts`
+- Lines: 42–45
+- Related file: `src/core/pipeline.ts` 76–78, 185
+- Problem: Duplicate-ID suffixes are not checked against existing heading slugs. For example, `A`, `A`, `A-2` become `a`, `a-2`, `a-2`. With multiple files, only the basename is used as the namespace, so identical file names in different folders collide.
+- Impact: When the `Map` is built, the earlier section is overwritten, so the source text to distill, the manifest hash, and the evaluation target are all wrong.
+- Recommendation: Generate collision-free candidates iteratively against the full set of already-generated IDs. For the multi-source namespace, use the path relative to the input root or a stable path hash instead of the basename.
 
 ## Medium
 
-### 007. 질문 재생성 호출이 비용 상한 계산에서 빠짐
+### 007. Question-regeneration calls are missing from the cost-cap calculation
 
-- 파일: `src/core/gate.ts`
-- 관련 행: 63–64, 92–94
-- 연관 문서: `docs/DESIGN.md` §4
-- 문제: 비용 추정은 섹션당 qaGen 1회만 계산하지만 `generateGoldenQa()`는 최대 2회 호출한다.
-- 영향: 설정한 `MAX_LLM_CALLS`를 실제 호출이 초과할 수 있다. 재현에서 상한 6회인 실행이 7회 호출 후 성공했다.
-- 권장 수정: 재생성을 포함한 최악 조건으로 추정식을 고치고, 추정치 외에도 실제 호출 직전에 공유 카운터로 상한을 강제한다. 설계 문서의 산식도 함께 갱신한다.
+- File: `src/core/gate.ts`
+- Lines: 63–64, 92–94
+- Related document: `docs/DESIGN.md` §4
+- Problem: The cost estimate counts one qaGen call per section, but `generateGoldenQa()` makes up to 2 calls.
+- Impact: Actual calls can exceed the configured `MAX_LLM_CALLS`. In the reproduction, a run with a cap of 6 succeeded after 7 calls.
+- Recommendation: Fix the estimation formula to the worst case including regeneration, and beyond the estimate, enforce the cap with a shared counter immediately before each actual call. Update the formula in the design document as well.
 
-### 008. 여러 원문으로 컴파일한 스킬의 `eval --source`가 동작하지 않음
+### 008. `eval --source` does not work for a skill compiled from multiple source files
 
-- 파일: `src/cli/eval.ts`
-- 관련 행: 69–87
-- 문제: compile은 다중 소스 섹션 ID에 파일 namespace를 붙이지만 eval 재추출 경로는 원래 ID를 그대로 사용한다.
-- 영향: manifest의 `x/a`, `y/a`와 재추출한 `a`가 일치하지 않아 QA가 생성되지 않고 게이트가 질문 0개로 실패한다.
-- 권장 수정: 다중 소스 정규화와 namespace 로직을 공용 함수로 분리해 compile과 eval에서 동일하게 사용한다. manifest와 매칭되지 않는 원문은 명시적인 오류로 보고한다.
+- File: `src/cli/eval.ts`
+- Lines: 69–87
+- Problem: compile prefixes multi-source section IDs with a file namespace, but the eval re-extraction path uses the original IDs unchanged.
+- Impact: The manifest's `x/a` and `y/a` do not match the re-extracted `a`, so no QA is generated and the gate fails with 0 questions.
+- Recommendation: Extract the multi-source normalization and namespace logic into a shared function used identically by compile and eval. Report source text that does not match the manifest as an explicit error.
 
-### 009. 일반적인 제목으로 잘못된 YAML frontmatter를 생성함
+### 009. Ordinary titles produce invalid YAML frontmatter
 
-- 파일: `src/core/assembler.ts`
-- 관련 행: 136–140
-- 연관 파일: `src/core/validator.ts` 84–86
-- 문제: 제목과 slug를 YAML 이스케이프 없이 직접 삽입한다. 예를 들어 `description: Guide: Setup`은 안전한 YAML scalar가 아니다. 검증기는 키 문자열 존재만 확인한다.
-- 영향: 자체 validator는 통과하지만 실제 Agent Skills 소비자가 metadata 파싱에 실패할 수 있다.
-- 권장 수정: YAML serializer를 이용해 frontmatter를 생성하고, validator에서 실제 YAML 파싱과 `name`·`description`의 타입 및 유효성을 검사한다.
+- File: `src/core/assembler.ts`
+- Lines: 136–140
+- Related file: `src/core/validator.ts` 84–86
+- Problem: The title and slug are inserted directly without YAML escaping. For example, `description: Guide: Setup` is not a safe YAML scalar. The validator only checks that the key strings are present.
+- Impact: The project's own validator passes, but real Agent Skills consumers may fail to parse the metadata.
+- Recommendation: Generate the frontmatter with a YAML serializer, and have the validator actually parse the YAML and check the type and validity of `name` and `description`.
 
-### 010. HTML의 표와 일반 컨테이너 본문이 누락됨
+### 010. HTML table content and generic-container body text are dropped
 
-- 파일: `src/adapters/extractors/html.ts`
-- 관련 행: 22–35
-- 문제: `h1`–`h6`, `p`, `li`, `blockquote`, `pre`만 선택해 `td`, `th` 및 일반 `div`의 직접 텍스트를 버린다.
-- 영향: 규칙·수치가 표에 들어간 문서에서 중요한 정보가 조용히 사라진다. 누락된 정보는 QA 생성에도 들어가지 않아 게이트가 발견하지 못할 수 있다.
-- 권장 수정: DOM을 문서 순서대로 순회하며 본문 텍스트, 표의 행·셀, 코드 블록 및 목록 구조를 보존한다. 중첩 요소 중복을 방지하는 단일 순회 방식을 사용한다.
+- File: `src/adapters/extractors/html.ts`
+- Lines: 22–35
+- Problem: Only `h1`–`h6`, `p`, `li`, `blockquote`, and `pre` are selected, discarding the direct text of `td`, `th`, and plain `div` elements.
+- Impact: In documents whose rules and figures live in tables, important information silently disappears. The missing information never enters QA generation either, so the gate may not detect it.
+- Recommendation: Walk the DOM in document order, preserving body text, table rows and cells, code blocks, and list structure. Use a single traversal that avoids duplicating nested elements.
 
-### 011. 빈 줄이 없는 Markdown 헤딩을 인식하지 못함
+### 011. Markdown headings without a surrounding blank line are not recognized
 
-- 파일: `src/core/sections.ts`
-- 관련 행: 59–65
-- 문제: 빈 줄 단위로 나눈 블록 전체만 헤딩 정규식에 적용한다. `# Title\nBody.\n## Sub\nDetail.` 같은 유효한 Markdown이 제목 없는 단일 섹션이 된다.
-- 영향: 섹션 계층, 안정적 ID, 아웃라인 및 QA 범위가 달라진다. 큰 단일 섹션으로 합쳐지면서 2,000자 증류 잘림 문제도 확대된다.
-- 권장 수정: Markdown 파서를 사용하거나 줄 단위 상태 기계로 ATX 헤딩을 인식한다. 코드 펜스 내부의 `#`는 헤딩으로 처리하지 않도록 한다.
+- File: `src/core/sections.ts`
+- Lines: 59–65
+- Problem: The heading regex is applied only to whole blocks split on blank lines. Valid Markdown such as `# Title\nBody.\n## Sub\nDetail.` becomes a single untitled section.
+- Impact: The section hierarchy, stable IDs, outline, and QA scope all change. Merging into one large section also amplifies the 2,000-character distillation truncation problem.
+- Recommendation: Use a Markdown parser or a line-by-line state machine to recognize ATX headings. Make sure `#` inside code fences is not treated as a heading.
 
-### 012. 동시 쓰기가 `--force` 보호를 우회할 수 있음
+### 012. Concurrent writes can bypass the `--force` protection
 
-- 파일: `src/adapters/fsTargets.ts`
-- 관련 행: 58–72
-- 문제: 디렉터리 내용 검사와 파일 쓰기가 분리된 TOCTOU 흐름이다.
-- 영향: 같은 출력 대상으로 두 프로세스가 동시에 시작하면 둘 다 사전 검사를 통과한 뒤 파일과 manifest를 서로 섞어 쓸 수 있다.
-- 권장 수정: 타깃 단위 배타적 잠금을 사용하고, 동일 파일시스템의 staging 디렉터리에 전부 쓴 뒤 원자적으로 최종 디렉터리와 교체한다.
+- File: `src/adapters/fsTargets.ts`
+- Lines: 58–72
+- Problem: The directory-content check and the file write form a separated TOCTOU flow.
+- Impact: If two processes start against the same output target at the same time, both pass the pre-check and then interleave their files and manifests.
+- Recommendation: Use a per-target exclusive lock, write everything to a staging directory on the same filesystem, and then swap it atomically with the final directory.
 
-### 013. `--force` 재컴파일 후 이전 챕터 파일이 남음
+### 013. Old chapter files remain after a `--force` recompile
 
-- 파일: `src/adapters/fsTargets.ts`
-- 관련 행: 69–73
-- 문제: 새 산출물만 덮어쓰며 이전 컴파일의 outputs 중 새 manifest에 없는 파일을 제거하지 않는다.
-- 영향: 챕터 이름이나 개수가 바뀌면 오래된 내용이 남는다. `readSkillDir()`는 이 파일도 읽으므로 검증·평가 입력이 오염될 수 있다.
-- 권장 수정: 이전 manifest의 관리 대상과 새 outputs를 비교해 stale 산출물을 제거하거나, staging 디렉터리를 완성한 뒤 전체를 원자적으로 교체한다.
+- File: `src/adapters/fsTargets.ts`
+- Lines: 69–73
+- Problem: Only the new outputs are overwritten; files from the previous compile's outputs that are absent from the new manifest are not removed.
+- Impact: When chapter names or counts change, stale content remains. `readSkillDir()` reads those files too, so validation and evaluation inputs can be contaminated.
+- Recommendation: Compare the previous manifest's managed files with the new outputs and remove stale outputs, or complete a staging directory and swap the whole thing atomically.
 
-### 014. 디렉터리 순회가 심볼릭 링크 순환을 따라감
+### 014. Directory traversal follows symbolic-link cycles
 
-- 파일: `src/adapters/fsTargets.ts`
-- 관련 행: 87–99
-- 문제: `stat()`이 링크를 따라가며 방문한 실제 경로를 기록하지 않는다.
-- 영향: 조상 디렉터리를 가리키는 링크에서 반복 순회하거나 경로 길이 오류가 날 수 있고, 지정한 입력 범위 밖 파일까지 포함할 수 있다.
-- 권장 수정: `lstat()`으로 링크를 기본 제외하거나 `realpath()` 기반 방문 집합과 입력 루트 경계 검사를 적용한다.
+- File: `src/adapters/fsTargets.ts`
+- Lines: 87–99
+- Problem: `stat()` follows links, and the real paths visited are not recorded.
+- Impact: A link pointing to an ancestor directory can cause repeated traversal or path-length errors, and files outside the specified input scope can be included.
+- Recommendation: Exclude links by default using `lstat()`, or apply a `realpath()`-based visited set together with an input-root boundary check.
 
-### 015. 입력 크기 제한 전에 모든 파일을 동시에 메모리에 적재함
+### 015. All files are loaded into memory concurrently before the input size limit applies
 
-- 파일: `src/cli/compile.ts`
-- 관련 행: 46–51
-- 연관 파일: `src/adapters/fsTargets.ts` 77–79
-- 문제: 파일 개수와 바이트 크기 제한 없이 `Promise.all(readFile)`로 전체 입력을 한꺼번에 읽고 `Uint8Array` 복사도 추가한다.
-- 영향: 대용량 폴더는 토큰 예산 검사에 도달하기 전에 메모리를 과도하게 사용하거나 프로세스가 종료될 수 있다.
-- 권장 수정: stat 기반 파일별·전체 바이트 제한을 먼저 검사하고 제한된 동시성으로 읽는다. Buffer를 불필요하게 복사하지 않도록 타입 경계를 정리한다.
+- File: `src/cli/compile.ts`
+- Lines: 46–51
+- Related file: `src/adapters/fsTargets.ts` 77–79
+- Problem: The entire input is read at once with `Promise.all(readFile)`, with no limit on file count or byte size, and a `Uint8Array` copy is added on top.
+- Impact: A large folder can use excessive memory or kill the process before the token budget check is ever reached.
+- Recommendation: Check stat-based per-file and total byte limits first, then read with bounded concurrency. Clean up the type boundary so Buffers are not copied unnecessarily.
 
-### 016. 선언된 Node 지원 범위가 실제 의존성과 맞지 않음
+### 016. The declared Node support range does not match the actual dependencies
 
-- 파일: `package.json`
-- 관련 행: 7–8
-- 연관 파일: `package-lock.json`의 `commander`, `vitest` 항목 및 `.github/workflows/ci.yml` 31–32
-- 문제: 프로젝트는 Node `>=20`을 선언하고 CI도 Node 20을 실행하지만 Commander 15는 Node `>=22.12.0`, Vitest 5는 Node 20을 지원하지 않는다.
-- 영향: 지원된다고 문서화된 환경에서 설치 경고, CLI 실행 실패 또는 CI 실패가 발생할 수 있다.
-- 권장 수정: Node 20 호환 버전으로 의존성을 고정하거나 최소 버전을 `>=22.12.0`으로 올리고 package metadata, README, CLAUDE.md와 CI matrix를 함께 맞춘다.
+- File: `package.json`
+- Lines: 7–8
+- Related files: the `commander` and `vitest` entries in `package-lock.json`, and `.github/workflows/ci.yml` 31–32
+- Problem: The project declares Node `>=20` and CI also runs Node 20, but Commander 15 requires Node `>=22.12.0` and Vitest 5 does not support Node 20.
+- Impact: Install warnings, CLI startup failures, or CI failures can occur in an environment documented as supported.
+- Recommendation: Either pin dependencies to Node 20-compatible versions or raise the minimum to `>=22.12.0`, and align the package metadata, README, CLAUDE.md, and CI matrix together.
 
-### 017. LLM 오류가 CLI의 사용자용 오류 처리 밖으로 전파됨
+### 017. LLM errors propagate outside the CLI's user-facing error handling
 
-- 파일: `src/cli/compile.ts`
-- 관련 행: 58–64
-- 연관 파일: `src/cli/index.ts` 124
-- 문제: 인증, 네트워크, rate limit, 응답 잘림 같은 `LlmProviderError`를 compile 호출 또는 최상위 `parseAsync()`에서 처리하지 않는다.
-- 영향: 실행 중간 실패 시 사용자 친화적인 원인과 수정 방법 대신 스택 추적과 일반 오류로 종료될 수 있다.
-- 권장 수정: CLI 공통 오류 경계를 추가해 `LlmProviderError.kind`, retryable 여부, 실패 단계를 사람이 이해할 수 있는 메시지와 종료코드로 변환한다.
+- File: `src/cli/compile.ts`
+- Lines: 58–64
+- Related file: `src/cli/index.ts` 124
+- Problem: `LlmProviderError`s such as authentication, network, rate-limit, and truncated-response errors are handled neither at the compile call nor at the top-level `parseAsync()`.
+- Impact: A mid-run failure can end in a stack trace and a generic error instead of a user-friendly cause and fix.
+- Recommendation: Add a common CLI error boundary that converts `LlmProviderError.kind`, whether it is retryable, and the failed stage into a human-readable message and exit code.
 
 ## Low
 
-### 018. 잘못된 `--target` 값이 조용히 Claude로 처리됨
+### 018. An invalid `--target` value is silently treated as Claude
 
-- 파일: `src/cli/index.ts`
-- 관련 행: 65
-- 문제: `agents` 이외의 모든 값을 `claude`로 바꾼다.
-- 영향: 옵션 오타가 명시적 오류가 되지 않고 의도하지 않은 스킬 디렉터리에 설치된다.
-- 권장 수정: Commander의 choices 또는 자체 zod enum으로 `claude|agents`만 허용하고 나머지는 실행 전에 거부한다.
+- File: `src/cli/index.ts`
+- Lines: 65
+- Problem: Every value other than `agents` is converted to `claude`.
+- Impact: A typo in the option does not become an explicit error and installs into an unintended skill directory.
+- Recommendation: Allow only `claude|agents` via Commander's choices or the project's own zod enum, and reject everything else before execution.
 
-### 019. 작업 상태 문서가 구현 상태와 충돌함
+### 019. The task status document conflicts with the implementation state
 
-- 파일: `docs/TASKS.md`
-- 관련 행: 20–52
-- 연관 파일: `docs/PUBLISHING.md` 11, `README.ko.md` 53–57
-- 문제: T1–T8은 TODO이고 배포 문서는 코드 미착수로 표시하지만 관련 구현과 테스트가 존재한다. README는 T0–T10 완료 및 T11 잔여로 적었으나 TASKS에서는 T11까지 완료다.
-- 영향: 신규 기여자나 에이전트가 이미 끝난 작업을 재수행하거나 현재 릴리스 상태를 잘못 판단할 수 있다.
-- 권장 수정: 현재 상태의 단일 진실의 원천을 정하고 완료 상태를 동기화한다. 과거 상태 기록은 날짜가 붙은 별도 changelog 또는 snapshot 절로 분리한다.
+- File: `docs/TASKS.md`
+- Lines: 20–52
+- Related files: `docs/PUBLISHING.md` 11, `README.ko.md` 53–57
+- Problem: T1–T8 are marked TODO and the publishing document says the code has not been started, yet the corresponding implementation and tests exist. The README states T0–T10 are done with T11 remaining, whereas TASKS marks everything through T11 as done.
+- Impact: New contributors or agents may redo work that is already finished or misjudge the current release state.
+- Recommendation: Designate a single source of truth for the current state and synchronize the completion status. Move historical status records into a separate dated changelog or snapshot section.
 
-## 검증 기록
+## Verification record
 
-- `src/` 전체와 테스트, 스크립트, 설정·잠금 파일, 관련 Markdown 문서를 검토했다.
-- PDF와 DOCX 픽스처는 실제 추출기를 통해 결과를 확인했다.
-- TypeScript 60개 파일에 대해 구문 검사를 수행했으며 구문 진단은 없었다.
-- 대상 디렉터리에 `node_modules`가 없어 전체 `npm run check`는 실행하지 못했다. 별도 workspace에 존재한 TypeScript 런타임을 이용한 구문 및 메모리 내 재현만 수행했다.
-- 코드나 기존 문서는 변경하지 않았다. 이 리뷰 보고서 파일만 새로 추가했다.
+- All of `src/`, plus the tests, scripts, configuration and lock files, and related Markdown documents were reviewed.
+- The PDF and DOCX fixtures were checked through the real extractors.
+- Syntax checks were run on 60 TypeScript files with no syntax diagnostics.
+- The target directory had no `node_modules`, so the full `npm run check` could not be run. Only syntax checks and in-memory reproductions were performed, using a TypeScript runtime available in a separate workspace.
+- No code or existing documents were changed. Only this review report file was newly added.

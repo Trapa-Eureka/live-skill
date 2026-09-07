@@ -1,46 +1,46 @@
-# WORKFLOW — 이 레포를 굴리는 AI-native 규칙
+# WORKFLOW — the AI-native rules that run this repo
 
-기반: Clare Liguori (AWS), "From AI-Assisted to AI-Native: Building a Frontier Development Team"
-(https://youtu.be/Ry0WHNxDbYA · AWS 블로그: https://aws.amazon.com/blogs/machine-learning/how-frontier-teams-are-reinventing-ai-native-development/)
-운영 원칙은 sheet_mcp/retail-mcp/lang_ai_agent/message와 동일. 공통 요약 + **이 레포 특이사항**만 적는다.
+Basis: Clare Liguori (AWS), "From AI-Assisted to AI-Native: Building a Frontier Development Team"
+(https://youtu.be/Ry0WHNxDbYA, AWS blog: https://aws.amazon.com/blogs/machine-learning/how-frontier-teams-are-reinventing-ai-native-development/)
+The operating principles are the same as in sheet_mcp/retail-mcp/lang_ai_agent/message. Only the common summary plus **what is specific to this repo** is written here.
 
-## 0. 역할 정의 (프론티어 3행동)
+## 0. Role Definition (the three frontier behaviors)
 
-| 행동 | 이 레포에서 |
+| Behavior | In this repo |
 |---|---|
-| Hands-off Coding (1~2%) | Jin은 SPEC/DESIGN 수정·리뷰·실 LLM 스모크·npm 공개 승인만 |
-| Infrequent Interaction | 태스크마다 기계 판정 완료 기준 → 세션 중 개입 없이 완주 |
-| Minimized Idle Time | T1 후 레인 A/B/C 병렬. 다섯 레포 백로그를 하나의 worktree 큐로 운용 |
+| Hands-off Coding (1–2%) | Jin only edits and reviews SPEC/DESIGN, runs the real-LLM smoke, and approves npm publication |
+| Infrequent Interaction | Machine-verifiable completion criteria for every task → run to completion without intervention during the session |
+| Minimized Idle Time | Lanes A/B/C in parallel after T1. The backlogs of five repos are run as a single worktree queue |
 
-## 1. 습관 5개 → 규칙 (공통 요약)
+## 1. Five Habits → Rules (common summary)
 
-1. **Agent Context** — 부족지식은 CLAUDE.md/docs에만. 격주 프루닝 + 로그.
-2. **Slow Down to Speed Up** — strict TS + 인터페이스 경계(추출·LLM·조립·게이트 전부 분리) 선투자. 섹션 id 안정성 같은 "미래(v0.2)를 위한 지금의 공학"이 이 습관의 이 레포판.
-3. **Feed, Don't Babysit** — 배정은 TASKS 템플릿 1회, 자기 검증 = `npm run check`.
+1. **Agent Context** — tribal knowledge lives only in CLAUDE.md/docs. Biweekly pruning plus a log.
+2. **Slow Down to Speed Up** — up-front investment in strict TS and interface boundaries (extraction, LLM, assembly, and gate all separated). "Engineering now for the future (v0.2)", such as section id stability, is this repo's version of this habit.
+3. **Feed, Don't Babysit** — assignment is a single TASKS template; self-verification = `npm run check`.
    ```bash
    git worktree add ../live-skill-t4 -b t4 && cd ../live-skill-t4 && claude
    ```
-4. **Explicit Intent** — 산출 파일 구조·게이트 규칙·manifest 스키마 변경은 DESIGN diff가 코드보다 먼저.
-5. **Shift Left** — LLM 5역할 전부 ScriptedLlm 대본으로 대체해 게이트 판별력까지 로컬 결정론으로 증명. 실 LLM은 smoke에만.
+4. **Explicit Intent** — changes to the output file structure, gate rules, or manifest schema land as a DESIGN diff before the code.
+5. **Shift Left** — all 5 LLM roles are replaced by ScriptedLlm scripts, so even the gate's discriminating power is proven with local determinism. The real LLM is used only in smoke.
 
-## 2. live-skill 특이사항
+## 2. live-skill Specifics
 
-- **게이트가 곧 제품**: "게이트 판별력" 테스트 5종(훼손 주입 검출)은 제품 가설의 증거다 — 삭제·완화·임계치 하향으로 통과시키는 수정은 반려. 게이트 실패의 올바른 수정 방향은 증류·프롬프트 개선이다.
-- **answerer 격리 감시**: 리뷰 시 answerer 컨텍스트에 원문이나 미선택 챕터를 흘리는 diff를 잡는다. 격리가 깨지면 통과율은 오르고 제품은 죽는다.
-- **저작권 규칙**: fixtures/samples는 자작 문서만. 실서적·기사 텍스트 유입은 즉시 반려. 데모도 자작 샘플로.
-- **테스트를 코드에 맞추지 않는다**: 골든 스냅샷·게이트 케이스가 흔들리면 원인은 코드나 대본이다. retail-mcp의 수식 원칙과 동일한 방향 규율.
-- **book-to-skill과의 관계**: 산출 구조의 표준 호환만 참고, 코드 참조·이식 금지(독립 구현이 제품 전략이자 라이선스 위생).
+- **The gate is the product**: the 5 "gate discriminating power" tests (corruption-injection detection) are the evidence for the product hypothesis — changes that make them pass by deleting, relaxing, or lowering the threshold are rejected. The correct direction for fixing a gate failure is improving distillation or prompts.
+- **Watching answerer isolation**: in review, catch any diff that leaks the source or unselected chapters into the answerer context. If isolation breaks, the pass rate goes up and the product dies.
+- **Copyright rule**: fixtures/samples are self-authored documents only. Any influx of real book or article text is rejected immediately. Demos also use self-authored samples.
+- **Do not fit tests to the code**: if golden snapshots or gate cases wobble, the cause is the code or the script. The same directional discipline as retail-mcp's formula principle.
+- **Relationship to book-to-skill**: reference only the standard compatibility of the output structure; referring to or porting its code is prohibited (independent implementation is both product strategy and license hygiene).
 
-## 3. 일일 운영 루틴
+## 3. Daily Operating Routine
 
-1. 착수 가능 태스크 확인 → 레인별 worktree 배정 (다섯 레포 공용 큐)
-2. 실행 중 개입하지 않는다 — 그 시간에 v0.2(워처)·ph-skill-pack 문서를 다듬는다
-3. 완료 보고 → `npm run check` 재실행 → diff 리뷰 → 머지 → 상태 갱신
-4. 격주: CLAUDE.md 프루닝, TASKS 정리
+1. Check which tasks can start → assign worktrees per lane (queue shared by the five repos)
+2. Do not intervene during execution — use that time to refine the v0.2 (watcher) and ph-skill-pack documents
+3. Completion report → re-run `npm run check` → review the diff → merge → update status
+4. Biweekly: prune CLAUDE.md, tidy TASKS
 
-## 4. 자율성의 한계선 (사람이 잡는 것)
+## 4. Limits of Autonomy (what humans hold)
 
-- 실 LLM 스모크 실행(비용)과 게이트 임계치·k 기본값 확정
-- npm 퍼블리시·최종 이름 결정
-- 게이트 규칙·산출 구조의 변경 승인
-- ph-skill-pack(자매 레포) 착수 시점과 소스 선정
+- Running the real-LLM smoke (cost) and finalizing the gate threshold and k defaults
+- npm publish and the final name decision
+- Approval of changes to gate rules and output structure
+- When to start ph-skill-pack (sibling repo) and its source selection

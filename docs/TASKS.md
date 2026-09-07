@@ -1,262 +1,262 @@
-# TASKS — live-skill v0.1 백로그
+# TASKS — live-skill v0.1 Backlog
 
-## 사용법
+## How to use
 
-- 한 에이전트 세션 = 한 태스크. 프롬프트 템플릿:
-  > `docs/SPEC.md`, `docs/DESIGN.md`, `docs/TESTING.md`를 읽고 **T6**을 수행해. 완료 기준을 전부 충족하고 `npm run check`가 통과할 때까지 스스로 수정해. 끝나면 변경 파일과 검증 결과를 요약해.
-- 완료 기준은 전부 기계 판정 가능. 완료 시 상태 `DONE(날짜)` + 커밋(`T{n}: 요약`).
-- 병렬 레인: T1 완료 후 **A(T2), B(T3), C(T4)** 는 서로 다른 worktree 에이전트로 동시 진행 가능. T6이 허브, T7 이후 직렬.
+- One agent session = one task. Prompt template:
+  > Read `docs/SPEC.md`, `docs/DESIGN.md`, and `docs/TESTING.md`, then carry out **T6**. Keep fixing on your own until every completion criterion is met and `npm run check` passes. When done, summarize the changed files and the verification results.
+- Every completion criterion is machine-checkable. On completion, set the status to `DONE(date)` and commit (`T{n}: summary`).
+- Parallel lanes: once T1 is done, **A (T2), B (T3), C (T4)** can proceed concurrently in separate worktree agents. T6 is the hub; T7 onward is serial.
 
-의존 그래프: `T0 → T1 → {A: T2, B: T3, C: T4} → T5(T4) → T6(T2~T5) → T7(T3,T6) → T8(T6,T7) → T9(T8) → T10(T9) → T11`
-
----
-
-### T0 — 프로젝트 스캐폴딩 · 상태: DONE(2026-09-06)
-- 목표: TS strict + ESLint + Prettier + Vitest + 스크립트(`check/test/typecheck/lint/cli/smoke`), package.json `bin` 설정(npx 실행 전제), `.env.example`, `.gitignore`.
-- 참고 자료(2026-09-06 확인, 같은 저자 실전 레포): `../msg-agent`가 이 스택(TS strict+`noUncheckedIndexedAccess`, ESLint flat config+`typescript-eslint` strictTypeChecked, Prettier, Vitest+coverage 임계치, `tsx` 기반 cli/smoke, `check`/`prepublishOnly` 스크립트)을 npm 배포 수준까지 이미 구현해 뒀다 — `package.json`·`tsconfig.json`·`eslint.config.js`·`vitest.config.ts`를 이식하고 이 레포에 안 맞는 의존성(grammy·franc 등 메시징 전용)만 제거하는 편이 처음부터 설계하는 것보다 빠르고 검증됨. `.gitignore`·`LICENSE`(MIT, 저작권자 `Trapa-Eureka`)는 docs 분석 세션에서 이미 루트에 추가됨. 상세: `docs/PUBLISHING.md` §1.
-- 완료(2026-09-06, PR #2): `package.json`(`bin: live-skill`)·`tsconfig(.build).json`·`eslint.config.js`·`vitest.config.ts`·`.env.example`를 msg-agent 이식으로 작성, `src/cli/index.ts`(commander, compile/validate/eval/report 4종 스텁)·`src/version.ts`·`scripts/check-tarball.sh`(msg-agent 이식)·`scripts/smoke.ts`(T10 전까지 스텁) 추가.
-- 완료 기준: [x] `npm run check` 통과 [x] 더미 테스트 1개(`tests/version.test.ts`) [x] `npm run cli -- --help` 동작 [x] git init + 첫 커밋
-
-### T1 — 도메인 타입 + config · 상태: DONE(2026-09-06) · 의존: T0
-- 목표: `core/types.ts`(DESIGN §2 전체 — SkillPlan/DistilledChapter/GoldenQA/GateReport/Manifest), config zod(예산·임계치·k·상한, env 병합), 섹션 id 슬러그 규칙(헤딩 경로 기반, 안정성).
-- 설계 참고(2026-09-06 확인): `../msg-agent/src/core/index.ts`의 `DocumentExtractor.extract()`는 예외 대신 `Result<ExtractedDoc, ExtractError>`를 반환한다 — TESTING §4 "빈 문서/미지원 형식 → 수정 방법 담긴 거절" 요구를 결정론적으로 표현하기 좋은 패턴. DESIGN §2의 `extract(): Promise<ExtractedDoc>`를 이 형태로 조정할지 이 태스크에서 결정하고, 채택 시 DESIGN.md를 코드보다 먼저 갱신(CLAUDE.md 컨벤션).
-- 완료(2026-09-06, PR #5): `core/types.ts`(DESIGN §2)·`core/config.ts`(zod, env 병합)·`core/sectionId.ts`(헤딩 경로 슬러그) — `DocumentExtractor.extract()`는 msg-agent 규약대로 `Result`를 반환하도록 DESIGN §2 조정.
-- 완료 기준: [ ] 전 스키마 라운드트립 테스트 [ ] 슬러그 안정성 테스트(같은 문서 재추출 → 같은 id) [ ] check 통과
-
-### T2 (레인 A) — 추출기 4종 + 자작 픽스처 · 상태: DONE(2026-09-06) · 의존: T1
-- 목표: pdf-parse·mammoth·MD/TXT·HTML(cheerio) 추출기(섹션 헤딩 구조화, message 규약 동일 시그니처) + `fixtures/docs/` 자작 3종·엣지 문서·`samples/manual.pdf` 제작.
-- 참고 구현(2026-09-06 확인): `../msg-agent/src/adapters/extractors/`(`pdf.ts`·`docx.ts`·`text.ts`·`route.ts`·`limits.ts`·`index.ts`)가 CLAUDE.md가 말하는 "message 레포의 추출기 시그니처와 동일 규약"의 실체 — pdf-parse·mammoth를 그대로 쓰고 있어 직접 이식 가능(HTML/cheerio 추출기는 live-skill 신규 작성, 참고 구현 없음).
-- 완료(2026-09-06, PR #6): PDF(pdf-parse)·DOCX(mammoth)·MD/TXT·HTML(cheerio) 추출기 + `fixtures/docs/` 자작 픽스처·`samples/manual.pdf`.
-- 완료 기준: [ ] 형식별 구조 추출 테스트 [ ] 저작권 텍스트 부재(자작 확인 주석) [ ] check 통과
-
-### T3 (레인 B) — LlmProvider + ScriptedLlm · 상태: DONE(2026-09-06) · 의존: T1
-- 목표: `LlmProvider` 인터페이스 + Claude 어댑터(주입 fetch, MODEL env) + `ScriptedLlm`(역할 라우팅·순차 재생·assert_exhausted) + `script()` 빌더 + 프롬프트 5종(outline/distill/qaGen/answer/grade — 원문 용어 보존·앵커 필수·보수 채점 명시).
-- 완료(2026-09-06, PR #7): `LlmProvider` + Claude 어댑터, `ScriptedLlm`(역할 라우팅·assertExhausted)·`script()` 빌더, 프롬프트 5종.
-- 완료 기준: [ ] 대본 소진·역할 불일치 명확 실패 테스트 [ ] 목 fetch 요청 형태 테스트 [ ] check 통과
-
-### T4 (레인 C) — Assembler (결정론 조립) · 상태: DONE(2026-09-06) · 의존: T1
-- 목표: DistilledChapter[] → 5파일 산출(DESIGN §3 템플릿), 토큰 예산 계산, unverified 표시 삽입 로직.
-- 완료(2026-09-06, PR #8): `core/assembler.ts` — 5파일 템플릿 조립·토큰 예산·unverified 표시, 스냅샷 테스트, LLM 의존 0.
-- 완료 기준: [ ] 고정 입력 스냅샷 일치 [ ] 예산 계산 단위 테스트 [ ] LLM 의존 0 (import 검사) [ ] check 통과
-
-### T5 — Validator (구조 검증) · 상태: DONE(2026-09-06) · 의존: T4
-- 목표: 예산·프런트매터·챕터 링크·앵커 비율 검사, `validate` 명령용 리포트 타입.
-- 완료(2026-09-06, PR #9): `core/validator.ts` — 예산·프런트매터·챕터 링크·앵커 비율(DESIGN §3.1), LLM 0회 import 검사.
-- 완료 기준: [ ] TESTING §3 validator 4항목 검출 테스트 [ ] LLM 0회 보장 [ ] check 통과
-
-### T6 — 컴파일 파이프라인 + manifest · 상태: DONE(2026-09-06) · 의존: T2, T3, T4, T5
-- 목표: extract→outline→distill→assemble→validate 오케스트레이션, Manifest 기록(소스·섹션 해시), 비용 상한 산식, `--force`/out 경계.
-- 완료(2026-09-06, PR #10): `core/pipeline.ts` — extract→outline→distill→assemble→validate, manifest(소스·섹션 해시), 비용 상한 산식, 결정론 테스트.
-- 완료 기준: [ ] 정상 대본 e2e(게이트 제외) 통과 [ ] manifest 결정론(TESTING §3) [ ] 상한·덮어쓰기·경계 케이스(TESTING §4 파이프라인 항목) [ ] check 통과
-
-### T7 — 품질 게이트 · 상태: DONE(2026-09-06) · 의존: T3, T6
-- 목표: qaGen(앵커 실존 검사·재생성 1회) → answerer 격리 시뮬레이터(SKILL.md→챕터 선택→선택 파일만 로드, 로드 이력 기록) → 이중 채점 → 판정·GateReport.
-- 완료(2026-09-06, PR #11): `core/gate.ts` — qaGen(앵커 실존 검사·재생성 1회)·answerer 격리 시뮬레이터·이중 채점·GateReport, 게이트 판별력 5항목·격리 2항목 테스트.
-- 완료 기준: [ ] **TESTING §4 "게이트 판별력" 5항목 전부** (훼손 주입 검출 포함) [ ] **격리 2항목 전부** [ ] check 통과
-
-### T8 — CLI 4종 · 상태: DONE(2026-09-06) · 의존: T6, T7
-- 목표: `compile/validate/eval/report` (DESIGN §6), 종료코드 규약, 게이트 미달 시 임시 디렉터리 보존.
-- 완료(2026-09-06, PR #12): `compile/validate/eval/report`(`run<Command>(opts, deps)` 조립), 종료코드 규약, 게이트 미달 시 임시 디렉터리 보존.
-- 완료 기준: [ ] TESTING §4 CLI 관련 항목(eval 재사용·report·종료코드) [ ] cli는 조립만(로직 없음) [ ] check 통과
-
-### T9 — e2e-mock + 커버리지 · 상태: DONE(2026-09-06) · 의존: T8
-- 목표: SPEC §5 시나리오 1·2를 CLI 레벨 e2e-mock으로(통과 케이스 + 약한 챕터 리포트 케이스), 커버리지 리포트.
-- 완료(2026-09-06, PR #13): `tests/e2e.test.ts` 신설 — T6의 `pipeline.test.ts`가 이미 검증한 "실 추출기 + core `compile()`" 조합보다 한 계층 위, `run<Command>()` + `adapters/fsTargets.ts`의 진짜 함수(collectInputFiles/readSourceFile/writeSkill/readSkillDir/readManifest/resolveTargetDir/tempSkillDir)까지 실제로 연결해 CLI 레벨에서 검증한다. mock은 ScriptedLlm 하나뿐(가드레일 3). 자체 제작 픽스처 3종 추가: `fixtures/docs/e2e-scenario1-manual.md`(시나리오 1 — 3섹션 2챕터 전 정답 → `--out` 스크래치 디렉터리에 실제로 쓰고 그 디렉터리를 다시 `validate`/`report`로 재확인, 게이트 통과), `e2e-scenario2-sop-{a,b}.md`(시나리오 2 — 2개 파일 폴더, 한 챕터만 grader가 의도적으로 WRONG 처리 → 게이트 미달 → 실 `tempSkillDir()`가 고른 os.tmpdir() 경로에 보존된 산출물을 다시 읽어 `perChapter`/`failures`가 정확히 그 챕터를 지목하는지 확인). DESIGN §6에 T9 결정 기록.
-- 완료 기준: [x] 시나리오 2종 통과 [x] core ≥ 90% 리포트 첨부(stmt 97.83%/branch 89.22%/func 98.13%/line 99.31%, `npm run test:coverage`) [x] check 통과(19 files·175 tests)
-
-### T10 — 스모크 · 상태: DONE(2026-09-06) · 의존: T9
-- 목표: `scripts/smoke.ts` — 실 Claude로 samples/manual.pdf 컴파일 + 게이트 리포트 출력, 비용(호출 수·토큰) 요약 출력.
-- 완료(2026-09-06, PR #14): `src/cli/index.ts`와 같은 원칙으로 로직(`src/cli/smoke.ts`의 `runSmoke(opts, deps)`)과 조립(`scripts/smoke.ts`)을 분리 — `compile()`을 직접 호출해 게이트 리포트만 출력하고 파일은 쓰지 않는다(진단 전용). `core/costTracker.ts`(`trackCost()`)는 `LlmProvider`를 감싸 호출 수·`estimateTokens()` 기반 추정 토큰을 센다 — `LlmProvider`/`ScriptedLlm` 인터페이스는 그대로 두고 순수 위임+카운팅만 추가(DESIGN §9).
-- 완료 기준: [x] dry 구조(대본)로 스크립트 자체 테스트 — `tests/smoke.test.ts`가 실 `samples/manual.pdf`를 실 추출기로 읽되 `runSmoke`에 ScriptedLlm을 주입해 통과·미달·경로 오류·미지원 형식 4가지를 검증(실 네트워크 0건, 가드레일 3) [x] 사람 실행 절차 README 5줄 이내(README "실 LLM 스모크" 절) [x] check 통과(21 files·181 tests)
-
-### T11 — 공개 준비 · 상태: DONE(2026-09-06) · 의존: T10
-- 목표: npm 패키지명 가용성 조사(live-skill + 후보 2개, SPEC §8 기록), 영어 README 초안(내부 docs 한국어 유지), GHA `ci.yml`(npm run check), 60초 데모 시나리오(자작 샘플 사용).
-- 사전 조사 완료(2026-09-06, docs 분석 세션 — 코드 착수 전): 이름 가용성 1차 확인은 SPEC §8, npm 배포 실행 순서 전체는 `docs/PUBLISHING.md`, 경쟁 구도·활용 분야는 `docs/MARKET.md`에 선반영. `LICENSE`(MIT 초안)·`.gitignore`도 이때 추가됨. 후보 2 확정·영어 README·ci.yml·데모 시나리오는 여전히 TODO — 이 세션은 코드를 작성하지 않았다(T0 선행 필요).
-- 실전 선례(2026-09-06 확인, 같은 저자 npm 배포 완료/진행 레포): `../retail-mcp/docs/004_NPM_RELEASE_PACKAGING_REVIEW.md`·`008_TEST_AND_RELEASE_GATE_REVIEW.md`에 8단계 릴리스 게이트와 실제로 걸렸던 함정(`private:true` 방치, `bin`/`main` 누락, tarball에 dist 대신 소스만 포함, 파일 화이트리스트 없어 97개 파일 유출, 조직 스코프 없는 이름의 재사용 불확실성 → `@shiz_son/<name>` 전환)이 기록돼 있다. `../msg-agent/scripts/check-tarball.sh`는 이 레포 규모에 맞는 경량 시크릿 스캔 스크립트로 바로 이식 가능. `docs/PUBLISHING.md` §1·§3에 이 교훈을 이미 반영해 뒀다.
-- 완료(2026-09-06, PR #15): **이름 조사** — `live-skill`·`live-skills` 재조회로 여전히 미등록 확인, 두 번째 후보로 `skill-gate`(게이트 차별점을 이름에 반영, 미등록 확인 — `skillgate`는 이미 등록돼 있어 제외) 추가해 SPEC §8 "후보 2개" 요건 충족. 최종 확정은 실제 배포 직전으로 계속 유보(WORKFLOW §4, 위임 불가). **영어 README** — `README.md`를 영어로 교체(공개 시 GitHub/npm이 보여주는 기본 문서), 기존 한국어 내용은 `README.ko.md`로 옮기고 서로 상호 링크. `docs/`는 CLAUDE.md 방침대로 한국어 유지. **`ci.yml`** — `.github/workflows/ci.yml` 신설(Node 20/22 매트릭스로 `npm ci`→`check`→`build`→`check:tarball`, 액션 전부 커밋 SHA 고정 — retail-mcp의 공급망 교훈 반영, 이 레포 규모에 안 맞는 커버리지 필수 게이트·SBOM·서비스 컨테이너는 붙이지 않음). `actionlint`(brew, 1.7.12)로 문법·스키마 검증 통과(0 findings). **데모 시나리오** — `docs/DEMO.md`(타임라인 표 + 그대로 복사할 명령, `samples/manual.pdf` 사용) 신설, 영어 README에 축약판 링크.
-- 완료 기준: [x] 이름 조사 결과 기록(SPEC §8, `docs/PUBLISHING.md` §0) [x] ci.yml 문법 검증(`actionlint` 0 findings) [x] 데모 시나리오 문서화(`docs/DEMO.md`) [x] check 통과(21 files·181 tests, 코드 변경 없음 — 문서·CI·README만)
+Dependency graph: `T0 → T1 → {A: T2, B: T3, C: T4} → T5(T4) → T6(T2~T5) → T7(T3,T6) → T8(T6,T7) → T9(T8) → T10(T9) → T11`
 
 ---
 
-## v0.1 검수 수정 태스크 (2026-09-06 — `docs/001_CODE_REVIEW.md`·`002_SECURITY_REVIEW.md`·`003_SECURITY_ARCHITECTURE_AUDIT.md` 반영)
+### T0 — Project scaffolding | Status: DONE(2026-09-06)
+- Goal: TS strict + ESLint + Prettier + Vitest + scripts (`check/test/typecheck/lint/cli/smoke`), package.json `bin` setup (assuming npx execution), `.env.example`, `.gitignore`.
+- Reference material (confirmed 2026-09-06, a production repo by the same author): `../msg-agent` has already implemented this stack (TS strict + `noUncheckedIndexedAccess`, ESLint flat config + `typescript-eslint` strictTypeChecked, Prettier, Vitest + coverage thresholds, `tsx`-based cli/smoke, `check`/`prepublishOnly` scripts) to npm-publishing quality. Porting its `package.json`, `tsconfig.json`, `eslint.config.js`, and `vitest.config.ts` and removing only the dependencies that do not fit this repo (messaging-only ones such as grammy and franc) is faster and better proven than designing from scratch. `.gitignore` and `LICENSE` (MIT, copyright holder `Trapa-Eureka`) were already added at the root during the docs analysis session. Details: `docs/PUBLISHING.md` §1.
+- Done (2026-09-06, PR #2): wrote `package.json` (`bin: live-skill`), `tsconfig(.build).json`, `eslint.config.js`, `vitest.config.ts`, and `.env.example` by porting from msg-agent; added `src/cli/index.ts` (commander, stubs for the four commands compile/validate/eval/report), `src/version.ts`, `scripts/check-tarball.sh` (ported from msg-agent), and `scripts/smoke.ts` (a stub until T10).
+- Completion criteria: [x] `npm run check` passes [x] one dummy test (`tests/version.test.ts`) [x] `npm run cli -- --help` works [x] git init + first commit
 
-세 리뷰(기준 커밋 `537a42c`, 원 발견 52건)를 중복 제거해 **조치 단위 30개**로 재구성했다. Critical 0 / High 10 / Medium 15 / Low 5. 원본 ID(`001-NNN`, `SEC-NNN`, `AUD-NNN`)는 근거 추적용.
+### T1 — Domain types + config | Status: DONE(2026-09-06) | Depends on: T0
+- Goal: `core/types.ts` (all of DESIGN §2: SkillPlan/DistilledChapter/GoldenQA/GateReport/Manifest), config zod (budgets, thresholds, k, caps; env merge), section id slug rule (heading-path based, stable).
+- Design reference (confirmed 2026-09-06): `DocumentExtractor.extract()` in `../msg-agent/src/core/index.ts` returns `Result<ExtractedDoc, ExtractError>` instead of throwing, a pattern well suited to expressing deterministically the TESTING §4 requirement "empty document / unsupported format → rejection that includes the fix". Decide in this task whether to adjust DESIGN §2's `extract(): Promise<ExtractedDoc>` to this form; if adopted, update DESIGN.md before the code (CLAUDE.md convention).
+- Done (2026-09-06, PR #5): `core/types.ts` (DESIGN §2), `core/config.ts` (zod, env merge), `core/sectionId.ts` (heading-path slug). DESIGN §2 adjusted so that `DocumentExtractor.extract()` returns a `Result`, following the msg-agent convention.
+- Completion criteria: [ ] round-trip tests for every schema [ ] slug stability test (re-extracting the same document → same ids) [ ] check passes
 
-**진행 규칙(2026-09-06 합의)**: 한 태스크 = 한 PR. 완료 시 커밋(영어, `R-{id}: 요약`)→푸시→PR→`main` 스쿼시 머지→양쪽 워크트리 동기화까지 자동, **다음 태스크 착수는 사용자 동의 후**. B·C·D1·E3처럼 게이트 규칙·manifest 스키마를 바꾸는 태스크는 CLAUDE.md 컨벤션대로 `DESIGN.md` diff가 코드보다 먼저다 — 이들은 가드레일 1을 완화하는 게 아니라 지금 조용히 새는 구멍을 막는 방향이다.
+### T2 (lane A) — Four extractors + self-made fixtures | Status: DONE(2026-09-06) | Depends on: T1
+- Goal: pdf-parse, mammoth, MD/TXT, and HTML (cheerio) extractors (structured by section headings, same signature convention as the message repo) + three self-made documents in `fixtures/docs/`, edge-case documents, and `samples/manual.pdf`.
+- Reference implementation (confirmed 2026-09-06): `../msg-agent/src/adapters/extractors/` (`pdf.ts`, `docx.ts`, `text.ts`, `route.ts`, `limits.ts`, `index.ts`) is the concrete form of what CLAUDE.md calls "the same convention as the message repo's extractor signatures"; it uses pdf-parse and mammoth directly, so it can be ported as is (the HTML/cheerio extractor is new to live-skill, with no reference implementation).
+- Done (2026-09-06, PR #6): PDF (pdf-parse), DOCX (mammoth), MD/TXT, and HTML (cheerio) extractors + self-made fixtures in `fixtures/docs/` and `samples/manual.pdf`.
+- Completion criteria: [ ] structure extraction tests per format [ ] no copyrighted text (self-made confirmation comment) [ ] check passes
 
-권장 순서는 003 §9를 따른다: A(파일시스템) → B(게이트) → C(프롬프트) → D(비용) → E(구조 검증) → F(추출 정확성) → G(오류) → H(CI·배포) → I(정합성). 의존: D2→D1, E3→A3(둘 다 `writeSkill`/manifest outputs), F3→F2(namespace 함수 공용화), B6→B3(manifest 스키마).
+### T3 (lane B) — LlmProvider + ScriptedLlm | Status: DONE(2026-09-06) | Depends on: T1
+- Goal: `LlmProvider` interface + Claude adapter (injected fetch, MODEL env) + `ScriptedLlm` (role routing, sequential replay, assert_exhausted) + `script()` builder + five prompts (outline/distill/qaGen/answer/grade: preserve source terminology, anchors required, conservative grading stated explicitly).
+- Done (2026-09-06, PR #7): `LlmProvider` + Claude adapter, `ScriptedLlm` (role routing, assertExhausted) and `script()` builder, five prompts.
+- Completion criteria: [ ] tests for clear failures on script exhaustion and role mismatch [ ] mock fetch request-shape test [ ] check passes
 
-### A. 파일시스템 경계 — High
+### T4 (lane C) — Assembler (deterministic assembly) | Status: DONE(2026-09-06) | Depends on: T1
+- Goal: DistilledChapter[] → five-file output (DESIGN §3 templates), token budget computation, logic for inserting unverified markers.
+- Done (2026-09-06, PR #8): `core/assembler.ts` — five-file template assembly, token budgets, unverified markers, snapshot tests, zero LLM dependency.
+- Completion criteria: [ ] fixed-input snapshot matches [ ] budget computation unit tests [ ] zero LLM dependency (import check) [ ] check passes
 
-#### A1 — LLM slug 경로 탈출 차단 · 상태: DONE(2026-09-06) · 원본: 001-001, SEC-001, AUD-001
-- 목표: `skillPlanSchema.slug`를 단일 경로 구성요소(소문자·숫자·하이픈)로 제한하고 `/`·`\`·`.`·`..`·절대 경로를 거부. `resolveTargetDir`/`tempSkillDir` 결과가 고정 루트 안인지 결합 후 재검증. 임시 디렉터리는 신뢰된 접두사 + `mkdtemp`.
-- 완료(2026-09-06, PR #17): 두 겹 방어 — (1) `core/schemas.ts`의 `slugSchema`(`^[a-z0-9]+(-[a-z0-9]+)*$`, ≤64자)로 outline 단계에서 `outline_invalid`; (2) `adapters/fsTargets.ts`가 스키마와 무관하게 `resolveTargetDir`/`tempSkillDir`에서 같은 형식을 재검사(`unsafe_slug`)하고 결합 경로가 루트의 직계 하위인지 확인(`escapes_out_dir`). `tempSkillDir`는 `mkdtemp`로 빈 디렉터리를 새로 만들어 돌려주므로 게이트 미달 경로의 `force: true` 특례와 `timestamp` 의존성을 제거. DESIGN §2·§6 갱신.
-- 완료 기준: [x] `../../outside` slug → `outline_invalid` 거부 테스트(pipeline) [x] 타깃·임시 경로 경계 테스트(fsTargets 8종 × 2 + schemas 14종) [x] check 통과(219 tests)
+### T5 — Validator (structural validation) | Status: DONE(2026-09-06) | Depends on: T4
+- Goal: budget, frontmatter, chapter link, and anchor ratio checks; report type for the `validate` command.
+- Done (2026-09-06, PR #9): `core/validator.ts` — budgets, frontmatter, chapter links, anchor ratio (DESIGN §3.1), zero-LLM import check.
+- Completion criteria: [ ] detection tests for the four validator items in TESTING §3 [ ] zero LLM calls guaranteed [ ] check passes
 
-#### A2 — 심볼릭 링크·입력 순회 경계 · 상태: DONE(2026-09-06) · 원본: 001-002/014, SEC-002, AUD-002
-- 목표: `collectInputFiles`는 `lstat`으로 링크·비정규 파일을 기본 거부하고 방문 집합으로 사이클 방지. `writeSkill`/`readSkillDir`은 각 경로 구성요소를 `lstat`으로 검사해 링크를 따라 밖으로 쓰거나 읽지 않고, `realpath` 기준으로 출력 루트 내부인지 검증.
-- 완료(2026-09-06, PR #18): 신뢰 경계 = "사용자가 직접 넘긴 루트"(입력 경로·outDir은 링크여도 믿고 `realpath`로 고정). 그 아래에서 `collectInputFiles`는 `lstat`으로 링크(`symlink_refused`)·비정규 파일(`not_regular_file`)을 거부하므로 링크를 따라가지 않아 순환 자체가 불가능(방문 집합 대신), 디렉터리마다 `realpath` 루트 경계 재확인. `writeSkill`은 파일별 구성요소 `lstat` → 생성 디렉터리 `realpath` 경계 → `O_NOFOLLOW` open으로 쓰기. `readSourceFile`/`readSkillDir`/`readManifest`도 no-follow 읽기. 한계(중간 디렉터리 교체 경쟁·Windows)는 DESIGN §6 A2에 기록, A3가 이어받음.
-- 완료 기준: [x] 링크 사이클 입력에서 종료 테스트(`in/loop → ..` 즉시 거부) [x] 출력 내 외부 링크 → 거부 테스트(링크된 하위 디렉터리·링크된 파일, `--force`여도 외부 무손상) [x] check 통과(228 tests)
+### T6 — Compile pipeline + manifest | Status: DONE(2026-09-06) | Depends on: T2, T3, T4, T5
+- Goal: extract→outline→distill→assemble→validate orchestration, Manifest recording (source and section hashes), cost cap formula, `--force`/out boundary.
+- Done (2026-09-06, PR #10): `core/pipeline.ts` — extract→outline→distill→assemble→validate, manifest (source and section hashes), cost cap formula, determinism tests.
+- Completion criteria: [ ] normal-script e2e (gate excluded) passes [ ] manifest determinism (TESTING §3) [ ] cap, overwrite, and boundary cases (TESTING §4 pipeline items) [ ] check passes
 
-#### A3 — 원자적 staging 쓰기 · 상태: DONE(2026-09-07) · 원본: 001-012/013, AUD-007
-- 목표: 같은 파일시스템의 staging 디렉터리에 전체 산출물을 쓴 뒤 `rename`으로 교체(TOCTOU·부분 쓰기 해소). 이전 세대의 stale 파일 제거. 실패 시 이전 완전한 세대 보존.
-- 완료(2026-09-07, PR #19): `writeSkill`이 outDir의 realpath와 **같은 부모 아래** `mkdtemp(".<name>.live-skill-staging-")`에 전부 쓰고(A2 no-follow 쓰기 그대로) `rename`으로 통째로 교체. `--force`면 기존 세대를 `.<name>.live-skill-old-<random>`으로 비켜 놓은 뒤 올리고 지움(실패 시 되돌림); `--force` 없으면 `rename` 자체가 판정(`ENOTEMPTY` → `already_exists`, 검사-쓰기 TOCTOU 해소). outDir이 링크면 링크 대상 디렉터리를 교체해 링크는 보존. 어느 단계든 실패하면 staging 삭제·이전 세대 무손상. A2의 "outDir 안 링크 거부"는 "링크와 함께 교체되고 대상은 무손상"으로 의미가 바뀌어 테스트 갱신. 한계(force 교체 중 짧은 ENOENT 창, 잠금 없음, Windows 미검증)는 DESIGN §6 A3에 기록.
-- 완료 기준: [x] 중간 쓰기 실패 시 이전 산출물 무손상 테스트(3번째 파일 EISDIR 주입 → v1 전체·manifest 보존·staging/old 잔해 0) [x] `--force` 재컴파일 후 stale 챕터 없음 테스트 [x] check 통과(233 tests)
+### T7 — Quality gate | Status: DONE(2026-09-06) | Depends on: T3, T6
+- Goal: qaGen (anchor existence check, one regeneration) → isolated answerer simulator (SKILL.md → chapter selection → load only the selected files, record load history) → double grading → verdict and GateReport.
+- Done (2026-09-06, PR #11): `core/gate.ts` — qaGen (anchor existence check, one regeneration), isolated answerer simulator, double grading, GateReport; tests for the five gate-discrimination items and the two isolation items.
+- Completion criteria: [ ] **all five "gate discrimination" items in TESTING §4** (including detection of injected corruption) [ ] **both isolation items** [ ] check passes
 
-### B. 품질 게이트 우회 (가드레일 1 직결) — High
+### T8 — Four CLI commands | Status: DONE(2026-09-06) | Depends on: T6, T7
+- Goal: `compile/validate/eval/report` (DESIGN §6), exit-code convention, preserving the temporary directory when the gate fails.
+- Done (2026-09-06, PR #12): `compile/validate/eval/report` (assembled as `run<Command>(opts, deps)`), exit-code convention, temporary directory preserved on gate failure.
+- Completion criteria: [ ] CLI-related items in TESTING §4 (eval reuse, report, exit codes) [ ] cli is assembly only (no logic) [ ] check passes
 
-#### B1 — outline 커버리지 검증 · 상태: DONE(2026-09-07) · 원본: 001-004, SEC-004, AUD-004
-- 목표: outline 파싱 직후 입력 섹션 전체와 계획을 대조 — 모든 실질 섹션 정확히 1회 배정, 알 수 없는 ID·중복 chapter ID 거부(`outline_invalid`). "실질 섹션"(본문 없는 헤딩 등 제외 대상)은 모델 재량이 아닌 결정론 정책으로 DESIGN §5.1에 명시.
-- 완료(2026-09-07, PR #20): `core/outlineCoverage.ts` 신설 — `isSubstantiveSection`(본문 `trim() !== ""`)으로 파이프라인이 모집단을 먼저 확정해 outline에 그것만 보여주고, 파싱 직후 `checkOutlineCoverage`가 누락·미지 id·섹션 중복 배정·chapter id 중복 네 가지를 한 번에 모아 `outline_invalid`(detail 포함)로 끝낸다 — distill·게이트 비용 전. `normalizeText`가 HTML 주석(`<!-- … -->`)을 지워 주석만 있던 선두 "유령 섹션"이 모집단에 끼지 않는다(자체 제작 픽스처의 가드레일 4 주석). e2e 대본은 갱신 없이 정책과 일치했고, smoke 미달 대본은 일부 섹션만 넣던 것을 4섹션 전부로 고쳐 마지막 문항 오답(3/4=75%)으로 미달을 만들도록 바꿈.
-- 완료 기준: [x] DESIGN §5.1 정책 갱신 [x] 누락·중복·미지 ID 각각 거부 테스트(+chapter id 중복, 컨테이너 섹션 미제공/참조 시 거부; 단위 7종 + pipeline 6종) [x] 기존 e2e·pipeline 대본을 정책에 맞게 갱신(smoke 미달 대본·주석 제거 테스트) [x] check 통과(22 files·248 tests)
+### T9 — e2e-mock + coverage | Status: DONE(2026-09-06) | Depends on: T8
+- Goal: SPEC §5 scenarios 1 and 2 as CLI-level e2e-mock (a passing case + a weak-chapter report case), coverage report.
+- Done (2026-09-06, PR #13): new `tests/e2e.test.ts`. It sits one layer above the "real extractors + core `compile()`" combination that T6's `pipeline.test.ts` already verified: it actually wires `run<Command>()` to the real functions of `adapters/fsTargets.ts` (collectInputFiles/readSourceFile/writeSkill/readSkillDir/readManifest/resolveTargetDir/tempSkillDir) and verifies at the CLI level. The only mock is ScriptedLlm (guardrail 3). Three self-made fixtures added: `fixtures/docs/e2e-scenario1-manual.md` (scenario 1: 3 sections, 2 chapters, every answer correct → actually written to a scratch directory via `--out`, that directory re-checked with `validate`/`report`, gate passes), `e2e-scenario2-sop-{a,b}.md` (scenario 2: a folder with 2 files, the grader deliberately marks one chapter WRONG → gate fails → the output preserved at the os.tmpdir() path chosen by the real `tempSkillDir()` is read back to confirm that `perChapter`/`failures` point at exactly that chapter). T9 decision recorded in DESIGN §6.
+- Completion criteria: [x] both scenarios pass [x] core ≥ 90% report attached (stmt 97.83% / branch 89.22% / func 98.13% / line 99.31%, `npm run test:coverage`) [x] check passes (19 files, 175 tests)
 
-#### B2 — qaGen 실패 커버리지 · 상태: DONE(2026-09-07) · 원본: SEC-005, AUD-005
-- 목표: 재생성으로도 유효 QA를 못 만든 섹션을 분모에서 빼지 않고 `qa_generation_failed` 실패 사유로 기록, 섹션 커버리지 미달이면 verified 배포 금지. DESIGN §4의 "문항 제외" 정책과 TESTING §3을 함께 수정.
-- 완료(2026-09-07, PR #21): 정책을 "제외"에서 "미검증"으로 — `GateReport.coverage[{sectionId, requested, generated}]`를 추가하고 `evaluateGoldenQa`가 모집단(챕터별 sectionIds)마다 유효 문항 수를 세어, `generated === 0`인 섹션은 `failures`에 `{ qaId: "<sectionId>-q0", reason: "qa_generation_failed" }`로 올리고 `passed`의 별도 필요조건으로 삼는다(passRate는 여전히 실제로 물은 문항 기준 — 못 만든 문항을 오답으로 꾸미지 않음). `eval` 재사용 경로도 같은 함수를 타므로 manifest에서 QA가 빠진 섹션은 통과 불가(`requested`는 그때의 `config.qaPerSection`). `report` 출력에 "미검증 섹션"·"문항 부족" 절 추가. `generateGoldenQa`의 계약(0..k, 재생성 1회)은 그대로.
-- 완료 기준: [x] DESIGN §2·§4·TESTING §3·§4 정책 갱신 [x] 두 챕터 중 하나 qaGen 2회 실패 → `passed=false` + 실패 목록 기록 테스트(+ 부족분만 있으면 통과, eval 재사용 경로에서 QA 없는 섹션 거부) [x] 판별력 테스트 5종 유지(6종째로 추가) [x] check 통과(22 files·253 tests)
+### T10 — Smoke | Status: DONE(2026-09-06) | Depends on: T9
+- Goal: `scripts/smoke.ts` — compile samples/manual.pdf with real Claude + print the gate report, print a cost summary (call count, tokens).
+- Done (2026-09-06, PR #14): logic (`runSmoke(opts, deps)` in `src/cli/smoke.ts`) and assembly (`scripts/smoke.ts`) separated on the same principle as `src/cli/index.ts`; it calls `compile()` directly, prints only the gate report, and writes no files (diagnostic only). `core/costTracker.ts` (`trackCost()`) wraps an `LlmProvider` and counts calls and estimated tokens based on `estimateTokens()`; the `LlmProvider`/`ScriptedLlm` interfaces are left untouched, with only pure delegation + counting added (DESIGN §9).
+- Completion criteria: [x] script self-test with a dry (scripted) structure: `tests/smoke.test.ts` reads the real `samples/manual.pdf` with the real extractor but injects a ScriptedLlm into `runSmoke`, verifying four cases: pass, fail, path error, unsupported format (zero real network calls, guardrail 3) [x] human run procedure in the README within 5 lines (README "Real-LLM smoke" section) [x] check passes (21 files, 181 tests)
 
-#### B3 — manifest 챕터 허용 목록 · 상태: DONE(2026-09-07) · 원본: SEC-006, AUD-006
-- 목표: `manifest.sections[].chapterFile`을 `chapters/*.md` 패턴으로 스키마 제한. gate 로더는 `chapters/` 아래 일반 파일만 로드하고 `manifest.json`·기타 파일은 answerer 컨텍스트에서 원천 제외. `readSkillDir` 결과와 `outputs` 상호 대조.
-- 완료(2026-09-07, PR #22): 세 겹 — (1) 스키마 `chapterFileSchema`(`^chapters/[\p{L}\p{N}-]+\.md$`, assembler `chapterFilePath()`가 만드는 유일한 형태)로 `readManifest` 단계에서 `manifest.json`·`SKILL.md`·`chapters/../x`·하위 디렉터리 거부; (2) `evaluateGoldenQa`는 스키마를 믿지 않고 챕터 목록 중 형식에 맞는 파일만 허용 집합으로 삼아 그 집합의 파일만 로드 가능 — 나머지는 선택해도 `not_found`, 로드 이력 빈 배열, SKILL.md만 인덱스로 별도 제공; (3) `eval`은 LLM 전에 `missingChapterFiles`로 manifest 챕터의 실제 존재를 확인해 없으면 원인·수정 방법과 종료코드 1. outputs와의 상호 참조 검증은 B6(스키마 superRefine)에서.
-- 완료 기준: [x] `chapterFile: "manifest.json"` manifest → 거부 테스트(거부 10종·허용 3종 + assembler 산출 경로 호환) [x] 격리 테스트(조작된 챕터 목록이 manifest.json을 가리켜도 not_found·answer 미호출·모든 프롬프트에 refAnswer 마커 부재; 디스크에 있어도 목록에 없는 챕터는 not_found) [x] check 통과(22 files·271 tests)
-
-#### B4 — threshold 하한·질문 0개 실패 · 상태: DONE(2026-09-07) · 원본: SEC-007, AUD-008
-- 목표: 질문 0개는 threshold와 무관하게 실패. `GATE_THRESHOLD`의 정책 하한을 DESIGN §7에 명시하고 config가 강제(공백 문자열은 미설정 처리, 범위 밖은 설정 오류).
-- 완료(2026-09-07, PR #23): 하한 **0.5**(`GATE_THRESHOLD_FLOOR`, core/gate.ts — 사용자 제안값 동의) — `loadConfig`가 `[0.5, 1]` 밖의 값을 원인+수정 방법 담은 일반 Error로 거부(zod 원시 오류를 감싸 필드명 포함), `evaluateGoldenQa`도 `assertGateThreshold`로 재검사해 경계 우회 호출자 차단. `passed`에 `asked > 0` 명시 조건(모집단이 빈 극단 케이스까지). env의 공백만 있는 값은 `trim` 후 미설정 처리(`Number("  ")===0` 구멍). `.env.example`·DESIGN §7 주석에 범위 명시. 하한 값 변경은 코드가 아니라 DESIGN §7·가드레일 1 검토가 먼저라고 문서화.
-- 완료 기준: [x] DESIGN §7 갱신(+TESTING §4 체크리스트) [x] `GATE_THRESHOLD=0` → 설정 오류 테스트(0·0.49·-1 거부, 0.5·0.9·1 허용, 공백 → 기본값, 메시지에 필드명·Fix) [x] 0문항 → `passed=false` 테스트(빈 모집단·runGate 섹션 0개·하한 미만 threshold 거부) [x] check 통과(22 files·282 tests)
-
-#### B5 — grader 엄격 파싱 · 상태: DONE(2026-09-07) · 원본: SEC-010, AUD-013
-- 목표: 응답 전체를 정규화해 정확히 `CORRECT`/`WRONG`만 인정, 그 외(모순·설명 포함)는 보수적으로 wrong.
-- 완료(2026-09-07, PR #24): `parseGradeVerdict`가 응답 전체를 정규화(앞뒤 공백·마크다운 강조·따옴표·마침표 제거, 대소문자 무시)한 값이 정확히 `CORRECT`일 때만 정답 — 설명이 붙었거나 두 단어가 다 있으면 판정 불가 = wrong. DESIGN §4-3에 기록. 후보 답변의 데이터/지시 분리는 C1에서.
-- 완료 기준: [x] `CORRECT? No, WRONG.` → wrong 테스트(+ 모순·설명·INCORRECT 등 8종 wrong, 장식만 붙은 5종 correct) [x] check 통과(22 files·290 tests)
-
-#### B6 — manifest·GateReport 의미 검증 · 상태: DONE(2026-09-07) · 원본: AUD-011 · 의존: B3
-- 목표: `manifestSchema.superRefine`으로 `correct ≤ asked`, 챕터 합계 = 전체, `passRate` 재계산 일치, `passed ⇔ passRate ≥ threshold`, failures/loadHistory의 qaId가 goldenQa에 존재, `createdAt` ISO, sha256 16진수, `sections[].chapterFile ∈ outputs` 검증.
-- 완료(2026-09-07, PR #25): 판정 규칙을 `core/gateVerdict.ts`(`decidePassed`·하한·EPSILON)로 뽑아 gate.ts와 schemas.ts가 **같은 함수**를 쓰게 함 — 파일의 `passed`는 코드의 판정으로 재계산한 값과 같아야 통과. GateReport 내부(챕터별 `correct ≤ asked`, 유일성, `Σasked = loadHistory`, `Σcorrect = Σasked − 채점 실패`, passRate 재계산, 채점 실패 ⊆ loadHistory, `qa_generation_failed` ⇔ `generated 0`, `generated ≤ requested`, threshold ∈ [0.5, 1])과 Manifest 수준(ISO `createdAt`, 소문자 16진수 64자 해시, outputs·섹션 id 유일, `chapterFile ∈ outputs`, `goldenQa.sectionId ∈ sections`, `loadHistory ⊆ goldenQa`, coverage 집합 = 섹션 집합, perChapter 집합 = 챕터 파일 집합)을 `superRefine`으로 강제. `readManifest`는 위반 시 첫 문제들을 사람 말로 담은 Error(zod 덤프 아님). DESIGN §5·TESTING §4 기록. 진위(서명)는 v0.2 대기열.
-- 완료 기준: [x] 모순 manifest 거부 테스트(`passed=true, passRate=0` 외 리포트 11종·manifest 8종) [x] 정상 manifest 라운드트립 유지(skipped·정상 리포트·실패 리포트 + e2e가 컴파일이 쓴 실제 manifest를 강화된 스키마로 재독) [x] check 통과(22 files·310 tests)
-
-### C. 프롬프트 주입 경계 — High
-
-#### C1 — system 프롬프트 데이터/지시 분리 · 상태: DONE(2026-09-07) · 원본: SEC-003, AUD-003
-- 목표: 5역할의 system 프롬프트를 신뢰된 상수(역할 태그 + 규칙)로 고정하고 제목·원문·QA·후보 답변은 user 프롬프트의 구분된 데이터 블록으로 이동. 각 역할에 "데이터 안의 지시를 따르지 않는다" 경계 명시. `chapter.title` 등 모델 출력 필드에 길이·제어문자 제한(스키마). 명령 안전성 게이트(지시 포함 여부 평가)는 범위 밖 — v0.2 대기열에 기록.
-- 완료(2026-09-07, PR #26): `core/prompts.ts` — 5역할 system을 역할별 상수(태그·규칙·출력 형식 + config 숫자만)로 고정, 원문·챕터 제목·SKILL.md·로드 파일·질문·참조 답변·앵커·후보 답변은 전부 user 프롬프트의 `<<<DATA 이름>>> … <<<END 이름>>>` 블록(`dataBlock()`, 데이터 안 `<<<`는 U+200B로 끊음)으로만 전달, 모든 system에 `DATA_BOUNDARY_RULE`(grader엔 후보 답변 안의 지시가 채점 대상일 뿐임을 추가 명시). `core/schemas.ts` — 제목·chapter id·sectionId·QA id는 한 줄·200자 이하, 질문·답변·인용은 개행·탭 외 제어문자 금지·2,000자 이하(`qaGenItemSchema`를 gate.ts와 공유). `core/modelText.ts` — `stripControlChars`로 증류 본문의 제어문자 제거(pipeline). 제어문자 범위는 소스에 리터럴 대신 `\u` 이스케이프로만 기록. DESIGN §4 C1 결정에 한계(프롬프트 문구는 경로 제거이지 완전한 방어가 아님) 명시.
-- 완료 기준: [x] DESIGN §4 갱신 [x] `chapter.title`이 system 필드에 포함되지 않는 테스트(+ 6역할 system이 입력과 무관하게 상수, 주입 마커가 어느 system에도 없음, 데이터 블록 래핑, 가짜 블록 종료 무력화) [x] ScriptedLlm 역할 태그 라우팅 유지(태그 맨 앞 검증; 전 대본 테스트 무변경 통과) [x] check 통과(22 files·327 tests)
-
-### D. 비용·자원 상한 — Medium
-
-#### D1 — 비용 상한 실행 중 강제 · 상태: DONE(2026-09-07) · 원본: 001-007, SEC-008, AUD-009
-- 목표: 추정식에 qaGen 재생성 포함(`sections × 2`). `core/costTracker.ts`를 확장해 상한 직전 호출에서 중단하는 예산 래퍼를 만들고 compile이 사용 → `call_cap_exceeded`. DESIGN §4 산식 갱신.
-- 완료(2026-09-07, PR #27): `estimateGateCalls`를 `sections × 2 + sections × k × 3`으로 정정(재생성 1회 포함 — 모든 섹션이 재생성을 타는 게이트가 정확히 이 수에 닿음을 테스트로 확인). `trackCost(llm, { maxCalls })`가 상한을 넘기는 호출을 provider에 닿기 전에 `LlmCallCapError`로 막고, `compile()`이 outline·distill·게이트 전부를 이 래퍼로만 불러 실행 중 상한을 강제 — 터지면 `call_cap_exceeded`(`stage: "runtime"`, 실측 호출 수)로 반환, 사전 추정 실패는 `stage: "preflight"`. `CompileResult.llmCalls`(실측)를 CLI가 "LLM 호출 N회"로 출력. DESIGN §4·§5.1·§7 갱신. eval·smoke 적용은 D2.
-- 완료 기준: [x] DESIGN §4 갱신 [x] 상한 6에 7번째 호출 차단 테스트(runGate 8회 필요 게이트를 상한 6 래퍼로 → 7번째에서 `LlmCallCapError`, provider 도달 6회; 래퍼 단위 테스트; 파이프라인 실행 중 경로 → `runtime` 오류) [x] check 통과(22 files·332 tests)
-
-#### D2 — eval 경로 상한 검사 · 상태: DONE(2026-09-07) · 원본: SEC-008, AUD-009 · 의존: D1
-- 목표: eval 재사용/`--source` 경로 모두 D1 래퍼 적용 + `manifest.goldenQa` 개수·문자열 길이 상한.
-- 완료(2026-09-07, PR #28): `eval` 두 경로 다 compile과 같은 두 겹 — 사전 추정(재사용 `estimateEvalCalls` = 문항 수 × 3, `--source`는 게이트 산식)이 상한을 넘으면 LLM 호출 0회로 종료 1, 통과해도 `trackCost(llm, { maxCalls })` 래퍼로만 호출해 실행 중 상한에 닿으면 "재채점 중단"으로 보고. 끝나면 실측 "LLM 호출 N회" 출력. `manifest.goldenQa`는 스키마에서 `MAX_GOLDEN_QA_ENTRIES`(1,000)개로 제한(문자열 길이는 C1의 2,000자). `smoke`는 `compile()`을 그대로 부르므로 D1로 이미 적용. DESIGN §2·§6 갱신.
-- 완료 기준: [x] eval 상한 초과 중단 테스트(재사용 사전 추정 거부·실행 중 상한 중단·`--source` 사전 추정 거부·성공 시 호출 수 출력, goldenQa 1,001개 거부/1,000개 허용) [x] check 통과(22 files·338 tests)
-
-#### D3 — 입력 크기 사전 제한 · 상태: DONE(2026-09-07) · 원본: 001-015, SEC-011, AUD-014
-- 목표: 읽기 전에 `stat` 기반 파일 수·파일별/총 바이트 제한, 제한된 동시성으로 읽기, 불필요한 Buffer 복사 제거.
-- 완료(2026-09-07, PR #29): `INPUT_LIMITS`(파일 500개 · 파일당 25 MiB · 총 100 MiB, env 아닌 상수)를 두 겹으로 강제. (1) `collectInputFiles`가 걷는 동안 이미 하는 `lstat`의 크기로 개수·파일별·누적 바이트를 세고 넘는 순간 `too_many_files`/`file_too_large`/`input_too_large`(원인 + Fix)로 멈춘다 — 파일은 하나도 열지 않는다. (2) `readFileNoFollow`가 연 뒤 `fstat` 크기를 재확인하고 정확히 그만큼만 읽으며(`readExactly` — 검사 뒤 파일이 자라도 초과 읽기 없음), 새 `readSourceFiles`가 `core/concurrency.ts`의 순수 `mapConcurrent`(동시 4개, 입력 순서 보존, 실패 시 새 작업 중단)로 읽으면서 누적 바이트를 다시 강제. compile·eval `--source`가 `readSourceFiles`를 쓰고 `describeInputFailure`로 어댑터의 거부 메시지를 그대로 보인다. 복사 제거: `Buffer.alloc` 전용 버퍼를 `SourceFile.bytes`에 그대로(`new Uint8Array` 복사 삭제), DOCX는 `asBuffer` 뷰. DESIGN §6·§7 갱신.
-- 완료 기준: [x] 초과 시 읽기 전 거부 + 수정 방법 메시지 테스트(실 fs: 개수·파일별·총합 각각 거부/경계 허용, 권한 000 파일도 EACCES가 아니라 크기로 거부 = stat만 봄; open 시 재확인; 읽기 중 누적 상한; CLI: compile/eval이 읽기·LLM 0회로 종료 1 + "Fix:" 출력; `mapConcurrent` 동시성·순서·실패 전파) [x] check 통과(23 files·357 tests)
-
-#### D4 — 파서 자원 격리 · 상태: DONE(2026-09-07) · 원본: SEC-011, AUD-014
-- 목표: DOCX 압축 해제 누적 바이트 상한(메타데이터가 아닌 실측), 타임아웃 시 결과 폐기 보장. worker/subprocess 격리는 착수 시 범위 결정(과하면 v0.2 대기열).
-- 완료(2026-09-07, PR #30): 범위는 **협조적 격리**로 확정, worker/subprocess는 v0.2 대기열(아래). (1) DOCX: 옛 `zipBudget`(JSZip 비공개 `_data.uncompressedSize` = 헤더가 *선언한* 크기의 합 — JSZip은 inflate 실측이 선언과 달라도 검사하지 않아 위조 가능)을 `measureZip`으로 교체 — 엔트리마다 `internalStream`으로 실제로 풀며 바이트를 세고 누적이 60 MiB를 넘는 순간 스트림을 멈춰 `zip_budget`(메모리 = 상한 + 청크 하나). 엔트리 수는 풀기 전에 센다. (2) `withDeadline(run, timeoutMs, signal?)`가 `AbortSignal`을 파서에 넘기고 시간이 다 되면 abort 후 `timeout` 반환 — PDF는 abort 시 `PDFParse.destroy()`(로드 중이면 로드 직후 신호를 보고 텍스트 추출 생략), DOCX는 측정 중·mammoth 진입 전 신호 확인. 늦은 결과는 쓰이지 않고 늦은 거부도 unhandled가 되지 않음. 추출기 `extract(bytes, signal?)`로 바깥 취소도 같은 경로. DESIGN §6 D4 기록.
-- 완료 기준: [x] 착수 시 확정(위) [x] 테스트: 위조한 중앙 디렉터리(선언 10바이트, 실제 1 MiB)를 옛 방식은 통과시키고 `measureZip`은 거부 / 엔트리 하나·누적 초과 / 엔트리 수 / abort 중단 / `withDeadline` 제시간·타임아웃·늦은 결과 폐기·늦은 거부 무해·바깥 signal / DocxExtractor `zip_budget`·취소 / PdfExtractor 취소 시 `destroy` 호출 + 이후 정상 동작 [x] check 통과(24 files·371 tests)
-
-### E. 구조 검증·산출물 무결성 — Medium
-
-#### E1 — 구조 검증을 배포 차단에 연결 · 상태: DONE(2026-09-07) · 원본: 001-003, SEC-009, AUD-010
-- 목표: 게이트 전에 `validateSkill` error면 중단(LLM 비용 절약), `--no-gate`에서도 강제, 최종 조립본 재검증. 리포트를 사용자에게 출력.
-- 완료(2026-09-07, PR #31): `compile()`이 첫 조립본을 즉시 검사해 error면 `validation_failed`(`stage: "pre_gate"`, 리포트 동봉)로 끝남 — 게이트 호출 0회, 아무것도 쓰지 않음. `gate: "skip"`도 같은 검사를 지나므로 `--no-gate`로 우회 불가. 게이트 뒤 `verified`로 다시 조립한 최종본도 재검사(`stage: "final"`, 불변식 "쓰이는 파일 = 검사 통과 파일"). `formatCompileFailure`가 실패 메시지 + 검증 리포트를 출력(compile·smoke 공용), 성공 시 warning이 있으면 리포트 덧붙임. `budget_exceeded` 수정 방법 문구를 실제 가능한 조치(재컴파일/소스 분할, 손수 만든 스킬이면 파일 단축)로 정정. DESIGN §3.1·§5.1 기록.
-- 완료 기준: [x] 예산 초과 챕터 → 종료코드 1·미배포·LLM 게이트 미호출 테스트(pipeline: `validation_failed` pre_gate + 게이트 대본 0개로 `assertExhausted`, `--no-gate`도 동일 실패, warning은 통과; CLI: 종료 1·`writeSkill` 미호출·"[ERROR] chapters/ch01-a.md (budget_exceeded)" 출력, 성공 시 `[WARNING] low_anchor_ratio` 출력; smoke: 실 PDF로 호출 3회 후 리포트 출력) [x] check 통과(24 files·377 tests)
-
-#### E2 — YAML frontmatter 직렬화·파싱 · 상태: DONE(2026-09-07) · 원본: 001-009, SEC-009, AUD-010
-- 목표: frontmatter 값을 YAML 규칙으로 이스케이프해 생성하고, validator는 실제 YAML 파싱으로 `name`/`description` 타입·값 검사.
-- 완료(2026-09-07, PR #32): 새 `core/frontmatter.ts`(의존성 `yaml` 2.9, ISC 추가). `serializeFrontmatter`는 값을 **항상 큰따옴표**로 직렬화(`lineWidth: 0`) — YAML 1.1 파서가 `yes`/`no`/`null`을 불리언·null로 읽는 함정까지 차단, 출력 결정론(스냅샷 갱신). `parseFrontmatter`는 실제 `parse`로 읽어 `missing_block`/`syntax`/`not_a_map`/`missing_field`/`invalid_field`를 구분하고 zod로 `name`(§2 slug 스키마)·`description`(비어 있지 않은 ≤1,024자, 제어문자 금지) 검사, 표준 밖 키는 `unknownKeys`. validator: 정규식 키 존재 검사를 이 함수로 교체 — `invalid_frontmatter`(error)·`unknown_frontmatter_key`(warning) 코드 추가. assembler는 `serializeFrontmatter` 사용. DESIGN §3·§3.1 기록.
-- 완료 기준: [x] `Guide: Setup` 제목 라운드트립 테스트(assembler → validator 통과 → 파서가 원문 그대로 반환; 13종 적대 제목 라운드트립; `yes`/`no` 항상 인용; 긴 값 접기 없음; 문제 5종 구분; 타입·값 오류 8종; validator가 미인용 `Guide: Setup`을 거부하고 인용본은 허용, 미지 키 warning) [x] check 통과(25 files·414 tests)
-
-#### E3 — report 변조·손상 탐지 · 상태: DONE(2026-09-07) · 원본: AUD-012 · 의존: A3
-- 목표: manifest `outputs`에 파일별 sha256 추가(스키마 갱신), `report`/`eval`이 현재 파일과 대조해 불일치면 STALE/TAMPERED로 실패.
-- 완료(2026-09-07, PR #33): manifest에 `outputHashes: {path, sha256}[]` 추가(`outputs`는 유지, B6 superRefine이 두 집합 일치·경로 유일 강제, `version: 1` 유지). 새 `core/integrity.ts`의 `checkOutputs(manifest, files)`가 missing/modified/unexpected(manifest.json·점 파일 제외)를 가려 **STALE**(드리프트) / **TAMPERED**(manifest가 모르는 파일, 우선)를 판정, `formatOutputIntegrity`가 파일 목록 + 수정 방법 출력. `report`는 `readSkillDir`도 받아 대조 후 어긋나면 게이트 판정 대신 무결성 리포트 + 종료 1, `eval`은 두 경로 다 LLM 호출 전에 같은 대조로 중단. 세대 ID는 A3의 원자 교체가 필요를 없애 두지 않음. DESIGN §2·§5 기록.
-- 완료 기준: [x] DESIGN §5 갱신 [x] 챕터 수정 후 report → STALE 테스트(e2e: 실제 컴파일 산출물의 챕터를 손으로 고쳐 `report` 1 + STALE + 파일명, PASSED 미출력; eval 재사용 경로도 LLM 0회로 STALE 중단; 되돌리면 PASSED; 미등록 챕터 주입 → TAMPERED. 단위: 수정/삭제/주입/점 파일 무시/1글자 변경; CLI: eval STALE·없는 챕터; 스키마: outputHashes 집합 불일치·중복·누락 거부) [x] check 통과(26 files·421 tests)
-
-### F. 추출·증류 정확성 (001 고유) — High/Medium
-
-#### F1 — distill 2,000자 잘림 제거 · 상태: DONE(2026-09-07) · 원본: 001-005 · High
-- 목표: 입력 예산 내에서는 섹션 전문을 전달. 초과 시 명시적 청크 분할·병합 또는 사용자 경고.
-- 완료(2026-09-07, PR #34): `distillPrompt`의 `sections` 블록이 섹션 **전문**을 담는다(400자 발췌는 outline 전용으로만 남김). 청크 분할·병합은 두지 않음 — `compile()`이 outline 전에 전체 입력을 `MAX_INPUT_TOKENS`(30k, `core/tokenEstimate.ts`로 이동해 prompts·pipeline 공용)로 막으므로 챕터 원문이 그 값을 넘는 일은 구조적으로 없고, `distillPrompt`는 그 불변식을 명시적으로 검사해 넘으면 조용히 자르는 대신 throw(호출자 버그로 드러남). DESIGN §5.1 기록.
-- 완료 기준: [x] 2,000자 초과 섹션의 뒷부분이 distill 프롬프트에 포함되는 테스트(프롬프트 단위: 전문 포함·`…` 없음·상한 초과 throw·outline은 발췌 유지; 파이프라인: 실제 `compile()`이 보낸 distill 요청에 뒷부분 그대로) [x] check 통과(26 files·425 tests)
-
-#### F2 — 섹션 ID 충돌 · 상태: DONE(2026-09-07) · 원본: 001-006 · High
-- 목표: 최종 ID 집합 기준으로 충돌 없는 접미사 생성(`A, A, A-2` → 3개 고유). 다중 소스 namespace를 basename 대신 입력 루트 상대 경로(또는 안정 해시) 기반으로.
-- 완료(2026-09-07, PR #35): `core/sectionId.ts`에 `disambiguate(base, used)`(이미 쓰인 id와 겹치지 않는 첫 `-n` 후보) 도입 — `assignSectionIds`가 이를 쓰고 자식은 조상의 최종 id 위에 붙음(`overview-2/steps`). 새 `namespacePrefixes(paths)`: 공통 상위 디렉터리를 뺀 상대 경로 슬러그(확장자 제거) + 같은 접미사 규칙; pipeline `namespaceSections`가 사용하고 결과 유일성을 검사해 겹치면 throw. DESIGN §2·§5.1 기록.
-- 완료 기준: [x] `A, A, A-2` 고유 ID 테스트(정순·역순, 중복 부모 아래 자식 분리, 200회 무작위 속성 테스트) [x] 다른 폴더 같은 파일명 충돌 없음 테스트(`namespacePrefixes` 단위 + `compile()` 파이프라인에서 `a-readme/overview`·`b-readme/overview`가 모두 outline 모집단에 존재) [x] check 통과(26 files·438 tests)
-
-#### F3 — eval namespace 공용화 · 상태: DONE(2026-09-07) · 원본: 001-008 · 의존: F2
-- 목표: `namespaceSections`를 공용 함수로 분리해 compile/eval 동일 적용. manifest와 매칭되지 않는 원문은 명시적 오류.
-- 완료(2026-09-07, PR #36): 새 `core/sources.ts` — `extractSources`(추출 + 메시지)·`namespaceSections`·`buildPopulation`(F2 접두어 + B1 필터)·`matchManifestSections`(missing/unknown/changed)를 compile과 `eval --source`가 같은 함수로 사용(`SourceFile` 타입도 이동, pipeline이 재수출). eval은 id 집합이 다르면 `formatSourceMismatch`로 LLM 호출 전에 명시적 실패, 본문만 바뀐 섹션은 `formatChangedSections`로 참고 출력 후 진행. DESIGN §5.1·§6 기록.
-- 완료 기준: [x] 다중 소스 스킬 `eval --source`가 QA를 생성하는 테스트(다른 폴더의 두 `readme.md`로 컴파일된 manifest에 대해 qaGen 2회 + 채점 2회로 PASSED; 불일치 원문은 LLM 0회로 명시적 실패; 본문 변경은 참고 출력 후 재채점; `sources.test.ts` 단위: 추출 순서·실패 메시지·접두어+필터·충돌 throw·대조 3종) [x] check 통과(27 files·449 tests)
-
-#### F4 — HTML 표·컨테이너 텍스트 · 상태: DONE(2026-09-07) · 원본: 001-010
-- 목표: DOM 단일 순회로 `td`/`th`·일반 `div` 직접 텍스트·코드·목록 구조 보존(중복 없이).
-- 완료(2026-09-07, PR #37): `html.ts`의 `htmlToBlocks`를 선택자 방식에서 DOM 단일 깊이 우선 순회로 교체 — 텍스트 노드는 가장 가까운 블록에서 한 번만 수집, 표는 캡션 + 마크다운 파이프 표 한 블록(셀 `|` 이스케이프·빈 셀 채움), 목록은 `- `/`1. ` + 들여쓰기, `pre`는 코드 펜스, `br`은 블록 안 줄바꿈, 비본문 태그 건너뜀. `domhandler`(cheerio가 끌어오는 메이저)를 명시 의존성으로 추가. 자작 픽스처 `fixtures/docs/tables.html`. DESIGN §5.1 기록.
-- 완료 기준: [x] 표 픽스처(자작) 텍스트 추출 테스트(헤딩 집합 정확히 4개·순서, 파이프 표 행·셀·캡션·문서 순서, div 직접 텍스트, 텍스트 6종 각 1회만 등장, 중첩 목록 표식·들여쓰기, pre 펜스 + `#` 줄 비헤딩, br·blockquote·footer·script 제거, 파이프 이스케이프·빈 셀·li 없는 중첩) [x] check 통과(27 files·457 tests)
-
-#### F5 — Markdown 헤딩 인식 · 상태: DONE(2026-09-07) · 원본: 001-011
-- 목표: 줄 단위 ATX 헤딩 인식(빈 줄 불필요), 코드 펜스 내부 `#` 제외.
-- 완료(2026-09-07, PR #38): `core/sections.ts`에 `splitBlocks`(줄 단위 상태 기계) — ATX 헤딩 줄은 빈 줄 없이도 혼자 한 블록, 코드 펜스(```` ``` ````/`~~~`, 같은 문자·같은 길이 이상으로만 닫힘)는 안의 빈 줄과 `#` 줄을 포함해 한 블록. 빈 줄 분리와 암시적 헤딩 휴리스틱은 그대로라 PDF·DOCX·HTML 경로의 결과는 불변(빈 줄 있는 문서와 없는 문서가 같은 섹션·id; 픽스처 5종 섹션 수 18/4/1/1/970 그대로). DESIGN §5.1 기록.
-- 완료 기준: [x] 빈 줄 없는 헤딩 케이스 테스트(3단계 헤딩 + 빈 줄 있는 문서와 id·본문 동일) [x] 코드 펜스 내 `#` 무시 테스트(``` 안 빈 줄 포함, ~~~ 안의 ```, 미닫힘 펜스, 닫는 펜스 직후 헤딩, `#hashtag` 비헤딩; 실 TextExtractor로도 확인) [x] check 통과(27 files·465 tests)
-
-### G. 오류 처리·관측성 — Medium
-
-#### G1 — CLI 공통 오류 경계 · 상태: DONE(2026-09-07) · 원본: 001-017, AUD-015
-- 목표: compile/eval/smoke 공통 오류 경계 — `LlmProviderError.kind`·retryable·실패 단계를 사용자 메시지+종료코드로, 그 시점까지의 비용 요약 유지. 외부 오류 문구는 길이 제한·제어문자 정규화, 키·원문 미출력.
-- 완료(2026-09-07, PR #39): 파이프라인 `guarded(stage, …)`가 `LlmProviderError`를 `llm_failed`(단계·종류·retryable·다듬은 문구·그때까지 호출 수)로 변환, `formatCompileFailure`/`formatLlmProviderError`가 종류별 한국어 안내(auth/rate_limit/network/server/bad_response/refusal/unknown)로 출력 — compile·smoke·eval 3경로. `sanitizeExternalText`(제어문자 제거·개행 접기·`sk-…`/credential 필드 가리기·200자)로 바깥 문구 위생. `cli/index.ts` 최상위 경계 `describeTopLevelError`: `ConfigError`(신설, `loadConfig`) → 설정 오류 종료 1, 그 밖 → 내부 오류 종료 2. `ScriptBuilder.fail(role, error)`로 실패 주입. DESIGN §6 기록(종료코드 규약 0/1/2).
-- 완료 기준: [x] `rate_limit` 주입 시 메시지+비용 요약 출력 테스트(3경로: compile 종료 1·미배포·"LLM 호출 2회"·키 가림·제어문자 없음, eval 재사용 "LLM 호출 2회", smoke "비용 요약: LLM 호출 3회"; 파이프라인 `llm_failed` 형태·refusal 비재시도·비provider 예외는 통과; sanitizer·최상위 경계 단위) [x] check 통과(28 files·476 tests)
-
-### H. CI·배포 파이프라인 — Medium/Low
-
-#### H1 — main 브랜치 보호 · 상태: DONE(2026-09-07) · 원본: AUD-016 · **코드 아님**
-- 목표: 공개 전환/플랜 허용 시 ruleset(PR 필수·필수 CI·force push 금지). 그 전까지는 `docs/PUBLISHING.md` §4 사람 결정 항목에 편입하고 수동 통제를 기록.
-- 완료(2026-09-07, PR #40): 2026-09-07 재확인 — private 무료 플랜이라 rulesets/branch protection API 403(켤 수 없음). PUBLISHING §0에 상태 스냅샷, §3-9에 **수동 통제**(배포 SHA로 `gh run list --branch main --commit <sha>` 성공 확인 + `origin/main` 일치 + PR 전용 머지 관행 — 관행이지 강제가 아님을 명시), §3-14-1에 **ruleset 활성화 절차**(이름·대상·규칙 6종·필수 검사 `check (node 20/22)`·bypass 없음·검증 명령·기존 자동화와의 호환), §4에 사람 결정 항목(활성화 시점: 공개 전환과 함께 vs Pro 선전환) 추가.
-- 완료 기준: [x] PUBLISHING §3·§4 반영(+§0 스냅샷)
-
-#### H2 — tarball 설치 스모크 · 상태: DONE(2026-09-07) · 원본: AUD-017
-- 목표: `npm pack` → 임시 디렉터리 `npm install --omit=dev <tgz>` → `live-skill --help` 실행 스크립트를 `prepublishOnly`·CI에 추가.
-- 완료(2026-09-07, PR #41 — H2·H3·H4 묶음, 커밋은 태스크별): `scripts/verify-pack.sh` — 실제 tgz를 임시 프로젝트에 `--omit=dev`로 설치, `bin` 실행 가능 여부·devDependency 미혼입·`--help`에 `compile`·`--version` = package.json 확인. `verify:pack` 스크립트를 `prepublishOnly`와 `ci.yml`(check:tarball 뒤)에 추가. 레지스트리 접속 때문에 vitest 밖(가드레일 3). PUBLISHING §3-7-1·§3-10 기록.
-- 완료 기준: [x] 로컬·CI 통과(로컬 `npm run verify:pack` ok, CI Node 20/22 그린) [x] check 통과
-
-#### H3 — check-tarball.sh 구조화 · 상태: DONE(2026-09-07) · 원본: SEC-012, AUD-018
-- 목표: `npm pack --dry-run --json`의 `files[].path`를 검사, 명령·읽기 오류는 실패 처리.
-- 완료(2026-09-07, PR #41): 셸 스크립트를 `scripts/check-tarball.ts`(tsx) + 순수 규칙 `scripts/tarballRules.ts`로 교체 — `files[].path`를 허용 목록(`dist/**`+루트 4파일)과 비밀·상태 파일 규칙 5종으로 검사(위반 전부 나열), 실제 tgz를 풀어 텍스트 파일 전부를 키 패턴 6종으로 스캔(오탐 방지: 정규식 소스·`api_key` 단어엔 반응 안 함), 명령·JSON 형태·읽기 오류는 전부 `publish blocked`. PUBLISHING §3-7 기록.
-- 완료 기준: [x] 합성 `.env.production` 항목 검출 확인(`tests/tarballRules.test.ts`: env 변형 7종·중첩 config.json·pem/id_rsa·npmrc/git·허용 목록 밖·전부 나열; 키 6종·오탐 없음; 바이너리 판정; JSON 형태) [x] check 통과
-
-#### H4 — .gitignore env 변형 · 상태: DONE(2026-09-07) · 원본: SEC-013, AUD-018
-- 목표: `.env*` 제외 + `!.env.example`.
-- 완료(2026-09-07, PR #41): `.env` + `.env.*` 제외, `!.env.example` 재포함.
-- 완료 기준: [x] `git check-ignore .env.production .env.staging` 확인(둘 다 무시, `.env.local`·`.env`도) [x] `.env.example` 추적 유지(`git ls-files` 확인)
-
-### I. 저수준·문서 정합성 — Low
-
-#### I1 — `--target` 값 검증 · 상태: DONE(2026-09-07) · 원본: 001-018
-- 목표: `claude|agents` 외 값은 실행 전 명시적 오류(commander `choices`).
-- 완료(2026-09-07, PR #42 — I1·I2·I3 묶음, 커밋은 태스크별): commander 정의를 `src/cli/program.ts`(`buildProgram()`)로 뽑고 `--target`을 `Option.choices(["claude","agents"])`로 — 오탈자는 액션 실행 전에 거부(예전엔 조용히 claude). `index.ts`는 .env 로드 + 오류 경계 + 실행만.
-- 완료 기준: [x] 오탈자 → 종료코드≠0 + 메시지 테스트(`tests/program.test.ts`: `claud`·`Claude`·`agent`·`codex`·빈 값 → `commander.invalidArgument`, "claude, agents" 안내; choices·기본값 선언 확인) [x] check 통과
-
-#### I2 — Node 지원 범위 정합 · 상태: DONE(2026-09-07) · 원본: 001-016, AUD-019
-- 목표: 의존성(commander 15 `>=22.12`, vitest 5)이 지원하는 최소 버전으로 `engines`·CI matrix·README·CLAUDE.md를 맞추거나 Node 20 호환 버전을 고정 — 착수 시 사용자에게 방향 확인(CLAUDE.md "Node.js 20+" 변경 여부).
-- 완료(2026-09-07, PR #42): **방향 (a) 상향**으로 진행(사용자가 묶음 진행만 지시하고 방향은 지정하지 않아 추천안 적용 — 되돌리려면 이 커밋만 revert). 런타임 의존성 실측: commander `>=22.12.0`, pdf-parse `>=22.3.0`, cheerio `>=20.18.1` → `engines.node >= 22.12.0`. CI matrix 22·24(Node 20은 2026-04 EOL, 의존성 미지원이라 "우연히 동작"이었음), CLAUDE.md·README·PUBLISHING §0/§3-2 정합.
-- 완료 기준: [x] engines·CI·문서 일치 [x] check 통과
-
-#### I3 — 상태 문서 정합성 · 상태: DONE(2026-09-07) · 원본: 001-019, AUD-020
-- 목표: T1~T8 상태 마커 DONE 반영, `docs/PUBLISHING.md` §0·§2의 "코드 미착수" 문구 갱신, README 상태 동기화. 과거 기록은 날짜 붙은 상태 로그로 유지.
-- 완료(2026-09-07, PR #42): T1~T8에 `DONE(2026-09-06)` + PR 번호(#5~#12)·한 줄 요약, PUBLISHING §0 "코드 구현" 행과 §2 문구를 현재 상태(T0~T11 완료, 검수 수정 30/30)로 갱신, README(en/ko) 상태 절에 2026-09-06 T11·2026-09-07 검수 수정 완료 항목 추가 — 과거 항목은 날짜 붙은 로그로 유지.
-- 완료 기준: [x] TASKS·PUBLISHING·README 상태 일치 [x] check 통과
+### T11 — Public release preparation | Status: DONE(2026-09-06) | Depends on: T10
+- Goal: npm package name availability survey (live-skill + 2 candidates, recorded in SPEC §8), English README draft (internal docs stay Korean), GHA `ci.yml` (npm run check), 60-second demo scenario (using self-made samples).
+- Preliminary survey done (2026-09-06, docs analysis session, before code work started): the first-pass name availability check is in SPEC §8, the full npm publishing sequence in `docs/PUBLISHING.md`, and the competitive landscape and application areas in `docs/MARKET.md`, all filled in ahead of time. `LICENSE` (MIT draft) and `.gitignore` were also added then. Confirming candidate 2, the English README, ci.yml, and the demo scenario remained TODO; that session wrote no code (T0 had to come first).
+- Production precedent (confirmed 2026-09-06, npm-published/in-progress repos by the same author): `../retail-mcp/docs/004_NPM_RELEASE_PACKAGING_REVIEW.md` and `008_TEST_AND_RELEASE_GATE_REVIEW.md` record an 8-step release gate and the pitfalls actually hit (`private:true` left in place, missing `bin`/`main`, a tarball containing only source instead of dist, 97 files leaked for lack of a file whitelist, uncertainty about reusing an unscoped name → switch to `@shiz_son/<name>`). `../msg-agent/scripts/check-tarball.sh` is a lightweight secret-scan script suited to this repo's scale and can be ported directly. These lessons are already reflected in `docs/PUBLISHING.md` §1 and §3.
+- Done (2026-09-06, PR #15): **Name survey** — re-queried `live-skill` and `live-skills` and confirmed both still unregistered; added `skill-gate` as the second candidate (puts the gate, the differentiator, in the name; confirmed unregistered, while `skillgate` is already taken and was excluded), satisfying the SPEC §8 "2 candidates" requirement. Final confirmation stays deferred until just before actual publishing (WORKFLOW §4, cannot be delegated). **English README** — replaced `README.md` with English (the default document GitHub/npm show once public), moved the existing Korean content to `README.ko.md`, and cross-linked the two. `docs/` stays Korean per the CLAUDE.md policy. **`ci.yml`** — new `.github/workflows/ci.yml` (Node 20/22 matrix running `npm ci`→`check`→`build`→`check:tarball`, every action pinned to a commit SHA, reflecting retail-mcp's supply-chain lesson; a mandatory coverage gate, SBOM, and service containers were not added because they do not fit this repo's scale). Syntax and schema validated with `actionlint` (brew, 1.7.12): 0 findings. **Demo scenario** — new `docs/DEMO.md` (timeline table + copy-paste commands, uses `samples/manual.pdf`), linked in abbreviated form from the English README.
+- Completion criteria: [x] name survey results recorded (SPEC §8, `docs/PUBLISHING.md` §0) [x] ci.yml syntax validated (`actionlint`, 0 findings) [x] demo scenario documented (`docs/DEMO.md`) [x] check passes (21 files, 181 tests; no code changes, docs/CI/README only)
 
 ---
 
-## v0.2 대기열 (착수 금지 — SPEC 로드맵 참조)
+## v0.1 review remediation tasks (2026-09-06 — reflecting `docs/001_CODE_REVIEW.md`, `002_SECURITY_REVIEW.md`, `003_SECURITY_ARCHITECTURE_AUDIT.md`)
 
-- `watch`/`update` 증분 재컴파일(manifest 해시 diff) / URL·드라이브 소스 / ph-skill-pack(자매 레포) 착수 / EPUB / `serve`(MCP)는 v0.3
-- 검수 후속(2026-09-06): 명령 안전성 게이트(지식 정확성과 별도로 스킬 본문의 지시 포함 여부 평가 — C1 범위 밖, AUD-003) / 파서 worker·subprocess 격리(D4에서 v0.2로 확정, 2026-09-07, AUD-014 — 요지: 추출기 전부를 `worker_threads` 경계 뒤로(`resourceLimits`로 힙 상한, `terminate()`로 시간 상한), `ExtractedDoc` 직렬화, 워커 파일의 tsx/dist 이중 해석, 워커 크래시 실패 모드 정의. v0.1은 D3 파일 상한 + 엔트리·페이지·실측 바이트 상한 + 협조적 타임아웃으로 방어 — DESIGN §6 D4) / manifest 서명·신뢰 저장소(AUD-011)
+The three reviews (base commit `537a42c`, 52 original findings) were deduplicated and reorganized into **30 action units**. Critical 0 / High 10 / Medium 15 / Low 5. The original IDs (`001-NNN`, `SEC-NNN`, `AUD-NNN`) are kept for evidence tracing.
+
+**Working rules (agreed 2026-09-06)**: one task = one PR. On completion: commit (in English, `R-{id}: summary`) → push → PR → squash merge to `main` → sync both worktrees, all automatic; **starting the next task requires the user's consent**. For tasks that change gate rules or the manifest schema (B, C, D1, E3), the `DESIGN.md` diff comes before the code, per the CLAUDE.md convention; these do not relax guardrail 1 but close holes that are currently leaking silently.
+
+The recommended order follows 003 §9: A (filesystem) → B (gate) → C (prompts) → D (cost) → E (structural validation) → F (extraction accuracy) → G (errors) → H (CI/publishing) → I (consistency). Dependencies: D2→D1, E3→A3 (both touch `writeSkill`/manifest outputs), F3→F2 (shared namespace function), B6→B3 (manifest schema).
+
+### A. Filesystem boundaries — High
+
+#### A1 — Block LLM slug path escape | Status: DONE(2026-09-06) | Source: 001-001, SEC-001, AUD-001
+- Goal: restrict `skillPlanSchema.slug` to a single path component (lowercase letters, digits, hyphens) and reject `/`, `\`, `.`, `..`, and absolute paths. After joining, re-verify that the `resolveTargetDir`/`tempSkillDir` results are inside the fixed root. Temporary directories use a trusted prefix + `mkdtemp`.
+- Done (2026-09-06, PR #17): two layers of defense — (1) `slugSchema` in `core/schemas.ts` (`^[a-z0-9]+(-[a-z0-9]+)*$`, ≤64 chars) yields `outline_invalid` at the outline stage; (2) `adapters/fsTargets.ts`, independently of the schema, re-checks the same format in `resolveTargetDir`/`tempSkillDir` (`unsafe_slug`) and confirms the joined path is a direct child of the root (`escapes_out_dir`). `tempSkillDir` creates and returns a fresh empty directory via `mkdtemp`, which removes the `force: true` special case on the gate-failure path and the `timestamp` dependency. DESIGN §2 and §6 updated.
+- Completion criteria: [x] `../../outside` slug → `outline_invalid` rejection test (pipeline) [x] target and temporary path boundary tests (fsTargets 8 cases × 2 + schemas 14 cases) [x] check passes (219 tests)
+
+#### A2 — Symbolic link and input traversal boundaries | Status: DONE(2026-09-06) | Source: 001-002/014, SEC-002, AUD-002
+- Goal: `collectInputFiles` rejects links and non-regular files by default via `lstat` and prevents cycles with a visited set. `writeSkill`/`readSkillDir` check each path component with `lstat` so they never follow a link to write or read outside, and verify the path is inside the output root based on `realpath`.
+- Done (2026-09-06, PR #18): the trust boundary is "the root the user passed directly" (the input path and outDir are trusted even if they are links, and pinned via `realpath`). Below that, `collectInputFiles` rejects links (`symlink_refused`) and non-regular files (`not_regular_file`) via `lstat`, so it never follows links and cycles are impossible by construction (no visited set needed); the `realpath` root boundary is re-checked for every directory. `writeSkill` does per-file component `lstat` → `realpath` boundary check of the created directory → write via `O_NOFOLLOW` open. `readSourceFile`/`readSkillDir`/`readManifest` also read without following links. Limitations (intermediate-directory swap races, Windows) are recorded in DESIGN §6 A2; A3 takes them over.
+- Completion criteria: [x] termination test on link-cycle input (`in/loop → ..` rejected immediately) [x] rejection test for external links inside the output (linked subdirectory, linked file; the outside stays intact even with `--force`) [x] check passes (228 tests)
+
+#### A3 — Atomic staging writes | Status: DONE(2026-09-07) | Source: 001-012/013, AUD-007
+- Goal: write the entire output to a staging directory on the same filesystem, then swap it in with `rename` (resolves TOCTOU and partial writes). Remove stale files from the previous generation. On failure, preserve the previous complete generation.
+- Done (2026-09-07, PR #19): `writeSkill` writes everything into `mkdtemp(".<name>.live-skill-staging-")` **under the same parent** as the realpath of outDir (keeping A2's no-follow writes) and swaps the whole thing in with `rename`. With `--force`, the existing generation is moved aside to `.<name>.live-skill-old-<random>`, the new one is moved in, and the old one is deleted (rolled back on failure); without `--force`, the `rename` itself is the verdict (`ENOTEMPTY` → `already_exists`, resolving the check-then-write TOCTOU). If outDir is a link, the link's target directory is replaced and the link is preserved. If any step fails, staging is deleted and the previous generation is intact. A2's "reject links inside outDir" changed meaning to "replaced together with the link, target intact", and the tests were updated. Limitations (a brief ENOENT window during a force swap, no locking, Windows unverified) are recorded in DESIGN §6 A3.
+- Completion criteria: [x] previous output intact on mid-write failure test (EISDIR injected on the 3rd file → all of v1 and the manifest preserved, zero staging/old remnants) [x] no stale chapters after `--force` recompile test [x] check passes (233 tests)
+
+### B. Quality gate bypasses (directly tied to guardrail 1) — High
+
+#### B1 — Outline coverage validation | Status: DONE(2026-09-07) | Source: 001-004, SEC-004, AUD-004
+- Goal: immediately after parsing the outline, compare the plan against all input sections: every substantive section assigned exactly once; unknown IDs and duplicate chapter IDs rejected (`outline_invalid`). What counts as a "substantive section" (what is excluded, e.g. headings with no body) is a deterministic policy specified in DESIGN §5.1, not model discretion.
+- Done (2026-09-07, PR #20): new `core/outlineCoverage.ts` — the pipeline first fixes the population with `isSubstantiveSection` (body `trim() !== ""`) and shows only that to the outline; immediately after parsing, `checkOutlineCoverage` collects all four problems at once (missing, unknown id, section assigned twice, duplicate chapter id) and ends with `outline_invalid` (with detail), before any distill or gate cost. `normalizeText` strips HTML comments (`<!-- … -->`), so a leading "ghost section" that contained only a comment no longer enters the population (the guardrail-4 comment in the self-made fixtures). The e2e scripts already matched the policy without changes; the smoke failure script, which used to include only some sections, was fixed to include all 4 sections and to produce the failure by answering the last question wrong (3/4 = 75%).
+- Completion criteria: [x] DESIGN §5.1 policy updated [x] separate rejection tests for missing, duplicate, and unknown IDs (+ duplicate chapter id, a container section is not offered and is rejected if referenced; 7 unit + 6 pipeline cases) [x] existing e2e and pipeline scripts updated to the policy (smoke failure script, comment-stripping test) [x] check passes (22 files, 248 tests)
+
+#### B2 — qaGen failure coverage | Status: DONE(2026-09-07) | Source: SEC-005, AUD-005
+- Goal: sections for which regeneration still produced no valid QA are not dropped from the denominator but recorded with the failure reason `qa_generation_failed`; if section coverage falls short, publishing as verified is forbidden. Amend the "exclude the question" policy in DESIGN §4 together with TESTING §3.
+- Done (2026-09-07, PR #21): policy changed from "exclude" to "unverified" — added `GateReport.coverage[{sectionId, requested, generated}]`; `evaluateGoldenQa` counts valid questions for every member of the population (sectionIds per chapter), lists sections with `generated === 0` in `failures` as `{ qaId: "<sectionId>-q0", reason: "qa_generation_failed" }`, and makes that a separate necessary condition for `passed` (passRate is still based on the questions actually asked; questions that could not be generated are not dressed up as wrong answers). The `eval` reuse path goes through the same function, so a section whose QA is missing from the manifest cannot pass (`requested` is `config.qaPerSection` at that time). `report` output gained "Unverified sections" and "Question shortfall" sections. The contract of `generateGoldenQa` (0..k, one regeneration) is unchanged.
+- Completion criteria: [x] DESIGN §2, §4 and TESTING §3, §4 policy updated [x] test: one of two chapters fails qaGen twice → `passed=false` + failure list recorded (+ passes when there is only a shortfall; the eval reuse path rejects sections without QA) [x] the five discrimination tests kept (this added as the sixth) [x] check passes (22 files, 253 tests)
+
+#### B3 — Manifest chapter allowlist | Status: DONE(2026-09-07) | Source: SEC-006, AUD-006
+- Goal: restrict `manifest.sections[].chapterFile` by schema to the `chapters/*.md` pattern. The gate loader loads only regular files under `chapters/` and excludes `manifest.json` and other files from the answerer context at the source. Cross-check the `readSkillDir` result against `outputs`.
+- Done (2026-09-07, PR #22): three layers — (1) schema `chapterFileSchema` (`^chapters/[\p{L}\p{N}-]+\.md$`, the only form the assembler's `chapterFilePath()` produces) rejects `manifest.json`, `SKILL.md`, `chapters/../x`, and subdirectories at the `readManifest` stage; (2) `evaluateGoldenQa` does not trust the schema: it takes only the files in the chapter list that match the format as the allowed set, and only files in that set can be loaded; anything else yields `not_found` even if selected, with an empty load history, and SKILL.md is provided separately as the index only; (3) `eval` checks, before any LLM call, that the manifest's chapters actually exist via `missingChapterFiles`, and if not, reports cause and fix with exit code 1. Cross-reference validation against outputs is in B6 (schema superRefine).
+- Completion criteria: [x] rejection test for a manifest with `chapterFile: "manifest.json"` (10 rejected, 3 accepted + compatibility with assembler-produced paths) [x] isolation test (even when a manipulated chapter list points to manifest.json: not_found, answer not called, refAnswer marker absent from every prompt; a chapter present on disk but not in the list is not_found) [x] check passes (22 files, 271 tests)
+
+#### B4 — Threshold floor and zero-question failure | Status: DONE(2026-09-07) | Source: SEC-007, AUD-008
+- Goal: zero questions fails regardless of the threshold. Specify the policy floor of `GATE_THRESHOLD` in DESIGN §7 and have config enforce it (a blank string counts as unset; out of range is a configuration error).
+- Done (2026-09-07, PR #23): floor **0.5** (`GATE_THRESHOLD_FLOOR`, core/gate.ts; the value proposed by the user, agreed). `loadConfig` rejects values outside `[0.5, 1]` with a plain Error carrying cause + fix (wrapping the raw zod error and including the field name), and `evaluateGoldenQa` re-checks with `assertGateThreshold` to block callers that bypass the boundary. `passed` has an explicit `asked > 0` condition (covering even the extreme case of an empty population). Whitespace-only env values are treated as unset after `trim` (the `Number("  ")===0` hole). The range is documented in `.env.example` and in the DESIGN §7 comment. Documented that changing the floor starts with a DESIGN §7 / guardrail 1 review, not with code.
+- Completion criteria: [x] DESIGN §7 updated (+ TESTING §4 checklist) [x] `GATE_THRESHOLD=0` → configuration error test (0, 0.49, -1 rejected; 0.5, 0.9, 1 accepted; blank → default; message contains the field name and Fix) [x] 0 questions → `passed=false` test (empty population, runGate with 0 sections, threshold below the floor rejected) [x] check passes (22 files, 282 tests)
+
+#### B5 — Strict grader parsing | Status: DONE(2026-09-07) | Source: SEC-010, AUD-013
+- Goal: normalize the entire response and accept exactly `CORRECT`/`WRONG` only; anything else (contradictions, explanations included) is conservatively wrong.
+- Done (2026-09-07, PR #24): `parseGradeVerdict` counts as correct only when the normalized full response (leading/trailing whitespace, markdown emphasis, quotes, and periods stripped; case-insensitive) is exactly `CORRECT`; an attached explanation or both words present means undecidable = wrong. Recorded in DESIGN §4-3. Data/instruction separation for candidate answers is in C1.
+- Completion criteria: [x] `CORRECT? No, WRONG.` → wrong test (+ 8 wrong cases such as contradiction, explanation, INCORRECT; 5 correct cases with decoration only) [x] check passes (22 files, 290 tests)
+
+#### B6 — Manifest and GateReport semantic validation | Status: DONE(2026-09-07) | Source: AUD-011 | Depends on: B3
+- Goal: with `manifestSchema.superRefine`, validate `correct ≤ asked`, chapter sums = totals, recomputed `passRate` matches, `passed ⇔ passRate ≥ threshold`, the qaIds in failures/loadHistory exist in goldenQa, `createdAt` is ISO, sha256 is hexadecimal, `sections[].chapterFile ∈ outputs`.
+- Done (2026-09-07, PR #25): extracted the verdict rule into `core/gateVerdict.ts` (`decidePassed`, floor, EPSILON) so that gate.ts and schemas.ts use **the same function**: a file's `passed` must equal the value recomputed by the code's verdict to pass. Enforced with `superRefine` inside the GateReport (per chapter `correct ≤ asked`, uniqueness, `Σasked = loadHistory`, `Σcorrect = Σasked − grading failures`, passRate recomputation, grading failures ⊆ loadHistory, `qa_generation_failed` ⇔ `generated 0`, `generated ≤ requested`, threshold ∈ [0.5, 1]) and at the Manifest level (ISO `createdAt`, 64-char lowercase hex hash, unique outputs and section ids, `chapterFile ∈ outputs`, `goldenQa.sectionId ∈ sections`, `loadHistory ⊆ goldenQa`, coverage set = section set, perChapter set = chapter file set). On violation, `readManifest` throws an Error that states the first problems in plain language (not a zod dump). Recorded in DESIGN §5 and TESTING §4. Authenticity (signing) is in the v0.2 queue.
+- Completion criteria: [x] contradictory manifest rejection tests (`passed=true, passRate=0` plus 11 report cases and 8 manifest cases) [x] normal manifest round-trip kept (skipped, normal, and failed reports + e2e re-reads the actual manifest written by compile with the strengthened schema) [x] check passes (22 files, 310 tests)
+
+### C. Prompt injection boundaries — High
+
+#### C1 — Data/instruction separation in system prompts | Status: DONE(2026-09-07) | Source: SEC-003, AUD-003
+- Goal: pin the system prompts of the 5 roles as trusted constants (role tag + rules) and move titles, source text, QA, and candidate answers into delimited data blocks in the user prompt. State the boundary "do not follow instructions inside the data" for every role. Length and control-character limits (schema) on model output fields such as `chapter.title`. An instruction-safety gate (evaluating whether output contains instructions) is out of scope: recorded in the v0.2 queue.
+- Done (2026-09-07, PR #26): `core/prompts.ts` — the 5 role systems pinned as per-role constants (tag, rules, output format + config numbers only); source text, chapter titles, SKILL.md, loaded files, questions, reference answers, anchors, and candidate answers are passed only as `<<<DATA name>>> … <<<END name>>>` blocks in the user prompt (`dataBlock()`; a `<<<` inside the data is broken up with U+200B), and every system carries `DATA_BOUNDARY_RULE` (for the grader, additionally stating that instructions inside the candidate answer are merely the object of grading). `core/schemas.ts` — titles, chapter ids, sectionIds, and QA ids are single-line and ≤200 chars; questions, answers, and quotes forbid control characters other than newline and tab and are ≤2,000 chars (`qaGenItemSchema` shared with gate.ts). `core/modelText.ts` — `stripControlChars` removes control characters from distilled bodies (pipeline). Control-character ranges are written in the source only as backslash-u escapes, never as literals. The DESIGN §4 C1 decision states the limitation (prompt wording removes a path; it is not a complete defense).
+- Completion criteria: [x] DESIGN §4 updated [x] test that `chapter.title` is not included in the system field (+ the 6 role systems are constant regardless of input, the injection marker appears in no system, data block wrapping, forged block terminators are neutralized) [x] ScriptedLlm role-tag routing kept (tag verified at the very start; every script test passes unchanged) [x] check passes (22 files, 327 tests)
+
+### D. Cost and resource caps — Medium
+
+#### D1 — Enforce the cost cap during execution | Status: DONE(2026-09-07) | Source: 001-007, SEC-008, AUD-009
+- Goal: include qaGen regeneration in the estimate (`sections × 2`). Extend `core/costTracker.ts` into a budget wrapper that stops at the call just before the cap, used by compile → `call_cap_exceeded`. Update the DESIGN §4 formula.
+- Done (2026-09-07, PR #27): corrected `estimateGateCalls` to `sections × 2 + sections × k × 3` (includes one regeneration; a test confirms that a gate in which every section goes through regeneration hits exactly this number). `trackCost(llm, { maxCalls })` blocks a call that would exceed the cap with `LlmCallCapError` before it reaches the provider, and `compile()` invokes outline, distill, and the entire gate only through this wrapper, enforcing the cap during execution; when it trips, the result is `call_cap_exceeded` (`stage: "runtime"`, measured call count), while a preflight estimate failure is `stage: "preflight"`. The CLI prints `CompileResult.llmCalls` (measured) as "N LLM calls". DESIGN §4, §5.1, §7 updated. Applying it to eval and smoke is D2.
+- Completion criteria: [x] DESIGN §4 updated [x] test that the 7th call is blocked at cap 6 (a runGate gate needing 8 calls through a cap-6 wrapper → `LlmCallCapError` on the 7th, 6 calls reach the provider; wrapper unit test; the pipeline mid-execution path → `runtime` error) [x] check passes (22 files, 332 tests)
+
+#### D2 — Cap check on the eval path | Status: DONE(2026-09-07) | Source: SEC-008, AUD-009 | Depends on: D1
+- Goal: apply the D1 wrapper to both the eval reuse path and the `--source` path + caps on the `manifest.goldenQa` count and string lengths.
+- Done (2026-09-07, PR #28): both `eval` paths get the same two layers as compile: if the preflight estimate (reuse: `estimateEvalCalls` = number of questions × 3; `--source`: the gate formula) exceeds the cap, exit 1 with zero LLM calls; even when it passes, calls go only through the `trackCost(llm, { maxCalls })` wrapper, and hitting the cap mid-run is reported as "re-grading aborted". On completion, the measured "LLM calls: N" is printed. `manifest.goldenQa` is limited by the schema to `MAX_GOLDEN_QA_ENTRIES` (1,000) entries (string length is C1's 2,000 chars). `smoke` calls `compile()` as is, so D1 already covers it. DESIGN §2 and §6 updated.
+- Completion criteria: [x] eval cap-exceeded abort tests (reuse preflight rejection, mid-run cap abort, `--source` preflight rejection, call count printed on success; 1,001 goldenQa entries rejected / 1,000 accepted) [x] check passes (22 files, 338 tests)
+
+#### D3 — Upfront input size limits | Status: DONE(2026-09-07) | Source: 001-015, SEC-011, AUD-014
+- Goal: `stat`-based limits on file count and per-file/total bytes before reading, reads with bounded concurrency, removal of unnecessary Buffer copies.
+- Done (2026-09-07, PR #29): `INPUT_LIMITS` (500 files, 25 MiB per file, 100 MiB total; constants, not env) enforced in two layers. (1) While walking, `collectInputFiles` uses the size from the `lstat` it already performs to count files and per-file and cumulative bytes, and stops the moment a limit is exceeded with `too_many_files`/`file_too_large`/`input_too_large` (cause + Fix); no file is opened at all. (2) `readFileNoFollow` re-checks the size with `fstat` after opening and reads exactly that much (`readExactly`; no over-read even if the file grows after the check), and the new `readSourceFiles` reads via the pure `mapConcurrent` from `core/concurrency.ts` (4 concurrent, input order preserved, no new work started after a failure) while enforcing the cumulative byte limit again. compile and eval `--source` use `readSourceFiles` and show the adapter's rejection message as is via `describeInputFailure`. Copy removal: the `Buffer.alloc`-ed private buffer goes straight into `SourceFile.bytes` (the `new Uint8Array` copy deleted); DOCX uses an `asBuffer` view. DESIGN §6 and §7 updated.
+- Completion criteria: [x] rejection before reading on overflow + fix message tests (real fs: count, per-file, and total each rejected / boundary accepted; a file with mode 000 is rejected by size rather than EACCES = stat only; re-check on open; cumulative cap during reads; CLI: compile/eval exit 1 with zero reads and zero LLM calls + "Fix:" printed; `mapConcurrent` concurrency, ordering, failure propagation) [x] check passes (23 files, 357 tests)
+
+#### D4 — Parser resource isolation | Status: DONE(2026-09-07) | Source: SEC-011, AUD-014
+- Goal: cap on cumulative decompressed DOCX bytes (measured, not metadata), guaranteed discard of results on timeout. Worker/subprocess isolation: decide the scope at kickoff (v0.2 queue if excessive).
+- Done (2026-09-07, PR #30): scope settled as **cooperative isolation**; worker/subprocess goes to the v0.2 queue (below). (1) DOCX: the old `zipBudget` (JSZip's private `_data.uncompressedSize`, i.e. the sum of sizes *declared* by the headers; JSZip does not check when the measured inflate differs from the declaration, so it can be forged) replaced with `measureZip`, which actually inflates every entry via `internalStream`, counts bytes, and stops the stream the moment the cumulative total exceeds 60 MiB with `zip_budget` (memory = cap + one chunk). The entry count is checked before inflating. (2) `withDeadline(run, timeoutMs, signal?)` passes an `AbortSignal` to the parser and, when time runs out, aborts and returns `timeout`; PDF calls `PDFParse.destroy()` on abort (if still loading, checks the signal right after loading and skips text extraction), and DOCX checks the signal during measurement and before entering mammoth. Late results are never used and late rejections never become unhandled. Extractors take `extract(bytes, signal?)`, so external cancellation follows the same path. Recorded in DESIGN §6 D4.
+- Completion criteria: [x] settled at kickoff (above) [x] tests: a forged central directory (declared 10 bytes, actual 1 MiB) passes the old method but `measureZip` rejects it / single-entry and cumulative overflow / entry count / abort stops it / `withDeadline` in time, timeout, late result discarded, late rejection harmless, external signal / DocxExtractor `zip_budget` and cancellation / PdfExtractor calls `destroy` on cancellation + works normally afterwards [x] check passes (24 files, 371 tests)
+
+### E. Structural validation and output integrity — Medium
+
+#### E1 — Wire structural validation into publish blocking | Status: DONE(2026-09-07) | Source: 001-003, SEC-009, AUD-010
+- Goal: stop before the gate if `validateSkill` reports an error (saves LLM cost), enforce it even with `--no-gate`, re-validate the final assembly. Print the report to the user.
+- Done (2026-09-07, PR #31): `compile()` checks the first assembly immediately and, on error, ends with `validation_failed` (`stage: "pre_gate"`, report attached); zero gate calls, nothing written. `gate: "skip"` goes through the same check, so `--no-gate` cannot bypass it. The final assembly, rebuilt as `verified` after the gate, is re-checked too (`stage: "final"`; invariant "the files written = the files that passed the check"). `formatCompileFailure` prints the failure message + validation report (shared by compile and smoke); on success, the report is appended if there are warnings. The `budget_exceeded` fix wording corrected to actions that are actually possible (recompile / split the source; shorten the file if the skill was hand-made). Recorded in DESIGN §3.1 and §5.1.
+- Completion criteria: [x] over-budget chapter → exit code 1, not published, LLM gate not called tests (pipeline: `validation_failed` pre_gate + `assertExhausted` with zero gate scripts, `--no-gate` fails the same way, a warning passes; CLI: exit 1, `writeSkill` not called, "[ERROR] chapters/ch01-a.md (budget_exceeded)" printed, `[WARNING] low_anchor_ratio` printed on success; smoke: report printed after 3 calls on the real PDF) [x] check passes (24 files, 377 tests)
+
+#### E2 — YAML frontmatter serialization and parsing | Status: DONE(2026-09-07) | Source: 001-009, SEC-009, AUD-010
+- Goal: generate frontmatter values escaped by YAML rules, and have the validator check the `name`/`description` types and values through real YAML parsing.
+- Done (2026-09-07, PR #32): new `core/frontmatter.ts` (dependency `yaml` 2.9, ISC, added). `serializeFrontmatter` **always double-quotes** values (`lineWidth: 0`), which also closes the trap of YAML 1.1 parsers reading `yes`/`no`/`null` as booleans/null, and keeps the output deterministic (snapshots updated). `parseFrontmatter` reads with a real `parse`, distinguishes `missing_block`/`syntax`/`not_a_map`/`missing_field`/`invalid_field`, checks `name` (the §2 slug schema) and `description` (non-empty, ≤1,024 chars, no control characters) with zod, and reports keys outside the standard as `unknownKeys`. validator: the regex key-existence check replaced with this function; codes `invalid_frontmatter` (error) and `unknown_frontmatter_key` (warning) added. The assembler uses `serializeFrontmatter`. Recorded in DESIGN §3 and §3.1.
+- Completion criteria: [x] `Guide: Setup` title round-trip test (assembler → validator passes → the parser returns the original verbatim; 13 adversarial titles round-trip; `yes`/`no` always quoted; no folding of long values; the 5 problem kinds distinguished; 8 type/value errors; the validator rejects an unquoted `Guide: Setup` and accepts the quoted form, unknown key warning) [x] check passes (25 files, 414 tests)
+
+#### E3 — Report tamper and corruption detection | Status: DONE(2026-09-07) | Source: AUD-012 | Depends on: A3
+- Goal: add a per-file sha256 to manifest `outputs` (schema update); `report`/`eval` compare against the current files and fail as STALE/TAMPERED on mismatch.
+- Done (2026-09-07, PR #33): added `outputHashes: {path, sha256}[]` to the manifest (`outputs` kept; the B6 superRefine enforces that the two sets match and paths are unique; `version: 1` kept). `checkOutputs(manifest, files)` in the new `core/integrity.ts` sorts out missing/modified/unexpected (excluding manifest.json and dotfiles) and rules **STALE** (drift) / **TAMPERED** (a file the manifest does not know about, takes precedence); `formatOutputIntegrity` prints the file list + fix. `report` now also takes `readSkillDir`, compares, and on mismatch prints the integrity report instead of the gate verdict and exits 1; `eval` aborts on both paths with the same comparison before any LLM call. No generation ID, since A3's atomic swap removed the need. Recorded in DESIGN §2 and §5.
+- Completion criteria: [x] DESIGN §5 updated [x] report → STALE after chapter edit test (e2e: hand-edit a chapter of a real compile output → `report` exits 1 + STALE + file name, PASSED not printed; the eval reuse path also aborts with STALE and zero LLM calls; reverting gives PASSED; injecting an unregistered chapter → TAMPERED. Unit: modify/delete/inject/dotfiles ignored/one-character change; CLI: eval STALE, missing chapter; schema: outputHashes set mismatch, duplicates, and omissions rejected) [x] check passes (26 files, 421 tests)
+
+### F. Extraction and distillation accuracy (001 only) — High/Medium
+
+#### F1 — Remove the 2,000-character distill truncation | Status: DONE(2026-09-07) | Source: 001-005 | High
+- Goal: pass the full section text within the input budget. On overflow, explicit chunk splitting and merging, or a user warning.
+- Done (2026-09-07, PR #34): the `sections` block of `distillPrompt` carries the **full text** of each section (the 400-character excerpt remains for the outline only). No chunk splitting/merging: `compile()` blocks the whole input at `MAX_INPUT_TOKENS` (30k, moved to `core/tokenEstimate.ts` and shared by prompts and pipeline) before the outline, so a chapter's source text can structurally never exceed that value, and `distillPrompt` checks that invariant explicitly and throws instead of silently truncating when exceeded (surfacing it as a caller bug). Recorded in DESIGN §5.1.
+- Completion criteria: [x] test that the tail of a section over 2,000 characters is included in the distill prompt (prompt unit: full text included, no `…`, throws over the cap, outline keeps the excerpt; pipeline: the tail appears verbatim in the distill request that a real `compile()` sent) [x] check passes (26 files, 425 tests)
+
+#### F2 — Section ID collisions | Status: DONE(2026-09-07) | Source: 001-006 | High
+- Goal: generate collision-free suffixes against the final ID set (`A, A, A-2` → 3 unique). Base the multi-source namespace on the path relative to the input root (or a stable hash) instead of the basename.
+- Done (2026-09-07, PR #35): introduced `disambiguate(base, used)` in `core/sectionId.ts` (the first `-n` candidate that does not clash with an already used id); `assignSectionIds` uses it, and children attach to the ancestor's final id (`overview-2/steps`). New `namespacePrefixes(paths)`: a slug of the relative path minus the common parent directory (extension removed) + the same suffix rule; the pipeline's `namespaceSections` uses it and checks that the result is unique, throwing on a clash. Recorded in DESIGN §2 and §5.1.
+- Completion criteria: [x] `A, A, A-2` unique ID test (forward and reverse order, children under duplicate parents separated, 200-iteration randomized property test) [x] no collision for the same file name in different folders test (`namespacePrefixes` unit + in the `compile()` pipeline both `a-readme/overview` and `b-readme/overview` exist in the outline population) [x] check passes (26 files, 438 tests)
+
+#### F3 — Shared namespace for eval | Status: DONE(2026-09-07) | Source: 001-008 | Depends on: F2
+- Goal: split `namespaceSections` out into a shared function applied identically by compile and eval. Source text that does not match the manifest is an explicit error.
+- Done (2026-09-07, PR #36): new `core/sources.ts` — `extractSources` (extraction + messages), `namespaceSections`, `buildPopulation` (F2 prefixes + B1 filter), and `matchManifestSections` (missing/unknown/changed) are used as the same functions by compile and `eval --source` (the `SourceFile` type moved too; pipeline re-exports it). If the id sets differ, eval fails explicitly via `formatSourceMismatch` before any LLM call; sections whose body alone changed are printed for reference via `formatChangedSections`, then it proceeds. Recorded in DESIGN §5.1 and §6.
+- Completion criteria: [x] test that `eval --source` on a multi-source skill generates QA (for a manifest compiled from two `readme.md` files in different folders: 2 qaGen + 2 grading calls → PASSED; mismatched source text fails explicitly with zero LLM calls; body changes are printed for reference and re-graded; `sources.test.ts` unit: extraction order, failure messages, prefixes + filter, clash throw, the 3 comparison kinds) [x] check passes (27 files, 449 tests)
+
+#### F4 — HTML tables and container text | Status: DONE(2026-09-07) | Source: 001-010
+- Goal: a single DOM traversal preserving `td`/`th`, direct text of plain `div`s, code, and list structure (without duplication).
+- Done (2026-09-07, PR #37): `htmlToBlocks` in `html.ts` replaced from the selector approach with a single depth-first DOM traversal: text nodes are collected once, at the nearest block; a table becomes one block of caption + markdown pipe table (cell `|` escaped, empty cells filled); lists use `- `/`1. ` + indentation; `pre` becomes a code fence; `br` is a line break within the block; non-content tags are skipped. `domhandler` (the major version cheerio pulls in) added as an explicit dependency. Self-made fixture `fixtures/docs/tables.html`. Recorded in DESIGN §5.1.
+- Completion criteria: [x] text extraction test on the (self-made) table fixture (heading set exactly 4 and in order; pipe table rows, cells, caption, document order; div direct text; each of 6 text samples appears exactly once; nested list markers and indentation; pre fence + `#` line not a heading; br, blockquote, footer, script removed; pipe escaping, empty cells, nesting without li) [x] check passes (27 files, 457 tests)
+
+#### F5 — Markdown heading recognition | Status: DONE(2026-09-07) | Source: 001-011
+- Goal: line-based ATX heading recognition (no blank line required), `#` inside code fences excluded.
+- Done (2026-09-07, PR #38): `splitBlocks` in `core/sections.ts` (a line-based state machine): an ATX heading line is a block on its own even without blank lines, and a code fence (```` ``` ````/`~~~`, closed only by the same character at the same length or longer) is one block including the blank lines and `#` lines inside it. Blank-line splitting and the implicit heading heuristic are unchanged, so the results on the PDF, DOCX, and HTML paths are invariant (documents with and without blank lines yield the same sections and ids; the section counts of the 5 fixtures stay 18/4/1/1/970). Recorded in DESIGN §5.1.
+- Completion criteria: [x] headings without blank lines test (3-level headings + ids and bodies identical to the document with blank lines) [x] `#` inside code fences ignored test (blank lines inside ```, ``` inside ~~~, an unclosed fence, a heading right after the closing fence, `#hashtag` not a heading; also confirmed with the real TextExtractor) [x] check passes (27 files, 465 tests)
+
+### G. Error handling and observability — Medium
+
+#### G1 — Common CLI error boundary | Status: DONE(2026-09-07) | Source: 001-017, AUD-015
+- Goal: a common error boundary for compile/eval/smoke: `LlmProviderError.kind`, retryable, and the failed stage turned into a user message + exit code, keeping the cost summary up to that point. External error text is length-limited and control-character-normalized, with no keys or source text printed.
+- Done (2026-09-07, PR #39): the pipeline's `guarded(stage, …)` converts an `LlmProviderError` into `llm_failed` (stage, kind, retryable, sanitized text, calls so far), and `formatCompileFailure`/`formatLlmProviderError` print per-kind guidance (auth/rate_limit/network/server/bad_response/refusal/unknown) on all 3 paths: compile, smoke, eval. `sanitizeExternalText` (control characters removed, newlines folded, `sk-…`/credential fields masked, 200 chars) sanitizes external text. Top-level boundary `describeTopLevelError` in `cli/index.ts`: `ConfigError` (new, from `loadConfig`) → configuration error, exit 1; anything else → internal error, exit 2. `ScriptBuilder.fail(role, error)` for failure injection. Recorded in DESIGN §6 (exit-code convention 0/1/2).
+- Completion criteria: [x] message + cost summary printed on injected `rate_limit` tests (3 paths: compile exits 1, not published, "LLM calls: 2", key masked, no control characters; eval reuse "LLM calls: 2"; smoke "Cost summary: 3 LLM calls"; pipeline `llm_failed` shape, refusal not retryable, non-provider exceptions pass through; sanitizer and top-level boundary units) [x] check passes (28 files, 476 tests)
+
+### H. CI and publishing pipeline — Medium/Low
+
+#### H1 — main branch protection | Status: DONE(2026-09-07) | Source: AUD-016 | **not code**
+- Goal: a ruleset (PR required, required CI, force push forbidden) once the repo goes public or the plan allows it. Until then, add it to the `docs/PUBLISHING.md` §4 human-decision items and record the manual controls.
+- Done (2026-09-07, PR #40): re-confirmed 2026-09-07: on the private free plan the rulesets/branch protection API returns 403 (cannot be enabled). PUBLISHING §0 got a status snapshot; §3-9 the **manual controls** (confirm success with `gh run list --branch main --commit <sha>` for the release SHA + `origin/main` matches + the PR-only merge practice, explicitly noted as a practice, not enforcement); §3-14-1 the **ruleset activation procedure** (name, target, 6 rules, required check `check (node 20/22)`, no bypass, verification command, compatibility with the existing automation); §4 a human-decision item (when to activate: together with going public vs. switching to Pro first).
+- Completion criteria: [x] reflected in PUBLISHING §3 and §4 (+ §0 snapshot)
+
+#### H2 — Tarball install smoke | Status: DONE(2026-09-07) | Source: AUD-017
+- Goal: add a script to `prepublishOnly` and CI that runs `npm pack` → `npm install --omit=dev <tgz>` in a temporary directory → `live-skill --help`.
+- Done (2026-09-07, PR #41 — H2, H3, H4 bundled, one commit per task): `scripts/verify-pack.sh` installs the actual tgz into a temporary project with `--omit=dev` and confirms that `bin` is executable, no devDependency leaked in, `--help` mentions `compile`, and `--version` = package.json. The `verify:pack` script added to `prepublishOnly` and `ci.yml` (after check:tarball). Kept outside vitest because it touches the registry (guardrail 3). Recorded in PUBLISHING §3-7-1 and §3-10.
+- Completion criteria: [x] passes locally and in CI (local `npm run verify:pack` ok, CI Node 20/22 green) [x] check passes
+
+#### H3 — Structured check-tarball.sh | Status: DONE(2026-09-07) | Source: SEC-012, AUD-018
+- Goal: inspect `files[].path` from `npm pack --dry-run --json`; command and read errors count as failures.
+- Done (2026-09-07, PR #41): the shell script replaced with `scripts/check-tarball.ts` (tsx) + the pure rules in `scripts/tarballRules.ts`: `files[].path` is checked against an allowlist (`dist/**` + 4 root files) and 5 secret/state-file rules (all violations listed), the actual tgz is unpacked and every text file scanned with 6 key patterns (false-positive avoidance: no reaction to regex sources or the word `api_key`), and command, JSON-shape, and read errors are all `publish blocked`. Recorded in PUBLISHING §3-7.
+- Completion criteria: [x] detection of a synthetic `.env.production` entry confirmed (`tests/tarballRules.test.ts`: 7 env variants, nested config.json, pem/id_rsa, npmrc/git, outside the allowlist, all listed; 6 key patterns, no false positives; binary detection; JSON shape) [x] check passes
+
+#### H4 — .gitignore env variants | Status: DONE(2026-09-07) | Source: SEC-013, AUD-018
+- Goal: exclude `.env*` + `!.env.example`.
+- Done (2026-09-07, PR #41): `.env` + `.env.*` excluded, `!.env.example` re-included.
+- Completion criteria: [x] `git check-ignore .env.production .env.staging` confirmed (both ignored, as are `.env.local` and `.env`) [x] `.env.example` still tracked (confirmed with `git ls-files`)
+
+### I. Low-level and documentation consistency — Low
+
+#### I1 — `--target` value validation | Status: DONE(2026-09-07) | Source: 001-018
+- Goal: values other than `claude|agents` are an explicit error before execution (commander `choices`).
+- Done (2026-09-07, PR #42 — I1, I2, I3 bundled, one commit per task): the commander definition extracted into `src/cli/program.ts` (`buildProgram()`), with `--target` as `Option.choices(["claude","agents"])`, so a typo is rejected before the action runs (previously it silently became claude). `index.ts` now only loads .env, applies the error boundary, and runs.
+- Completion criteria: [x] typo → non-zero exit code + message test (`tests/program.test.ts`: `claud`, `Claude`, `agent`, `codex`, and an empty value → `commander.invalidArgument`, with the "claude, agents" hint; choices and default declaration confirmed) [x] check passes
+
+#### I2 — Node support range consistency | Status: DONE(2026-09-07) | Source: 001-016, AUD-019
+- Goal: align `engines`, the CI matrix, README, and CLAUDE.md with the minimum version the dependencies support (commander 15 `>=22.12`, vitest 5), or pin Node 20-compatible versions; confirm the direction with the user at kickoff (whether to change CLAUDE.md's "Node.js 20+").
+- Done (2026-09-07, PR #42): went with **direction (a), raise the minimum** (the user only instructed to bundle the tasks and did not pick a direction, so the recommended option was applied; revert just this commit to undo). Measured runtime dependency requirements: commander `>=22.12.0`, pdf-parse `>=22.3.0`, cheerio `>=20.18.1` → `engines.node >= 22.12.0`. CI matrix 22 and 24 (Node 20 reached EOL in 2026-04 and is unsupported by the dependencies, so it only "happened to work"); CLAUDE.md, README, and PUBLISHING §0/§3-2 aligned.
+- Completion criteria: [x] engines, CI, and docs agree [x] check passes
+
+#### I3 — Status document consistency | Status: DONE(2026-09-07) | Source: 001-019, AUD-020
+- Goal: reflect DONE status markers for T1–T8, update the "code not started" wording in `docs/PUBLISHING.md` §0 and §2, sync the README status. Keep past records as a dated status log.
+- Done (2026-09-07, PR #42): T1–T8 got `DONE(2026-09-06)` + PR numbers (#5–#12) and a one-line summary; the PUBLISHING §0 "code implementation" row and the §2 wording updated to the current state (T0–T11 done, review remediation 30/30); the README (en/ko) status sections gained entries for T11 on 2026-09-06 and the review remediation completed on 2026-09-07, with past entries kept as a dated log.
+- Completion criteria: [x] TASKS, PUBLISHING, and README status agree [x] check passes
+
+---
+
+## v0.2 queue (do not start — see the SPEC roadmap)
+
+- `watch`/`update` incremental recompilation (manifest hash diff) / URL and drive sources / kickoff of ph-skill-pack (sibling repo) / EPUB / `serve` (MCP) is v0.3
+- Review follow-ups (2026-09-06): instruction-safety gate (evaluating, separately from knowledge accuracy, whether the skill body contains instructions; out of C1's scope, AUD-003) / parser worker/subprocess isolation (deferred to v0.2 in D4, 2026-09-07, AUD-014; gist: put every extractor behind a `worker_threads` boundary (`resourceLimits` for the heap cap, `terminate()` for the time cap), serialize `ExtractedDoc`, dual resolution of the worker file for tsx/dist, define the worker-crash failure mode. v0.1 defends with the D3 file caps + entry/page/measured-byte caps + cooperative timeout; DESIGN §6 D4) / manifest signing and trust store (AUD-011)

@@ -1,68 +1,69 @@
-# CLAUDE.md — live-skill 스티어링
+# CLAUDE.md — live-skill steering
 
-문서를 검증된 에이전트 스킬로 컴파일하는 npm CLI. v0.1 = 컴파일 + 품질 게이트. 스펙은 `docs/SPEC.md`, 설계는 `docs/DESIGN.md`. **공개 포트폴리오가 될 레포이므로 납품 수준 품질 유지.**
+An npm CLI that compiles documents into verified agent skills. v0.1 = compile + quality gate. The spec is `docs/SPEC.md`, the design is `docs/DESIGN.md`. **This repository is a public portfolio: keep everything at delivery quality.**
 
-## 스택
+## Stack
 
-- Node.js 22.12+ (I2, 2026-09-07 — commander 15·pdf-parse가 요구하는 최소; 이전 "20+"는 의존성이 지원하지 않는 범위였다), TypeScript **strict** (`noUncheckedIndexedAccess` 포함), npm CLI(`bin`) 배포 전제
-- 추출: `pdf-parse`(텍스트형 PDF), `mammoth`(DOCX), UTF-8 직독(MD/TXT), `cheerio`+변환(HTML) — message 레포의 추출기 시그니처와 동일 규약(이식 가능)
-- LLM: 자체 `LlmProvider` 인터페이스 — Claude 기본(`ANTHROPIC_API_KEY`), 모델 문자열 env
-- 산출: Agent Skills 표준(SKILL.md + 보조 파일), 결정론 템플릿 조립
-- 검증: Vitest + ESLint + Prettier, 스키마 `zod`
+- Node.js 22.12+ (I2, 2026-09-07: the minimum required by commander 15 and pdf-parse; the earlier "20+" was outside what the dependencies support), TypeScript **strict** (including `noUncheckedIndexedAccess`), distributed as an npm CLI (`bin`)
+- Extraction: `pdf-parse` (text PDFs), `mammoth` (DOCX), direct UTF-8 read (MD/TXT), `cheerio` + conversion (HTML); same extractor signature convention as the message repo (portable)
+- LLM: own `LlmProvider` interface; Claude by default (`ANTHROPIC_API_KEY`), model string from env
+- Output: Agent Skills standard (SKILL.md + supporting files), deterministic template assembly
+- Verification: Vitest + ESLint + Prettier; schemas with `zod`
 
-## 명령어
+## Commands
 
 ```bash
-npm run check      # typecheck + lint + test 일괄 — 태스크 완료의 필수 게이트
+npm run check      # typecheck + lint + test in one go: the mandatory gate for finishing a task
 npm run test       # vitest run
 npm run typecheck  # tsc --noEmit
 npm run lint       # eslint .
-npm run cli -- <compile|validate|eval|report> ...   # tsx 경유 CLI
-npm run smoke      # 실 LLM로 샘플 1건 컴파일+게이트 (사람 전용)
+npm run cli -- <compile|validate|eval|report> ...   # CLI via tsx
+npm run smoke      # compile + gate one sample with the real LLM (human only)
 ```
 
-## 소스 레이아웃
+## Source layout
 
 ```
 src/
-  core/        # 순수 로직: outline/distill 계획, assembler(템플릿), validator(구조), gate(평가 하니스), manifest — 외부 IO 없음
-  adapters/    # extractors/, llmProvider(claude), fsTargets(claude·agents·copilot 스킬 디렉터리)
-  mocks/       # ScriptedLlm(대본 재생), FixtureExtractor, FixedClock
-  cli/         # compile.ts, validate.ts, eval.ts, report.ts — 조립만
-samples/       # 자체 제작 샘플 문서 (스모크·데모용)
+  core/        # pure logic: outline/distill planning, assembler (templates), validator (structure), gate (evaluation harness), manifest; no external IO
+  adapters/    # extractors/, llmProvider (claude), fsTargets (claude/agents/copilot skill directories)
+  mocks/       # ScriptedLlm (script playback), FixtureExtractor, FixedClock
+  cli/         # compile.ts, validate.ts, eval.ts, report.ts: assembly only
+samples/       # self-authored sample documents (smoke, demo)
 tests/  fixtures/docs/  scripts/
 ```
 
-## 컨벤션
+## Conventions
 
-- 스킬 산출 구조·토큰 예산·게이트 규칙의 진실의 원천은 `docs/DESIGN.md` §3~§5. 코드와 다르면 문서 기준.
-- 모든 외부 IO(추출·LLM·파일 쓰기·시계)는 인터페이스 뒤에. `core/`는 순수 계산과 계획만.
-- `any` 금지. LLM 응답·CLI 인자·manifest는 경계에서 `zod` 파싱.
-- 조립(assembler)과 구조 검증(validator)은 **LLM 없이 결정론** — LLM은 증류·질문 생성·채점에만.
-- 에러 메시지는 원인 + 수정 방법까지.
-- 커밋 메시지: `T{n}: 요약`. **영어로 작성**(2026-09-06부터 — 이전 커밋은 히스토리 재작성으로 소급 반영됨).
-- **소스는 전부 영어**(2026-09-07부터): `src/`·`tests/`·`scripts/`·`fixtures/`·설정 파일의 주석·문자열·CLI 메시지·LLM 프롬프트·산출 템플릿·테스트 이름에 한국어를 쓰지 않는다. 예외는 CJK 처리를 검증하는 **테스트 입력 데이터**뿐(영어 주석으로 이유 명시). LLM 출력 언어는 원문을 따르도록 프롬프트가 지시한다(DESIGN §4 L1). 한국어는 `docs/`·`README.ko.md`·이 파일에만.
+- The source of truth for the skill output structure, token budgets, and gate rules is `docs/DESIGN.md` §3–§5. When code and docs disagree, the docs win.
+- All external IO (extraction, LLM, file writes, clock) sits behind interfaces. `core/` does pure computation and planning only.
+- No `any`. LLM responses, CLI arguments, and the manifest are parsed with `zod` at the boundary.
+- Assembly (assembler) and structural validation (validator) are **deterministic, with no LLM**; the LLM is used only for distillation, question generation, and grading.
+- Error messages state the cause and how to fix it.
+- Commit messages: `T{n}: summary`, **written in English** (since 2026-09-06; earlier commits were rewritten retroactively).
+- **Everything is English** (since 2026-09-07): no Korean in the comments, strings, CLI messages, LLM prompts, output templates, or test names of `src/`, `tests/`, `scripts/`, `fixtures/`, the config files, `docs/`, or this file. The only exceptions are **test input data** that exercises CJK handling (each with an English comment saying why) and `README.ko.md`, the Korean-language README. The prompts instruct the model to write its output in the source document's language (DESIGN §4 L1).
 
-## 가드레일 (위반 금지)
+## Guardrails (never violate)
 
-1. **품질 게이트 완화 금지**: 임계치를 낮추거나 실패 케이스를 제외해서 통과시키는 수정은 금지. 게이트 실패의 올바른 대응은 증류 개선 또는 리포트 반환이다. 임계치·규칙 변경은 SPEC/DESIGN 수정으로만.
-2. **answerer 격리**: 게이트의 답변 시뮬레이터는 컴파일 산출물(로드한 파일)만 컨텍스트로 쓴다. 원문·전체 스킬을 몰래 주입하는 지름길 금지 — 격리 위반은 게이트를 무의미하게 만든다.
-3. 테스트에서 **네트워크·실 LLM 호출 0건**. ScriptedLlm·픽스처만. 실 LLM은 `npm run smoke`에만.
-4. **픽스처·샘플은 자체 제작 문서만**. 실제 서적·기사 등 저작권 텍스트를 fixtures/samples에 넣지 않는다.
-5. 파일 쓰기는 지정된 out 디렉터리(스킬 타깃 또는 `--out`) 안에서만. 기존 스킬 덮어쓰기는 `--force` 없이는 거부.
-6. **비용 상한 존중**: 컴파일당 LLM 호출 수·토큰 예산(config) 초과 시 분할 제안 또는 중단 안내. 우회 플래그 금지.
-7. 시크릿은 `.env`만(`.env.example` 커밋). 로그에 키·원문 대량 덤프 금지.
+1. **Never weaken the quality gate**: no change that lowers a threshold or excludes failing cases to get a pass. The right response to a gate failure is better distillation or returning the report. Thresholds and rules change only through SPEC/DESIGN edits.
+2. **Answerer isolation**: the gate's answer simulator uses only the compiled output (the loaded files) as context. No shortcuts that smuggle in the source text or the whole skill; an isolation breach makes the gate meaningless.
+3. **Zero network or real-LLM calls in tests.** ScriptedLlm and fixtures only. The real LLM is used only by `npm run smoke`.
+4. **Fixtures and samples are self-authored documents only.** Never put copyrighted text (real books, articles, and so on) into fixtures/samples.
+5. File writes only inside the designated out directory (the skill target or `--out`). Overwriting an existing skill is refused without `--force`.
+6. **Respect the cost caps**: when a compile would exceed the LLM call count or token budget (config), suggest splitting the input or stop with guidance. No bypass flag.
+7. Secrets only in `.env` (`.env.example` is committed). Never dump keys or large amounts of source text into logs.
 
-## 작업 방식
+## Way of working
 
-- 한 세션 = `docs/TASKS.md`의 한 태스크. 완료 기준 전부 충족 + `npm run check` 통과까지 자가 수정 루프. 스펙 모호로 막힐 때만 질문.
-- 완료 시 변경 파일·검증 결과 요약 후 종료.
-- 태스크 완료 시 커밋(영어)→푸시→PR→`main` 스쿼시 머지까지는 승인 없이 자동 진행, 이후 로컬(현재 워크트리·`/Volumes/DevWork/work/live-skill`) 양쪽을 GitHub와 즉시 동기화한다. 단, **다음 태스크 착수는 매번 사용자 동의를 받은 뒤에만** 시작한다(2026-09-06 합의).
+- One session = one task from `docs/TASKS.md`. Self-correct until every completion criterion is met and `npm run check` passes. Ask only when the spec is ambiguous.
+- On completion, summarize the changed files and the verification results, then stop.
+- When a task is done, commit (in English) → push → PR → squash merge into `main` proceeds automatically without approval; afterwards both local checkouts (the current worktree and `/Volumes/DevWork/work/live-skill`) are synchronized with GitHub immediately. **Starting the next task always requires the user's consent first** (agreed 2026-09-06).
 
-## 프루닝 로그
+## Pruning log
 
-격주 검토, 낡은 규칙 삭제 (`docs/WORKFLOW.md`).
+Reviewed every two weeks; stale rules are deleted (`docs/WORKFLOW.md`).
 
-- 2026-09-06: 최초 작성.
-- 2026-09-06: 커밋 메시지 영어 전환(기존 3건 히스토리 재작성), 태스크별 자동 push/PR/merge + 다음 태스크는 승인 후 착수 규칙 추가.
-- 2026-09-07: 소스 전체 영어 전환(주석·문자열·프롬프트·템플릿·테스트, 87개 파일 일괄) — "소스는 전부 영어" 컨벤션 추가.
+- 2026-09-06: first version.
+- 2026-09-06: commit messages switched to English (3 existing commits rewritten); per-task automatic push/PR/merge, plus the rule that the next task starts only after approval.
+- 2026-09-07: the entire source tree switched to English (comments, strings, prompts, templates, tests; 87 files at once); "source is English only" convention added.
+- 2026-09-07: `docs/` and this file switched to English as well; the convention now covers the whole repository except `README.ko.md`.
