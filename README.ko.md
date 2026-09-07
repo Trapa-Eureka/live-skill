@@ -70,4 +70,5 @@ npm run cli -- eval ./my-skill         # 기존 스킬 재평가
 - 2026-09-06: **T11 완료 — v0.1 코드 구현 전부 완료**(공개 준비: 이름 조사·영어 README·CI·데모 시나리오).
 - 2026-09-07: **검수 수정 30/30 완료** — 코드·보안·보안 아키텍처 검수 3건(`docs/001~003_*.md`)의 지적을 A1~I3 태스크(PR #16~#42)로 전부 반영(파일시스템 경계, 게이트 우회 차단, 프롬프트 경계, 비용 상한, 구조 검증 배포 차단, YAML 프런트매터, 산출물 무결성, 추출 정확성, 오류 경계, 배포 위생, Node 22.12+ 정합). 남은 것은 `docs/PUBLISHING.md` §4의 사람 결정(패키지명·공개 전환·npm publish·게이트 기본값)뿐.
 - 2026-09-07: **사람 결정 확정** — npm 패키지명 `live-skills`(CLI 명령·bin도 `live-skills`, GitHub 저장소명은 `live-skill` 유지), 게이트 기본값(임계치 0.9·k=3)은 실 LLM 스모크 비용 지출 없이 그대로 확정, GitHub 저장소 공개 전환 + `main` 보호 ruleset(`main-protection`) 활성화. npm `live-skills@0.1.0` 배포 완료(2026-09-07, `CHANGELOG.md`·GitHub Release `v0.1.0`) — `npx live-skills --help` 실설치 스모크 확인.
+- 2026-09-07: **배포 후 실 LLM 스모크** — 3회 실패(outline JSON 코드펜스·sectionIds의 `§` 표식·문장 단위 앵커, DESIGN §4 L2·L3·L4)를 각각 수정한 뒤 `compile samples/manual.pdf`가 게이트 **11/12(91.7%) 통과**(44회 호출). 단 `live-skills@0.1.0` tarball에는 이 수정이 없어 실제 문서 컴파일이 outline에서 실패한다 → 0.1.1 패치 대기.
 - 이름 메모: 폴더/작업명은 live-skill, npm 패키지명은 2026-09-07에 `live-skills`로 확정(WORKFLOW §4, `docs/PUBLISHING.md` §3-1) — 조사 결과는 SPEC §8·`docs/PUBLISHING.md` 참조.
