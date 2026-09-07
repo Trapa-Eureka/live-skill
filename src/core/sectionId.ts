@@ -81,6 +81,18 @@ function stripExtension(name: string): string {
  * them unique. With at most one path, returns an empty array: a single document gets no prefix
  * (DESIGN §5.1). Order follows the input.
  */
+const SECTION_REF = /^\[?\s*§\s*(.*?)\s*\]?$/u;
+
+/** Normalizes a section reference a model wrote back from the `[§<id>]` prompt header to the bare id
+ * (L3): `§overview` and `[§overview]` become `overview`; anything without the § marker is returned
+ * trimmed but otherwise untouched. Ids never contain `§`, brackets, or whitespace (slugifyHeading), so
+ * the mapping is unambiguous and the exact-match coverage check keeps its meaning. */
+export function normalizeSectionIdRef(ref: string): string {
+  const m = SECTION_REF.exec(ref.trim());
+  const id = m?.[1];
+  return id ?? ref.trim();
+}
+
 export function namespacePrefixes(paths: readonly string[]): string[] {
   if (paths.length <= 1) return [];
   const split = paths.map((p) => p.split(PATH_SEPARATORS).filter((s) => s !== ""));

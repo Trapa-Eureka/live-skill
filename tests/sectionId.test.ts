@@ -3,9 +3,29 @@ import {
   assignSectionIds,
   disambiguate,
   namespacePrefixes,
+  normalizeSectionIdRef,
   slugifyHeading,
   type HeadingRef,
 } from "../src/core/index.js";
+
+describe("normalizeSectionIdRef (L3)", () => {
+  it.each([
+    ["overview", "overview"],
+    ["§overview", "overview"],
+    ["[§overview]", "overview"],
+    ["[§ overview ]", "overview"],
+    ["  §installation/prerequisites ", "installation/prerequisites"],
+    ["§한국어", "한국어"], // deliberately Korean: ids keep Hangul letters, the marker is all that goes
+  ])("maps %j to %j", (ref, id) => {
+    expect(normalizeSectionIdRef(ref)).toBe(id);
+  });
+
+  it("leaves references without the § marker alone (only trimmed), so unknown ids stay unknown", () => {
+    expect(normalizeSectionIdRef(" overview ")).toBe("overview");
+    expect(normalizeSectionIdRef("[overview]")).toBe("[overview]");
+    expect(normalizeSectionIdRef("section overview")).toBe("section overview");
+  });
+});
 
 describe("slugifyHeading", () => {
   it("lowercases and hyphenates non-alphanumeric runs", () => {

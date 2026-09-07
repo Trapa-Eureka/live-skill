@@ -72,7 +72,8 @@ const OUTLINE_SYSTEM = [
   DATA_BOUNDARY_RULE,
   'Answer only with this JSON schema (no explanation, no code fence): {"slug": string, "title": string, "chapters": [{"id": string, "file": string, "title": string, "sectionIds": string[]}]}',
   '"slug" is lowercase letters, digits, and hyphens only (e.g. linkbox-r7). "file" has the form "chapters/chNN-slug.md", numbered in the order the chapters appear (DESIGN §3).',
-  "Every sectionId must be one of the section ids given in the input, and each section must belong to exactly one chapter. Titles and ids must be single lines.",
+  "Each section in the sections block starts with a header line of the form [§<id>] (level <n>) <heading>. In sectionIds, write <id> exactly as it appears after the § sign, without the § sign or the brackets (for example overview, not §overview).",
+  "Every sectionId must be one of those ids, and each section must belong to exactly one chapter. Titles and ids must be single lines.",
 ].join("\n");
 
 /** outline: requests, as JSON, the plan (SkillPlan, DESIGN §2) that groups the source sections into
