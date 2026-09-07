@@ -15,7 +15,7 @@ import { stripControlChars } from "./modelText.js";
 import { distillPrompt, outlinePrompt } from "./prompts.js";
 import { err, ok, type Result } from "./result.js";
 import { skillPlanSchema } from "./schemas.js";
-import { slugifyHeading } from "./sectionId.js";
+import { namespacePrefixes } from "./sectionId.js";
 import { MAX_INPUT_TOKENS, estimateTokens } from "./tokenEstimate.js";
 import type {
   Clock,
@@ -84,22 +84,28 @@ interface NamedSection extends Section {
 
 const SUPPORTED_FORMATS = "PDF(텍스트형)·DOCX·MD/TXT·HTML";
 
-function baseNameWithoutExt(path: string): string {
-  const last = path.split(/[\\/]/u).pop() ?? path;
-  return last.replace(/\.[^./\\]+$/u, "");
-}
-
-/** 소스가 여러 개면 파일명 슬러그로 섹션 id 접두어를 붙여 충돌을 막는다(DESIGN §5.1). */
+/** 소스가 여러 개면 파일마다 접두어(공통 상위 디렉터리를 뺀 상대 경로 슬러그, F2)를 붙여 섹션 id 충돌을 막는다
+ * (DESIGN §5.1). 결과 id는 전부 유일해야 한다 — 겹치면 뒤의 Map이 앞 섹션을 조용히 덮어쓰므로 여기서 크게 실패한다. */
 function namespaceSections(perFile: readonly PerFileSections[]): NamedSection[] {
-  if (perFile.length <= 1) {
-    return perFile.flatMap(({ path, sections }) =>
-      sections.map((s) => ({ ...s, sourcePath: path })),
-    );
-  }
-  return perFile.flatMap(({ path, sections }) => {
-    const prefix = slugifyHeading(baseNameWithoutExt(path));
-    return sections.map((s) => ({ ...s, id: `${prefix}/${s.id}`, sourcePath: path }));
+  const prefixes = namespacePrefixes(perFile.map((f) => f.path));
+  const named = perFile.flatMap(({ path, sections }, i) => {
+    const prefix = prefixes[i];
+    return sections.map((s) => ({
+      ...s,
+      id: prefix === undefined ? s.id : `${prefix}/${s.id}`,
+      sourcePath: path,
+    }));
   });
+  const seen = new Set<string>();
+  for (const s of named) {
+    if (seen.has(s.id)) {
+      throw new Error(
+        `section id collision: "${s.id}" appears twice after namespacing — this is a bug in core/sectionId.ts (ids must be unique by construction).`,
+      );
+    }
+    seen.add(s.id);
+  }
+  return named;
 }
 
 async function extractAll(
