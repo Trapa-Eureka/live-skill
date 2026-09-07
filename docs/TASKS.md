@@ -190,9 +190,10 @@
 - 완료(2026-09-07, PR #36): 새 `core/sources.ts` — `extractSources`(추출 + 메시지)·`namespaceSections`·`buildPopulation`(F2 접두어 + B1 필터)·`matchManifestSections`(missing/unknown/changed)를 compile과 `eval --source`가 같은 함수로 사용(`SourceFile` 타입도 이동, pipeline이 재수출). eval은 id 집합이 다르면 `formatSourceMismatch`로 LLM 호출 전에 명시적 실패, 본문만 바뀐 섹션은 `formatChangedSections`로 참고 출력 후 진행. DESIGN §5.1·§6 기록.
 - 완료 기준: [x] 다중 소스 스킬 `eval --source`가 QA를 생성하는 테스트(다른 폴더의 두 `readme.md`로 컴파일된 manifest에 대해 qaGen 2회 + 채점 2회로 PASSED; 불일치 원문은 LLM 0회로 명시적 실패; 본문 변경은 참고 출력 후 재채점; `sources.test.ts` 단위: 추출 순서·실패 메시지·접두어+필터·충돌 throw·대조 3종) [x] check 통과(27 files·449 tests)
 
-#### F4 — HTML 표·컨테이너 텍스트 · 상태: TODO · 원본: 001-010
+#### F4 — HTML 표·컨테이너 텍스트 · 상태: DONE(2026-09-07) · 원본: 001-010
 - 목표: DOM 단일 순회로 `td`/`th`·일반 `div` 직접 텍스트·코드·목록 구조 보존(중복 없이).
-- 완료 기준: [ ] 표 픽스처(자작) 텍스트 추출 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #37): `html.ts`의 `htmlToBlocks`를 선택자 방식에서 DOM 단일 깊이 우선 순회로 교체 — 텍스트 노드는 가장 가까운 블록에서 한 번만 수집, 표는 캡션 + 마크다운 파이프 표 한 블록(셀 `|` 이스케이프·빈 셀 채움), 목록은 `- `/`1. ` + 들여쓰기, `pre`는 코드 펜스, `br`은 블록 안 줄바꿈, 비본문 태그 건너뜀. `domhandler`(cheerio가 끌어오는 메이저)를 명시 의존성으로 추가. 자작 픽스처 `fixtures/docs/tables.html`. DESIGN §5.1 기록.
+- 완료 기준: [x] 표 픽스처(자작) 텍스트 추출 테스트(헤딩 집합 정확히 4개·순서, 파이프 표 행·셀·캡션·문서 순서, div 직접 텍스트, 텍스트 6종 각 1회만 등장, 중첩 목록 표식·들여쓰기, pre 펜스 + `#` 줄 비헤딩, br·blockquote·footer·script 제거, 파이프 이스케이프·빈 셀·li 없는 중첩) [x] check 통과(27 files·457 tests)
 
 #### F5 — Markdown 헤딩 인식 · 상태: TODO · 원본: 001-011
 - 목표: 줄 단위 ATX 헤딩 인식(빈 줄 불필요), 코드 펜스 내부 `#` 제외.

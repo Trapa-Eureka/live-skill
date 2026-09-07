@@ -47,6 +47,7 @@
     "@anthropic-ai/sdk": "^0.124.0",
     "cheerio": "^1.2.0",
     "commander": "^15.0.0",
+    "domhandler": "^5.0.3",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.2",
     "pdf-parse": "^2.4.5",

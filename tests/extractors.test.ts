@@ -11,6 +11,7 @@ import {
   findExtractor,
 } from "../src/adapters/extractors/index.js";
 import { asBuffer } from "../src/adapters/extractors/bytes.js";
+import { htmlToBlocks } from "../src/adapters/extractors/html.js";
 import type { ExtractedDoc } from "../src/core/index.js";
 
 const FIXTURES = join(process.cwd(), "fixtures", "docs");
@@ -95,6 +96,91 @@ describe("real extractors on self-authored fixtures (guardrail 4: no copyrighted
     expect(headings).toContain("Tagalog");
     const wholeText = doc.sections.map((s) => s.text).join("\n");
     expect(wholeText).not.toContain("console.log");
+  });
+});
+
+describe("HtmlExtractor — single-pass DOM walk keeps tables, container text, lists and code (F4, 완료 기준)", () => {
+  const wholeTextOf = (doc: ExtractedDoc): string => doc.sections.map((s) => s.text).join("\n");
+  const count = (haystack: string, needle: string): number => haystack.split(needle).length - 1;
+
+  it("extracts exactly the real headings, in order — no false headings from table rows, captions or list items", async () => {
+    const doc = await extractOk("tables.html");
+    expect(doc.sections.map((s) => s.heading)).toEqual([
+      "Lab Freezer Operating Notes",
+      "Temperature Limits",
+      "Startup Procedure",
+      "Alarm Codes",
+    ]);
+  });
+
+  it("keeps table rows and cells in document order as a pipe table, with the caption", async () => {
+    const doc = await extractOk("tables.html");
+    const limits = doc.sections.find((s) => s.heading === "Temperature Limits")?.text ?? "";
+    expect(limits).toContain("Keep the chamber between the limits below."); // div의 직접 텍스트
+    expect(limits).toContain("Chamber limits by mode");
+    expect(limits).toContain("| Mode | Minimum | Maximum |");
+    expect(limits).toContain("| --- | --- | --- |");
+    expect(limits).toContain("| Storage | -40 °C | -30 °C |");
+    expect(limits).toContain("| Defrost | -5 °C | +4 °C |");
+    expect(limits.indexOf("Storage")).toBeLessThan(limits.indexOf("Defrost"));
+  });
+
+  it("keeps a plain div's direct text (the intro that used to be dropped)", async () => {
+    const doc = await extractOk("tables.html");
+    expect(wholeTextOf(doc)).toContain(
+      "This fictional note describes the FrostBox 40 sample freezer used only as a test fixture.",
+    );
+  });
+
+  it("collects every text node exactly once — nested containers never duplicate text", async () => {
+    const whole = wholeTextOf(await extractOk("tables.html"));
+    for (const once of [
+      "Keep the chamber between the limits below.",
+      "Storage",
+      "Green means ready.",
+      "Close the lid and latch it.",
+      "Silence an alarm only after the cause is written down.",
+      "Fictional fixture — no real device.",
+    ]) {
+      expect(count(whole, once)).toBe(1);
+    }
+  });
+
+  it("renders ordered and nested lists with markers and indentation", async () => {
+    const steps =
+      (await extractOk("tables.html")).sections.find((s) => s.heading === "Startup Procedure")
+        ?.text ?? "";
+    expect(steps).toContain("1. Close the lid and latch it.");
+    expect(steps).toContain("2. Press POWER and wait for the status LED.");
+    expect(steps).toContain("  - Green means ready.");
+    expect(steps).toContain("  - Amber means still cooling.");
+    expect(steps).toContain("3. Log the start time on the sheet.");
+  });
+
+  it("preserves <pre> verbatim inside a code fence so a '#' line inside it is not a heading", async () => {
+    const doc = await extractOk("tables.html");
+    const alarms = doc.sections.find((s) => s.heading === "Alarm Codes")?.text ?? "";
+    expect(alarms).toContain(
+      "```\n# E01 lid open longer than 90 seconds\nE02 compressor overload\n```",
+    );
+    expect(doc.sections.map((s) => s.heading)).not.toContain("E01 lid open longer than 90 seconds");
+  });
+
+  it("treats <br> as a line break inside the block, keeps blockquote and footer text, drops <script>", async () => {
+    const whole = wholeTextOf(await extractOk("tables.html"));
+    expect(whole).toContain("First line of the note\nSecond line after a break.");
+    expect(whole).toContain("Silence an alarm only after the cause is written down.");
+    expect(whole).toContain("Fictional fixture — no real device.");
+    expect(whole).not.toContain("console.log");
+  });
+
+  it("htmlToBlocks: escapes pipes in cells, pads ragged rows, and survives lists nested without <li>", () => {
+    const blocks = htmlToBlocks(
+      "<table><tr><th>a|b</th><th>c</th></tr><tr><td>only</td></tr></table><ul><ul><li>deep</li></ul></ul>",
+    );
+    expect(blocks).toContain("| a\\|b | c |");
+    expect(blocks).toContain("| only |  |");
+    expect(blocks).toContain("  - deep");
   });
 });
 
