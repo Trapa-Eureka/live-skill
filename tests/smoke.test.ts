@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createExtractors } from "../src/adapters/extractors/index.js";
 import { loadConfig } from "../src/core/config.js";
+import { LlmProviderError } from "../src/core/llmError.js";
 import type { SkillPlan } from "../src/core/index.js";
 import { script } from "../src/mocks/scriptedLlm.js";
 import { runSmoke, type SmokeDeps } from "../src/cli/smoke.js";
@@ -173,6 +174,27 @@ describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
     const output = captured.all.join("\n");
     expect(output).toContain("컴파일 실패");
     expect(output).toContain("비용 요약: LLM 호출 0회");
+  });
+
+  it("provider 실패(rate_limit)가 중간에 나면 단계·종류·수정 방법과 비용 요약(그때까지 호출 수)을 찍고 1을 반환한다 (G1)", async () => {
+    const captured = lines();
+    const llm = script()
+      .outline(manualPlan)
+      .distill(
+        "ch01",
+        "The X200 is a fictional controller. [§skillsync-x200-user-manual-fixture] [§overview]",
+      )
+      .fail("distill", new LlmProviderError("rate_limit", true, "429 Too Many Requests"))
+      .build();
+    const code = await runSmoke({ path: samplePath }, baseDeps({ out: captured.out, llm }));
+    expect(code).toBe(1);
+    llm.assertExhausted();
+    const output = captured.all.join("\n");
+    expect(output).toContain(
+      "컴파일 실패 — 증류 중 LLM 호출 실패: 요청 한도 초과(rate limit)(rate_limit, 재시도 가능)",
+    );
+    expect(output).toContain("수정 방법");
+    expect(output).toContain("비용 요약: LLM 호출 3회"); // outline 1 + distill 1 + 실패한 distill 1
   });
 
   it("구조 검증에 걸리면(챕터 예산 초과) 게이트를 부르지 않고 검증 리포트 + 비용 요약(호출 3회)을 찍고 1을 반환한다 (E1)", async () => {

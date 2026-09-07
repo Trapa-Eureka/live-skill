@@ -4,6 +4,8 @@ import { extractAnchors } from "./anchors.js";
 import { assembleSkill, chapterFilePath, type AssembledFile } from "./assembler.js";
 import type { Config } from "./config.js";
 import { LlmCallCapError, trackCost } from "./costTracker.js";
+import { LlmProviderError, llmErrorAdvice, type LlmErrorKind } from "./llmError.js";
+import { sanitizeExternalText } from "./modelText.js";
 import { estimateGateCalls, runGate, type GateChapter } from "./gate.js";
 import { sha256Hex } from "./hash.js";
 import { checkOutlineCoverage, formatOutlineCoverageIssues } from "./outlineCoverage.js";
@@ -45,12 +47,23 @@ export type PipelineError =
     }
   | { kind: "assemble_failed"; detail: string; message: string }
   | {
+      /** LLM 호출이 실패했다(G1) — 어느 단계에서, 어떤 종류로, 재시도 가능한지, 그때까지 몇 번 불렀는지. */
+      kind: "llm_failed";
+      stage: LlmStage;
+      error: { kind: LlmErrorKind; retryable: boolean; detail: string };
+      /** 실패한 호출을 포함해 그때까지 시도한 LLM 호출 수. */
+      calls: number;
+      message: string;
+    }
+  | {
       kind: "validation_failed";
       /** pre_gate: 첫 조립본이 구조 검증에 걸림(게이트 호출 0회). final: 게이트 뒤 최종 조립본이 걸림(E1). */
       stage: "pre_gate" | "final";
       report: ValidationReport;
       message: string;
     };
+
+export type LlmStage = "outline" | "distill" | "gate";
 
 export interface CompileResult {
   manifest: Manifest;
@@ -111,22 +124,40 @@ export async function compile(
   // D1(가드레일 6): 사전 추정과 별개로 실제 호출 수를 세고, 상한을 넘기는 호출은 일어나기 전에 막는다.
   const tracked = trackCost(deps.llm, { maxCalls: deps.config.maxLlmCalls });
   const llm = tracked.llm;
-  async function guarded<T>(work: () => Promise<T>): Promise<Result<T, PipelineError>> {
+  // G1: 상한 초과와 provider 실패(인증·rate limit·네트워크·응답 이상)를 단계·종류·재시도 가능 여부·호출 수와 함께
+  // PipelineError로 바꾼다 — 스택 트레이스가 아니라 사람 메시지가 되게. 그 밖의 예외(버그)는 그대로 던진다.
+  async function guarded<T>(
+    stage: LlmStage,
+    work: () => Promise<T>,
+  ): Promise<Result<T, PipelineError>> {
     try {
       return ok(await work());
     } catch (e) {
-      if (!(e instanceof LlmCallCapError)) throw e;
-      return err({
-        kind: "call_cap_exceeded",
-        stage: "runtime",
-        estimated: e.calls,
-        limit: e.limit,
-        message: `stopped mid-run: ${String(e.calls)} LLM calls were made and the next one would exceed the MAX_LLM_CALLS cap of ${String(e.limit)}. Nothing was written. Fix: split the source, pass --no-gate, or raise MAX_LLM_CALLS.`,
-      });
+      if (e instanceof LlmCallCapError) {
+        return err({
+          kind: "call_cap_exceeded",
+          stage: "runtime",
+          estimated: e.calls,
+          limit: e.limit,
+          message: `stopped mid-run: ${String(e.calls)} LLM calls were made and the next one would exceed the MAX_LLM_CALLS cap of ${String(e.limit)}. Nothing was written. Fix: split the source, pass --no-gate, or raise MAX_LLM_CALLS.`,
+        });
+      }
+      if (e instanceof LlmProviderError) {
+        const calls = tracked.summary().calls;
+        const detail = sanitizeExternalText(e.message);
+        return err({
+          kind: "llm_failed",
+          stage,
+          error: { kind: e.kind, retryable: e.retryable, detail },
+          calls,
+          message: `the ${stage} step failed: LLM error "${e.kind}" (${e.retryable ? "retryable" : "not retryable"}) after ${String(calls)} LLM call(s); nothing was written. Fix: ${llmErrorAdvice(e.kind)}${detail === "" || detail === e.kind ? "" : ` Provider said: ${detail}`}`,
+        });
+      }
+      throw e;
     }
   }
 
-  const outlineRes = await guarded(() => llm.complete(outlinePrompt({ sections })));
+  const outlineRes = await guarded("outline", () => llm.complete(outlinePrompt({ sections })));
   if (!outlineRes.ok) return outlineRes;
   const outlineRaw = outlineRes.value;
   let plan: SkillPlan;
@@ -169,7 +200,7 @@ export async function compile(
 
   const byId = new Map(sections.map((s) => [s.id, s]));
   const distilled: DistilledChapter[] = [];
-  const distillRes = await guarded(async () => {
+  const distillRes = await guarded("distill", async () => {
     for (const chapter of plan.chapters) {
       const chapterSections = chapter.sectionIds
         .map((id) => byId.get(id))
@@ -223,7 +254,7 @@ export async function compile(
       file: chapterFilePath(i, c.title),
       sectionIds: c.sectionIds,
     }));
-    const outcomeRes = await guarded(() =>
+    const outcomeRes = await guarded("gate", () =>
       runGate(
         { files: firstAssembly.value, chapters: gateChapters, sections },
         { llm, k: deps.config.qaPerSection, threshold: deps.config.gateThreshold },

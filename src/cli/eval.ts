@@ -3,6 +3,7 @@
 // D2: 두 경로 다 MAX_LLM_CALLS를 사전 추정으로 거르고, 실행 중에도 trackCost 래퍼로 강제한다(compile과 동일).
 import {
   LlmCallCapError,
+  LlmProviderError,
   buildPopulation,
   chaptersFromManifest,
   checkOutputs,
@@ -12,6 +13,7 @@ import {
   extractSources,
   formatChangedSections,
   formatGateReport,
+  formatLlmProviderError,
   formatOutputIntegrity,
   formatSourceMismatch,
   matchManifestSections,
@@ -89,12 +91,19 @@ export async function runEval(opts: EvalOptions, deps: EvalDeps): Promise<number
     deps.out(`LLM 호출 ${String(tracked.summary().calls)}회`);
     return report.passed ? 0 : 1;
   };
+  // G1: 상한 초과와 provider 실패는 스택이 아니라 사람 메시지 + 그때까지의 호출 수로 끝난다. 그 밖의 예외는 버그 — 던진다.
   const capHit = (e: unknown): number | undefined => {
-    if (!(e instanceof LlmCallCapError)) return undefined;
-    deps.out(
-      `재채점 중단: LLM 호출 ${String(e.calls)}회 후 다음 호출이 MAX_LLM_CALLS 상한 ${String(e.limit)}을 넘습니다. 수정 방법: MAX_LLM_CALLS를 올리거나 스킬을 나누세요.`,
-    );
-    return 1;
+    if (e instanceof LlmCallCapError) {
+      deps.out(
+        `재채점 중단: LLM 호출 ${String(e.calls)}회 후 다음 호출이 MAX_LLM_CALLS 상한 ${String(e.limit)}을 넘습니다. 수정 방법: MAX_LLM_CALLS를 올리거나 스킬을 나누세요.`,
+      );
+      return 1;
+    }
+    if (e instanceof LlmProviderError) {
+      deps.out(`재채점 중단 — ${formatLlmProviderError("재채점", e, tracked.summary().calls)}`);
+      return 1;
+    }
+    return undefined;
   };
 
   if (opts.source === undefined || opts.source.length === 0) {

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/core/config.js";
+import { LlmProviderError } from "../src/core/llmError.js";
 import type { ExtractedDoc, SkillPlan } from "../src/core/index.js";
 import { compile } from "../src/core/pipeline.js";
 import { MAX_INPUT_TOKENS } from "../src/core/tokenEstimate.js";
@@ -496,6 +497,78 @@ describe("compile — structural validation blocks deployment (E1, 완료 기준
     expect(result.value.validation.issues.map((i) => [i.severity, i.code, i.file])).toEqual([
       ["warning", "low_anchor_ratio", "chapters/ch01-installation.md"],
     ]);
+  });
+});
+
+describe("compile — LLM provider failures become llm_failed (G1, 완료 기준)", () => {
+  it("turns a rate_limit thrown mid-distill into llm_failed with stage, kind, retryable, calls so far and a sanitized detail", async () => {
+    const llm = script()
+      .outline(twoChapterPlan)
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .fail(
+        "distill",
+        new LlmProviderError(
+          "rate_limit",
+          true,
+          "429 Too Many Requests sk-ant-api03-SECRETSECRETSECRET",
+        ),
+      )
+      .build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [new FixtureExtractor({ md: twoSectionDoc })],
+      llm,
+      clock,
+      config,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.kind).toBe("llm_failed");
+    if (result.error.kind !== "llm_failed") throw new Error("unreachable");
+    expect(result.error.stage).toBe("distill");
+    expect(result.error.error).toEqual({
+      kind: "rate_limit",
+      retryable: true,
+      detail: "429 Too Many Requests sk-***",
+    });
+    expect(result.error.calls).toBe(3); // outline 1 + distill a 1 + 실패한 distill b 1
+    expect(result.error.message).toMatch(/distill step failed.*rate_limit.*retryable.*3 LLM call/u);
+    expect(result.error.message).toContain("Fix: wait a moment");
+    expect(result.error.message).not.toContain("SECRET");
+    llm.assertExhausted();
+  });
+
+  it("marks a refusal as not retryable and attributes an outline failure to the outline stage", async () => {
+    const llm = script().fail("outline", new LlmProviderError("refusal", false)).build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [new FixtureExtractor({ md: twoSectionDoc })],
+      llm,
+      clock,
+      config,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        kind: "llm_failed",
+        stage: "outline",
+        calls: 1,
+        error: { kind: "refusal", retryable: false, detail: "refusal" },
+      },
+    });
+    if (result.ok || result.error.kind !== "llm_failed") throw new Error("unreachable");
+    expect(result.error.message).toContain("not retryable");
+    expect(result.error.message).not.toContain("Provider said"); // 종류와 같은 메시지는 되풀이하지 않는다
+  });
+
+  it("still lets unexpected (non-provider) exceptions through — they are bugs, not user errors", async () => {
+    const llm = script().fail("outline", new TypeError("unexpected")).build();
+    await expect(
+      compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+        extractors: [new FixtureExtractor({ md: twoSectionDoc })],
+        llm,
+        clock,
+        config,
+      }),
+    ).rejects.toThrow(TypeError);
   });
 });
 
