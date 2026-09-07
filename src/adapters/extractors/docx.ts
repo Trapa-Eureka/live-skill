@@ -5,7 +5,7 @@ import mammoth from "mammoth";
 import type { DocumentExtractor, ExtractError, ExtractedDoc, Result } from "../../core/index.js";
 import { err, ok, structureText, toExtractedDoc } from "../../core/index.js";
 import { asBuffer } from "./bytes.js";
-import { EXTRACT_TIMEOUT_MS, withDeadline } from "./limits.js";
+import { EXTRACT_TIMEOUT_MS, TIMEOUT, withDeadline } from "./limits.js";
 import { hasExtension } from "./route.js";
 
 const MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -89,21 +89,60 @@ export interface DocxExtractorOptions {
   timeoutMs?: number;
 }
 
-/** mammoth에 넘기기 전 ZIP 예산을 확인한다(zip bomb·엔트리 폭탄 방지). */
-export async function zipBudget(
+export interface ZipLimits {
+  maxEntries: number;
+  maxUncompressedBytes: number;
+}
+
+export type ZipMeasure =
+  | { ok: true; entries: number; uncompressed: number }
+  | { ok: false; reason: "too_many_entries" | "too_many_bytes" | "aborted" };
+
+/** JSZip이 d.ts에 싣지 않은 공개 API(문서화됨) — 엔트리를 스트리밍으로 푼다. */
+interface StreamingEntry {
+  internalStream(type: "uint8array"): JSZip.JSZipStreamHelper<Uint8Array>;
+}
+
+/** 엔트리 하나를 실제로 풀며 바이트를 센다. budget을 넘는 순간 스트림을 멈추고 undefined — 푼 바이트는 버린다. */
+function inflatedSize(entry: JSZip.JSZipObject, budget: number): Promise<number | undefined> {
+  return new Promise((resolve, reject) => {
+    const stream = (entry as unknown as StreamingEntry).internalStream("uint8array");
+    let size = 0;
+    stream
+      .on("data", (chunk) => {
+        size += chunk.byteLength;
+        if (size > budget) {
+          stream.pause();
+          resolve(undefined);
+        }
+      })
+      .on("error", reject)
+      .on("end", () => {
+        resolve(size);
+      })
+      .resume();
+  });
+}
+
+/** mammoth에 넘기기 전 ZIP 예산을 실측한다(D4, zip bomb·엔트리 폭탄 방지): 헤더가 *선언한* 크기가 아니라
+ * inflate가 실제로 내놓는 바이트를 세고, 누적이 상한을 넘는 순간 멈춘다 — 메모리는 상한 + 청크 하나로 묶인다.
+ * 같은 deflate 스트림은 같은 바이트를 내놓으므로 뒤이어 mammoth가 푸는 양도 이 상한 안이다. */
+export async function measureZip(
   bytes: Uint8Array,
-): Promise<{ entries: number; uncompressed: number }> {
+  limits: ZipLimits,
+  signal?: AbortSignal,
+): Promise<ZipMeasure> {
   const zip = await JSZip.loadAsync(bytes);
-  let entries = 0;
+  const files = Object.values(zip.files).filter((f) => !f.dir);
+  if (files.length > limits.maxEntries) return { ok: false, reason: "too_many_entries" };
   let uncompressed = 0;
-  for (const entry of Object.values(zip.files)) {
-    if (entry.dir) continue;
-    entries += 1;
-    const data = (entry as unknown as { _data?: { uncompressedSize?: unknown } })._data;
-    const size = data?.uncompressedSize;
-    uncompressed += typeof size === "number" && size > 0 ? size : 0;
+  for (const entry of files) {
+    if (signal?.aborted === true) return { ok: false, reason: "aborted" };
+    const size = await inflatedSize(entry, limits.maxUncompressedBytes - uncompressed);
+    if (size === undefined) return { ok: false, reason: "too_many_bytes" };
+    uncompressed += size;
   }
-  return { entries, uncompressed };
+  return { ok: true, entries: files.length, uncompressed };
 }
 
 /** 이미지는 디코딩 전에 버린다 — 변환기가 image.read()를 아예 호출하지 않는다. */
@@ -124,23 +163,35 @@ export class DocxExtractor implements DocumentExtractor {
     return mime.toLowerCase() === MIME || hasExtension(name, [".docx"]);
   }
 
-  extract(bytes: Uint8Array): Promise<Result<ExtractedDoc, ExtractError>> {
-    return withDeadline(this.parse(bytes), this.timeoutMs);
+  /** signal(선택)은 바깥에서 취소할 때 — 인터페이스(DocumentExtractor)보다 넓은 시그니처(D4). */
+  extract(bytes: Uint8Array, signal?: AbortSignal): Promise<Result<ExtractedDoc, ExtractError>> {
+    return withDeadline((s) => this.parse(bytes, s), this.timeoutMs, signal);
   }
 
-  private async parse(bytes: Uint8Array): Promise<Result<ExtractedDoc, ExtractError>> {
+  private async parse(
+    bytes: Uint8Array,
+    signal: AbortSignal,
+  ): Promise<Result<ExtractedDoc, ExtractError>> {
     let html: string;
     try {
-      const budget = await zipBudget(bytes);
-      if (budget.entries > this.maxEntries || budget.uncompressed > this.maxUncompressed) {
-        return err({ kind: "corrupt", detail: "zip_budget" });
+      const measured = await measureZip(
+        bytes,
+        { maxEntries: this.maxEntries, maxUncompressedBytes: this.maxUncompressed },
+        signal,
+      );
+      if (!measured.ok) {
+        return measured.reason === "aborted"
+          ? TIMEOUT
+          : err({ kind: "corrupt", detail: "zip_budget" });
       }
+      if (signal.aborted) return TIMEOUT; // mammoth는 취소할 수 없다 — 들어가기 전에 한 번 더 본다
       const result = await mammoth.convertToHtml(
         { buffer: asBuffer(bytes) }, // D3: 복사 대신 뷰 — mammoth는 읽기만 한다
         { convertImage: dropImages },
       );
       html = result.value;
     } catch (e) {
+      if (signal.aborted) return TIMEOUT;
       return err({ kind: "corrupt", detail: e instanceof Error ? e.name : "unknown" });
     }
     const doc = toExtractedDoc(structureText(htmlToBlocks(html)));

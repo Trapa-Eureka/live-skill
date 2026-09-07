@@ -151,9 +151,10 @@
 - 완료(2026-09-07, PR #29): `INPUT_LIMITS`(파일 500개 · 파일당 25 MiB · 총 100 MiB, env 아닌 상수)를 두 겹으로 강제. (1) `collectInputFiles`가 걷는 동안 이미 하는 `lstat`의 크기로 개수·파일별·누적 바이트를 세고 넘는 순간 `too_many_files`/`file_too_large`/`input_too_large`(원인 + Fix)로 멈춘다 — 파일은 하나도 열지 않는다. (2) `readFileNoFollow`가 연 뒤 `fstat` 크기를 재확인하고 정확히 그만큼만 읽으며(`readExactly` — 검사 뒤 파일이 자라도 초과 읽기 없음), 새 `readSourceFiles`가 `core/concurrency.ts`의 순수 `mapConcurrent`(동시 4개, 입력 순서 보존, 실패 시 새 작업 중단)로 읽으면서 누적 바이트를 다시 강제. compile·eval `--source`가 `readSourceFiles`를 쓰고 `describeInputFailure`로 어댑터의 거부 메시지를 그대로 보인다. 복사 제거: `Buffer.alloc` 전용 버퍼를 `SourceFile.bytes`에 그대로(`new Uint8Array` 복사 삭제), DOCX는 `asBuffer` 뷰. DESIGN §6·§7 갱신.
 - 완료 기준: [x] 초과 시 읽기 전 거부 + 수정 방법 메시지 테스트(실 fs: 개수·파일별·총합 각각 거부/경계 허용, 권한 000 파일도 EACCES가 아니라 크기로 거부 = stat만 봄; open 시 재확인; 읽기 중 누적 상한; CLI: compile/eval이 읽기·LLM 0회로 종료 1 + "Fix:" 출력; `mapConcurrent` 동시성·순서·실패 전파) [x] check 통과(23 files·357 tests)
 
-#### D4 — 파서 자원 격리 · 상태: TODO · 원본: SEC-011, AUD-014
+#### D4 — 파서 자원 격리 · 상태: DONE(2026-09-07) · 원본: SEC-011, AUD-014
 - 목표: DOCX 압축 해제 누적 바이트 상한(메타데이터가 아닌 실측), 타임아웃 시 결과 폐기 보장. worker/subprocess 격리는 착수 시 범위 결정(과하면 v0.2 대기열).
-- 완료 기준: [ ] 착수 시 확정 [ ] check 통과
+- 완료(2026-09-07, PR #30): 범위는 **협조적 격리**로 확정, worker/subprocess는 v0.2 대기열(아래). (1) DOCX: 옛 `zipBudget`(JSZip 비공개 `_data.uncompressedSize` = 헤더가 *선언한* 크기의 합 — JSZip은 inflate 실측이 선언과 달라도 검사하지 않아 위조 가능)을 `measureZip`으로 교체 — 엔트리마다 `internalStream`으로 실제로 풀며 바이트를 세고 누적이 60 MiB를 넘는 순간 스트림을 멈춰 `zip_budget`(메모리 = 상한 + 청크 하나). 엔트리 수는 풀기 전에 센다. (2) `withDeadline(run, timeoutMs, signal?)`가 `AbortSignal`을 파서에 넘기고 시간이 다 되면 abort 후 `timeout` 반환 — PDF는 abort 시 `PDFParse.destroy()`(로드 중이면 로드 직후 신호를 보고 텍스트 추출 생략), DOCX는 측정 중·mammoth 진입 전 신호 확인. 늦은 결과는 쓰이지 않고 늦은 거부도 unhandled가 되지 않음. 추출기 `extract(bytes, signal?)`로 바깥 취소도 같은 경로. DESIGN §6 D4 기록.
+- 완료 기준: [x] 착수 시 확정(위) [x] 테스트: 위조한 중앙 디렉터리(선언 10바이트, 실제 1 MiB)를 옛 방식은 통과시키고 `measureZip`은 거부 / 엔트리 하나·누적 초과 / 엔트리 수 / abort 중단 / `withDeadline` 제시간·타임아웃·늦은 결과 폐기·늦은 거부 무해·바깥 signal / DocxExtractor `zip_budget`·취소 / PdfExtractor 취소 시 `destroy` 호출 + 이후 정상 동작 [x] check 통과(24 files·371 tests)
 
 ### E. 구조 검증·산출물 무결성 — Medium
 
@@ -234,4 +235,4 @@
 ## v0.2 대기열 (착수 금지 — SPEC 로드맵 참조)
 
 - `watch`/`update` 증분 재컴파일(manifest 해시 diff) / URL·드라이브 소스 / ph-skill-pack(자매 레포) 착수 / EPUB / `serve`(MCP)는 v0.3
-- 검수 후속(2026-09-06): 명령 안전성 게이트(지식 정확성과 별도로 스킬 본문의 지시 포함 여부 평가 — C1 범위 밖, AUD-003) / 파서 worker·subprocess 격리(D4에서 과하다고 판단 시, AUD-014) / manifest 서명·신뢰 저장소(AUD-011)
+- 검수 후속(2026-09-06): 명령 안전성 게이트(지식 정확성과 별도로 스킬 본문의 지시 포함 여부 평가 — C1 범위 밖, AUD-003) / 파서 worker·subprocess 격리(D4에서 v0.2로 확정, 2026-09-07, AUD-014 — 요지: 추출기 전부를 `worker_threads` 경계 뒤로(`resourceLimits`로 힙 상한, `terminate()`로 시간 상한), `ExtractedDoc` 직렬화, 워커 파일의 tsx/dist 이중 해석, 워커 크래시 실패 모드 정의. v0.1은 D3 파일 상한 + 엔트리·페이지·실측 바이트 상한 + 협조적 타임아웃으로 방어 — DESIGN §6 D4) / manifest 서명·신뢰 저장소(AUD-011)
