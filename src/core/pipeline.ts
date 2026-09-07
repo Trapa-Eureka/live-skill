@@ -16,7 +16,7 @@ import { distillPrompt, outlinePrompt } from "./prompts.js";
 import { err, ok, type Result } from "./result.js";
 import { skillPlanSchema } from "./schemas.js";
 import { slugifyHeading } from "./sectionId.js";
-import { estimateTokens } from "./tokenEstimate.js";
+import { MAX_INPUT_TOKENS, estimateTokens } from "./tokenEstimate.js";
 import type {
   Clock,
   DistilledChapter,
@@ -37,8 +37,6 @@ export interface SourceFile {
   /** 없으면 "application/octet-stream" — 확장자 기반 라우팅으로 폴백(adapters/extractors/route.ts). */
   mime?: string;
 }
-
-export const MAX_INPUT_TOKENS = 30_000;
 
 export type PipelineError =
   | { kind: "unsupported_format"; path: string; message: string }

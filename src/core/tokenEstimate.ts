@@ -7,3 +7,7 @@ export function estimateTokens(text: string): number {
   const rest = text.replace(CJK_RE, "");
   return cjkCount + Math.ceil(rest.length / 4);
 }
+
+/** 컴파일 1회의 입력 상한 — 추출된 본문 섹션 텍스트의 추정 토큰 합(DESIGN §5.1). compile()이 outline을 부르기 전에
+ * 걸러 그 아래 단계(distill 프롬프트 등)는 이 값을 전제할 수 있다(F1). 산출 예산 합계의 몇 배 수준으로 넉넉히 잡은 상수. */
+export const MAX_INPUT_TOKENS = 30_000;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_INPUT_TOKENS,
   answerPrompt,
   chapterSelectionPrompt,
   detectPromptRole,
@@ -70,6 +71,39 @@ describe("distillPrompt", () => {
     expect(distillPrompt(chapter, [section], 2000).maxTokens).toBeGreaterThan(
       distillPrompt(chapter, [section], 500).maxTokens,
     );
+  });
+
+  // F1 (001-005, 완료 기준): 예전엔 2,000자에서 잘라 "…"를 붙였다 — 뒷부분의 규칙·수치가 증류에서 사라졌다.
+  it("passes a section longer than 2,000 characters in full — no excerpt, no ellipsis (F1)", () => {
+    const tail = "TAIL-RULE: torque the M3 screws to 0.6 N·m.";
+    const long: Section = {
+      id: "x",
+      heading: "X",
+      level: 1,
+      text: `${"word ".repeat(600)}${tail}`,
+    };
+    expect(long.text.length).toBeGreaterThan(2000);
+    const { prompt } = distillPrompt(chapter, [long]);
+    expect(prompt).toContain(long.text);
+    expect(prompt).toContain(tail);
+    expect(prompt).not.toContain("…");
+  });
+
+  it("refuses loudly, instead of truncating, when a chapter's sections exceed the single-compile input limit (F1)", () => {
+    const huge: Section = {
+      id: "x",
+      heading: "X",
+      level: 1,
+      text: "a".repeat((MAX_INPUT_TOKENS + 1) * 4),
+    };
+    expect(() => distillPrompt(chapter, [huge])).toThrow(/never truncated/u);
+    expect(() => distillPrompt(chapter, [huge])).toThrow(/split the source/u);
+  });
+
+  it("still excerpts for outline only (structure decision, not content)", () => {
+    const long: Section = { id: "x", heading: "X", level: 1, text: "b".repeat(3000) };
+    expect(outlinePrompt({ sections: [long] }).prompt).toContain("…");
+    expect(distillPrompt(chapter, [long]).prompt).not.toContain("…");
   });
 });
 
