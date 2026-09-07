@@ -3,13 +3,18 @@
 // D2: 두 경로 다 MAX_LLM_CALLS를 사전 추정으로 거르고, 실행 중에도 trackCost 래퍼로 강제한다(compile과 동일).
 import {
   LlmCallCapError,
+  buildPopulation,
   chaptersFromManifest,
   checkOutputs,
   estimateEvalCalls,
   estimateGateCalls,
   evaluateGoldenQa,
+  extractSources,
+  formatChangedSections,
   formatGateReport,
   formatOutputIntegrity,
+  formatSourceMismatch,
+  matchManifestSections,
   missingChapterFiles,
   runGate,
   trackCost,
@@ -126,21 +131,21 @@ export async function runEval(opts: EvalOptions, deps: EvalDeps): Promise<number
     deps.out(`--source: ${describeInputFailure(e)}`);
     return 1;
   }
-  const sections = [];
-  for (const src of sources) {
-    const mime = "application/octet-stream";
-    const extractor = deps.extractors.find((e) => e.supports(mime, src.path));
-    if (extractor === undefined) {
-      deps.out(`"${src.path}": 지원하지 않는 형식입니다.`);
-      return 1;
-    }
-    const extracted = await extractor.extract(src.bytes);
-    if (!extracted.ok) {
-      deps.out(`"${src.path}": 추출 실패(${extracted.error.kind}).`);
-      return 1;
-    }
-    sections.push(...extracted.value.sections);
+  // F3: compile과 같은 코드로 추출·접두어·모집단을 만든다 — 다중 소스 스킬의 manifest 배정(`a-readme/overview`)과 맞아야
+  // qaGen 대상이 생긴다. 집합이 다르면 명시적으로 실패한다(질문 0개로 조용히 실패하던 것을 대신한다).
+  const extracted = await extractSources(sources, deps.extractors);
+  if (!extracted.ok) {
+    deps.out(`--source: ${extracted.error.message}`);
+    return 1;
   }
+  const sections = buildPopulation(extracted.value);
+  const match = matchManifestSections(manifest, sections);
+  if (match.missing.length > 0 || match.unknown.length > 0) {
+    deps.out(formatSourceMismatch(match));
+    return 1;
+  }
+  const changed = formatChangedSections(match);
+  if (changed !== "") deps.out(changed);
 
   const k = deps.config.qaPerSection;
   if (

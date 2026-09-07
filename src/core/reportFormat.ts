@@ -2,6 +2,7 @@
 // `compile`/`eval` CLI가 전부 이 함수들만 호출한다("cli는 조립만", DESIGN §6).
 import type { OutputIntegrity } from "./integrity.js";
 import type { PipelineError } from "./pipeline.js";
+import type { PopulationMatch } from "./sources.js";
 import type { GateReport } from "./types.js";
 import type { ValidationReport } from "./validator.js";
 
@@ -59,6 +60,42 @@ export function formatOutputIntegrity(r: OutputIntegrity): string {
       : "수정 방법: 그 파일을 스킬 디렉터리에서 치우거나, `compile --force`로 다시 컴파일하세요.",
   );
   return lines.join("\n");
+}
+
+const MAX_LISTED_IDS = 5;
+
+function listIds(ids: readonly string[]): string {
+  const head = ids.slice(0, MAX_LISTED_IDS).join(", ");
+  return ids.length > MAX_LISTED_IDS
+    ? `${head} … 외 ${String(ids.length - MAX_LISTED_IDS)}개`
+    : head;
+}
+
+/** eval --source의 원문 모집단이 manifest와 맞지 않을 때(F3) — 어떤 id가 어느 쪽에만 있는지와 수정 방법. */
+export function formatSourceMismatch(m: PopulationMatch): string {
+  const lines = [
+    "--source의 원문이 이 manifest와 맞지 않습니다 — 챕터 배정을 적용할 수 없어 재채점을 중단합니다.",
+  ];
+  if (m.missing.length > 0) {
+    lines.push(
+      `  manifest에는 있는데 원문에서 안 나온 섹션 ${String(m.missing.length)}개: ${listIds(m.missing)}`,
+    );
+  }
+  if (m.unknown.length > 0) {
+    lines.push(
+      `  원문에는 있는데 manifest에 없는 섹션 ${String(m.unknown.length)}개: ${listIds(m.unknown)}`,
+    );
+  }
+  lines.push(
+    "수정 방법: 컴파일에 쓴 파일들을 같은 폴더 구조로 넘기세요(다중 소스는 공통 상위 폴더 기준 접두어가 붙습니다). 원문이 정말 바뀌었다면 `compile --force`로 다시 컴파일하세요.",
+  );
+  return lines.join("\n");
+}
+
+/** 본문만 바뀐 섹션은 참고 사항 — 문항은 현재 원문으로 새로 만든다. 없으면 빈 문자열. */
+export function formatChangedSections(m: PopulationMatch): string {
+  if (m.changed.length === 0) return "";
+  return `참고: 컴파일 이후 본문이 바뀐 섹션 ${String(m.changed.length)}개(${listIds(m.changed)}) — 문항은 현재 원문으로 새로 만듭니다.`;
 }
 
 export function formatSkippedGate(): string {
