@@ -54,4 +54,6 @@ npm run cli -- eval ./my-skill         # 기존 스킬 재평가
 - 2026-09-06: npm 배포 사전 분석 완료 — 경쟁 구도·활용 분야·규모(`docs/MARKET.md`), 배포 실행 체크리스트(`docs/PUBLISHING.md`) 신규 작성, `LICENSE`(MIT 초안)·`.gitignore` 추가. 패키지명 `live-skill` npm 가용 확인(SPEC §8). 코드는 여전히 미작성 — T0부터 순서대로 진행 필요.
 - 2026-09-06: 형제 레포(`../msg-agent`, `../retail-mcp`) 실전 선례를 TASKS.md T0·T1·T2·T11에 교차 참조 — 같은 스택의 검증된 scaffolding·추출기 구현, npm 배포 시 실제로 걸렸던 함정(REL-001~008) 반영. T0 착수 시 처음부터 설계하지 않고 이식하는 경로가 열림.
 - 2026-09-06: **T0~T10 완료** — 스캐폴딩, 도메인 타입·config, 추출기 4종, LlmProvider+ScriptedLlm, Assembler, Validator, 컴파일 파이프라인+manifest, 품질 게이트(게이트 판별력 테스트 5종 포함), CLI 4종(compile/validate/eval/report), CLI 레벨 e2e-mock, 실 LLM 스모크 스크립트까지 전부 구현·테스트·머지됨. v0.1 목표(SPEC §3) 코드 구현은 T11(공개 준비) 하나만 남았다.
+- 2026-09-06: **T11 완료 — v0.1 코드 구현 전부 완료**(공개 준비: 이름 조사·영어 README·CI·데모 시나리오).
+- 2026-09-07: **검수 수정 30/30 완료** — 코드·보안·보안 아키텍처 검수 3건(`docs/001~003_*.md`)의 지적을 A1~I3 태스크(PR #16~#42)로 전부 반영(파일시스템 경계, 게이트 우회 차단, 프롬프트 경계, 비용 상한, 구조 검증 배포 차단, YAML 프런트매터, 산출물 무결성, 추출 정확성, 오류 경계, 배포 위생, Node 22.12+ 정합). 남은 것은 `docs/PUBLISHING.md` §4의 사람 결정(패키지명·공개 전환·npm publish·게이트 기본값)뿐.
 - 이름 메모: 폴더/작업명은 live-skill, npm 패키지명 최종 확정은 실제 배포 직전(WORKFLOW §4, `docs/PUBLISHING.md` §3-1)에 사람이 결정 — 조사 결과는 SPEC §8·`docs/PUBLISHING.md` 참조.

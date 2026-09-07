@@ -2,11 +2,11 @@
 
 작성: 2026-09-06 (docs 분석 세션) · 2026-09-06 갱신(형제 레포 실전 선례 반영) · TASKS.md T11("공개 준비")의 확장판. T11의 완료 기준(이름 조사·영어 README·ci.yml·데모 시나리오·`npm run check` 통과)은 그대로 유효하며, 이 문서는 T11 실행 시 빠뜨리기 쉬운 npm 배포 실무 단계를 순서대로 못박는다. **GitHub는 현재 비공개, npm 배포 직전 공개 전환 예정**이라는 전제를 반영했다(§3-13).
 
-## 0. 현재 상태 스냅샷 (2026-09-06 조사 결과)
+## 0. 현재 상태 스냅샷 (2026-09-06 조사, 2026-09-07 갱신)
 
 | 항목 | 상태 |
 |---|---|
-| 코드 구현 | 미착수 (TASKS.md T0부터 시작, 이 문서는 그 전제) |
+| 코드 구현 | **v0.1 완료** — T0~T11 전부 DONE(2026-09-06), 검수 3건(`docs/001~003_*.md`) 수정 태스크 30/30 완료(2026-09-07, PR #16~#42). 남은 것은 §4의 사람 결정뿐(I3 갱신; 2026-09-06 시점엔 미착수였다) |
 | GitHub 저장소 | `Trapa-Eureka/live-skill`, **PRIVATE**, origin 연결 확인됨 |
 | npm 계정 | 로컬에 `shiz_son` 로그인 확인됨 (registry.npmjs.org) — 배포 실행 권한은 이미 있음 |
 | 패키지명 `live-skill` | npm 레지스트리 미등록 → **사용 가능** (2026-09-06 T11에서 재조회, 여전히 사용 가능) |
@@ -14,7 +14,7 @@
 | 백업 후보 2 `skill-gate` | npm 레지스트리 미등록 → **사용 가능** (2026-09-06 T11에서 조사·확정 — SPEC §8 "후보 2개" 충족. `skillgate`는 이미 등록돼 있어 제외) |
 | `LICENSE` | 없었음 → 이번 세션에 MIT 초안 추가 (저작권자 `Trapa-Eureka` — msg-agent·sheet_mcp와 표기 통일) |
 | `.gitignore` | 없었음 → 이번 세션에 Node/TS 표준안 추가 |
-| Node/npm | 로컬 Node v24.12, npm v11.6 확인 — CLAUDE.md 요구사항(Node 20+) 충족 |
+| Node/npm | 로컬 Node v24.12, npm v11.6 확인 — 요구사항 **Node 22.12+**(I2, 2026-09-07: commander 15 `>=22.12`·pdf-parse `>=22.3`에 맞춰 `engines`·CI matrix(22·24)·문서를 정합; 예전 "20+"는 의존성이 지원하지 않는 범위였다) 충족 |
 | 형제 레포 실전 선례 | `../msg-agent`(같은 스택, 이미 npm 배포 구조 완성), `../retail-mcp`(npm 배포 어드버서리얼 리뷰 8건 기록) — §1 참조 |
 
 동일 카테고리 경쟁사·명칭 충돌 조사는 `docs/MARKET.md` §2 참조.
@@ -39,21 +39,21 @@
 
 **T0 스캐폴딩 자체도 처음부터 설계할 필요 없다**: `../msg-agent`는 CLAUDE.md가 요구하는 스택(TS strict+`noUncheckedIndexedAccess`, ESLint flat config+`typescript-eslint` strictTypeChecked, Prettier, Vitest+coverage 90% 임계치, `tsx` 기반 cli/smoke, `check`/`prepublishOnly` 스크립트 조합)을 이미 npm 배포 수준까지 구현해 뒀다. `package.json`·`tsconfig.json`·`eslint.config.js`·`vitest.config.ts`를 이식하고 이 레포에 안 맞는 의존성(grammy·franc 등 메시징 전용)만 제거하는 편이 처음부터 설계하는 것보다 빠르고 이미 검증됐다. 추출기(`src/adapters/extractors/{pdf,docx,text,route,limits,index}.ts`)는 pdf-parse·mammoth를 그대로 쓰고 있어 T2의 직접 참고 구현이 된다(단, `extract()`가 예외 대신 `Result<ExtractedDoc, ExtractError>`를 반환하는 점은 DESIGN §2 인터페이스와 다르므로 채택 여부는 T1에서 결정 — DESIGN diff 우선 원칙).
 
-## 2. 선행 조건 — 코드 구현 (이 세션 범위 아님)
+## 2. 선행 조건 — 코드 구현 (2026-09-07: 충족됨)
 
-npm 배포는 실제 패키지가 동작해야 가능하다. 아래는 TASKS.md의 실행 순서 요약이며, **이 문서에서 구현하지 않는다** — 진실의 원천은 `docs/TASKS.md`:
+npm 배포는 실제 패키지가 동작해야 가능하다. 아래는 TASKS.md의 실행 순서 요약이며, 진실의 원천은 `docs/TASKS.md`다. **2026-09-06에 T0~T11이 전부 완료됐고, 2026-09-07에 검수 수정 30건(A1~I3)까지 끝났다** — 이 절의 전제는 충족됐다(이 문단은 2026-09-06 "코드 미착수" 시점에 쓰였고, 날짜 붙은 기록으로 남긴다):
 
 ```
 T0(스캐폴딩) → T1(타입/config) → {T2 추출기, T3 LlmProvider, T4 Assembler} → T5(Validator)
   → T6(파이프라인+manifest) → T7(품질 게이트) → T8(CLI) → T9(e2e+커버리지) → T10(스모크) → T11(공개 준비)
 ```
 
-이 체크리스트(§3)는 T10 완료, 즉 실 LLM 스모크까지 통과한 뒤에 실행하는 것을 전제로 한다.
+이 체크리스트(§3)는 T10 완료, 즉 실 LLM 스모크 *스크립트*가 준비된 뒤에 실행하는 것을 전제로 한다 — 스크립트는 준비됐고(`npm run smoke`), 실 LLM으로 돌려 게이트 기본값을 확정하는 것은 §4의 사람 결정이다.
 
 ## 3. npm 배포 실행 순서
 
 1. **패키지명 최종 확정** (사람 결정 — WORKFLOW §4). §0 조사 결과(`live-skill` 가용) 기준 그대로 갈지, `@shiz_son/live-skill` 스코프로 갈지(§1 retail-mcp 선례) 결정하고 SPEC §8을 갱신한다.
-2. **`package.json` 필드 점검**: `name`, `version`(`0.1.0`부터), `description`, `keywords`(`agent-skills`, `claude`, `skill-compiler`, `docs-to-skill` 등 — MARKET.md 경쟁사 키워드 참고), `license: "MIT"`, `repository`/`bugs`/`homepage`(GitHub URL과 일치), `engines.node >= 20`, `bin`, `main`, `type`. **`private` 필드를 넣지 않거나 배포 직전 명시적으로 관리**(§1 REL-001).
+2. **`package.json` 필드 점검**: `name`, `version`(`0.1.0`부터), `description`, `keywords`(`agent-skills`, `claude`, `skill-compiler`, `docs-to-skill` 등 — MARKET.md 경쟁사 키워드 참고), `license: "MIT"`, `repository`/`bugs`/`homepage`(GitHub URL과 일치), `engines.node >= 22.12.0`(I2), `bin`, `main`, `type`. **`private` 필드를 넣지 않거나 배포 직전 명시적으로 관리**(§1 REL-001).
 3. **LICENSE 확정**: 이미 추가된 MIT 초안의 저작권자 표기를 실명/법인명으로 확정할지 확인.
 4. **영어 README 초안** (T11 원 항목) — 내부 `docs/`는 한국어 유지, 배포용 `README.md` 상단에 영어 섹션 추가 또는 `README.en.md` 분리.
 5. **배포 파일 화이트리스트**: `package.json.files = ["dist", "README.md", "LICENSE"]`로 명시(§1 REL-004) — `docs/`·`samples/`·`fixtures/`·`tests/`·`.env*`·`scripts/smoke.ts` 등 전부 제외.

@@ -23,6 +23,8 @@ live-skill's compiler is built around a **quality gate**: after compiling, it ge
 
 Supported input formats: text PDF, DOCX, Markdown/TXT, HTML. Scanned/image PDFs (OCR) are out of scope for v0.1.
 
+Requires Node.js 22.12 or newer (the floor set by the runtime dependencies; CI runs 22 and 24).
+
 ## Quickstart
 
 ```bash
@@ -59,7 +61,7 @@ The internal design/spec/task docs under `docs/` are written in Korean (this is 
 
 ## Status
 
-v0.1 (compile + quality gate + CLI) is implemented and tested; not yet published to npm. See `docs/SPEC.md` §7 for the roadmap.
+v0.1 (compile + quality gate + CLI) is implemented and tested (T0–T11 done 2026-09-06). Three review passes — code, security, security architecture (`docs/001_CODE_REVIEW.md`, `002_SECURITY_REVIEW.md`, `003_SECURITY_ARCHITECTURE_AUDIT.md`) — were addressed in 30 follow-up tasks (A1–I3, done 2026-09-07; see `docs/TASKS.md`). Not yet published to npm: the remaining steps are human decisions listed in `docs/PUBLISHING.md` §4. See `docs/SPEC.md` §7 for the roadmap.
 
 ## License
 

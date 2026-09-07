@@ -4,7 +4,7 @@
 
 ## 스택
 
-- Node.js 20+, TypeScript **strict** (`noUncheckedIndexedAccess` 포함), npm CLI(`bin`) 배포 전제
+- Node.js 22.12+ (I2, 2026-09-07 — commander 15·pdf-parse가 요구하는 최소; 이전 "20+"는 의존성이 지원하지 않는 범위였다), TypeScript **strict** (`noUncheckedIndexedAccess` 포함), npm CLI(`bin`) 배포 전제
 - 추출: `pdf-parse`(텍스트형 PDF), `mammoth`(DOCX), UTF-8 직독(MD/TXT), `cheerio`+변환(HTML) — message 레포의 추출기 시그니처와 동일 규약(이식 가능)
 - LLM: 자체 `LlmProvider` 인터페이스 — Claude 기본(`ANTHROPIC_API_KEY`), 모델 문자열 env
 - 산출: Agent Skills 표준(SKILL.md + 보조 파일), 결정론 템플릿 조립
