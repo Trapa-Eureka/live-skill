@@ -6,6 +6,10 @@
 # It contacts the registry (runtime dependency install), so it is not part of vitest (CLAUDE.md
 # guardrail 3); release gate only.
 set -eu
+# `npm publish --dry-run` exports npm_config_dry_run=true to prepublishOnly; without this override the
+# nested `npm pack` writes no tarball and `npm install` installs nothing, so the smoke would fail for
+# the wrong reason.
+export npm_config_dry_run=false
 
 root=$(pwd)
 expected=$(node -p "require('$root/package.json').version")
