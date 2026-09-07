@@ -1,8 +1,8 @@
-# live-skill
+# live-skills
 
 Compile documents, folders, or docsets into **verified** [Agent Skills](https://agentskills.io) — and back that verification with a semantic quality gate, not just a template pass.
 
-**One-line positioning:** *book-to-skill is a snapshot; live-skill is a subscription — verified generation, not just generation.*
+**One-line positioning:** *book-to-skill is a snapshot; live-skills is a subscription — verified generation, not just generation.*
 
 [한국어 문서](README.ko.md) · [License: MIT](LICENSE)
 
@@ -10,7 +10,7 @@ Compile documents, folders, or docsets into **verified** [Agent Skills](https://
 
 Turning documents into [Agent Skills](https://agentskills.io) is an established category now — several tools already do the mechanical conversion (PDF/DOCX/Markdown/HTML → `SKILL.md` + supporting files). None of the ones we surveyed check whether the result is actually *correct*: whether an agent that loads only the compiled skill can answer real questions about the source material.
 
-live-skill's compiler is built around a **quality gate**: after compiling, it generates golden question/answer pairs from your source sections, answers each one using *only* the compiled skill files (the same way an agent would load them — index first, then the relevant chapter), grades the answers against the source, and refuses to ship the skill if the pass rate falls under a threshold (90% by default). A failing run doesn't get silently deployed — it's written to a temp directory with a report pointing at exactly which chapter is weak.
+The live-skills compiler is built around a **quality gate**: after compiling, it generates golden question/answer pairs from your source sections, answers each one using *only* the compiled skill files (the same way an agent would load them — index first, then the relevant chapter), grades the answers against the source, and refuses to ship the skill if the pass rate falls under a threshold (90% by default). A failing run doesn't get silently deployed — it's written to a temp directory with a report pointing at exactly which chapter is weak.
 
 ## What's here (v0.1)
 
@@ -25,7 +25,20 @@ Supported input formats: text PDF, DOCX, Markdown/TXT, HTML. Scanned/image PDFs 
 
 Requires Node.js 22.12 or newer (the floor set by the runtime dependencies; CI runs 22 and 24).
 
-## Quickstart
+## Install and use
+
+```bash
+npm install -g live-skills            # or run it ad hoc: npx live-skills <command>
+export ANTHROPIC_API_KEY=...          # or put it in a .env file in the working directory
+live-skills compile ./manual.pdf --out ./my-skill   # compile + quality gate
+live-skills validate ./my-skill       # structure check only, no LLM calls
+live-skills report ./my-skill         # print the last quality-gate report
+live-skills eval ./my-skill           # re-grade an existing skill
+```
+
+The npm package is `live-skills`; the GitHub repository is `Trapa-Eureka/live-skill`. Only `compile`, `eval`, and the smoke script call the LLM and need the API key.
+
+## Quickstart from a clone
 
 ```bash
 npm install
@@ -61,7 +74,7 @@ The internal design/spec/task docs under `docs/` are written in Korean (this is 
 
 ## Status
 
-v0.1 (compile + quality gate + CLI) is implemented and tested (T0–T11 done 2026-09-06). Three review passes — code, security, security architecture (`docs/001_CODE_REVIEW.md`, `002_SECURITY_REVIEW.md`, `003_SECURITY_ARCHITECTURE_AUDIT.md`) — were addressed in 30 follow-up tasks (A1–I3, done 2026-09-07; see `docs/TASKS.md`). Not yet published to npm: the remaining steps are human decisions listed in `docs/PUBLISHING.md` §4. See `docs/SPEC.md` §7 for the roadmap.
+v0.1 (compile + quality gate + CLI) is implemented and tested (T0–T11 done 2026-09-06). Three review passes — code, security, security architecture (`docs/001_CODE_REVIEW.md`, `002_SECURITY_REVIEW.md`, `003_SECURITY_ARCHITECTURE_AUDIT.md`) — were addressed in 30 follow-up tasks (A1–I3, done 2026-09-07; see `docs/TASKS.md`). The release decisions in `docs/PUBLISHING.md` §4 were settled on 2026-09-07 (package name `live-skills`, default gate settings kept, repository public with a protected `main`); version 0.1.0 is the first npm release, see `CHANGELOG.md`. See `docs/SPEC.md` §7 for the roadmap.
 
 ## License
 

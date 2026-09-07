@@ -1,10 +1,10 @@
-# live-skill
+# live-skills
 
 [English README](README.md)
 
 문서·폴더·URL을 **검증된 에이전트 스킬로 컴파일하고, 소스가 바뀌면 자동으로 갱신하는** TS/npm 스킬 컴파일러.
 
-한 줄 포지셔닝: **"book-to-skill = 스냅샷, live-skill = 구독. 생성이 아니라 검증된 생성."**
+한 줄 포지셔닝: **"book-to-skill = 스냅샷, live-skills = 구독. 생성이 아니라 검증된 생성."**
 
 네 개의 층으로 구성된다 (0은 전제, 1~3이 차별화):
 
@@ -33,7 +33,20 @@
 
 앞선 네 레포와 동일: **문서 → 에이전트 구현 → 검증**. 사람(Jin)은 스펙·리뷰·실 LLM 스모크·npm 공개 승인, 구현은 Claude Code가 `docs/TASKS.md` 단위로. 공통 게이트는 `npm run check`.
 
-## 퀵스타트
+## 설치·사용
+
+```bash
+npm install -g live-skills            # 또는 npx live-skills <명령>
+export ANTHROPIC_API_KEY=...          # 또는 작업 디렉터리의 .env 파일
+live-skills compile ./manual.pdf --out ./my-skill   # 컴파일 + 품질 게이트
+live-skills validate ./my-skill       # 구조 검증만(LLM 0회)
+live-skills report ./my-skill         # 마지막 게이트 리포트 출력
+live-skills eval ./my-skill           # 기존 스킬 재평가
+```
+
+npm 패키지명은 `live-skills`, GitHub 저장소는 `Trapa-Eureka/live-skill`이다. LLM을 부르는 것은 `compile`·`eval`·스모크뿐이라 API 키도 그때만 필요하다.
+
+## 퀵스타트 (개발, 클론 기준)
 
 ```bash
 npm install
@@ -56,4 +69,5 @@ npm run cli -- eval ./my-skill         # 기존 스킬 재평가
 - 2026-09-06: **T0~T10 완료** — 스캐폴딩, 도메인 타입·config, 추출기 4종, LlmProvider+ScriptedLlm, Assembler, Validator, 컴파일 파이프라인+manifest, 품질 게이트(게이트 판별력 테스트 5종 포함), CLI 4종(compile/validate/eval/report), CLI 레벨 e2e-mock, 실 LLM 스모크 스크립트까지 전부 구현·테스트·머지됨. v0.1 목표(SPEC §3) 코드 구현은 T11(공개 준비) 하나만 남았다.
 - 2026-09-06: **T11 완료 — v0.1 코드 구현 전부 완료**(공개 준비: 이름 조사·영어 README·CI·데모 시나리오).
 - 2026-09-07: **검수 수정 30/30 완료** — 코드·보안·보안 아키텍처 검수 3건(`docs/001~003_*.md`)의 지적을 A1~I3 태스크(PR #16~#42)로 전부 반영(파일시스템 경계, 게이트 우회 차단, 프롬프트 경계, 비용 상한, 구조 검증 배포 차단, YAML 프런트매터, 산출물 무결성, 추출 정확성, 오류 경계, 배포 위생, Node 22.12+ 정합). 남은 것은 `docs/PUBLISHING.md` §4의 사람 결정(패키지명·공개 전환·npm publish·게이트 기본값)뿐.
-- 이름 메모: 폴더/작업명은 live-skill, npm 패키지명 최종 확정은 실제 배포 직전(WORKFLOW §4, `docs/PUBLISHING.md` §3-1)에 사람이 결정 — 조사 결과는 SPEC §8·`docs/PUBLISHING.md` 참조.
+- 2026-09-07: **사람 결정 확정** — npm 패키지명 `live-skills`(CLI 명령·bin도 `live-skills`, GitHub 저장소명은 `live-skill` 유지), 게이트 기본값(임계치 0.9·k=3)은 실 LLM 스모크 비용 지출 없이 그대로 확정, GitHub 저장소 공개 전환 + `main` 보호 ruleset(`main-protection`) 활성화. 첫 npm 배포 0.1.0 진행(`CHANGELOG.md`).
+- 이름 메모: 폴더/작업명은 live-skill, npm 패키지명은 2026-09-07에 `live-skills`로 확정(WORKFLOW §4, `docs/PUBLISHING.md` §3-1) — 조사 결과는 SPEC §8·`docs/PUBLISHING.md` 참조.
