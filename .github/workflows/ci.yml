@@ -2,7 +2,7 @@ name: CI
 
 # T11 (docs/TASKS.md) — enforces `npm run check` on every push to main and every PR
 # (docs/PUBLISHING.md §3-9). Runs the same sequence as the local `prepublishOnly` script
-# (check → build → check:tarball) in one job. This repo is still small (single CLI, no service
+# (check → build → check:tarball → verify:pack) in one job. This repo is still small (single CLI, no service
 # dependencies) — a retail-mcp-style matrix of coverage/audit/SBOM/postgres jobs is deliberately not
 # copied here; add jobs only when the repo's actual risk profile grows to need them.
 
@@ -43,3 +43,5 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: npm run check:tarball
+      # H2 (AUD-017): install the real tarball with --omit=dev into a clean temp project and run the CLI.
+      - run: npm run verify:pack
