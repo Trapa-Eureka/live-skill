@@ -8,7 +8,7 @@
     "node": ">=22.12.0"
   },
   "bin": {
-    "live-skills": "./dist/cli/index.js"
+    "live-skills": "dist/cli/index.js"
   },
   "files": [
     "dist"
