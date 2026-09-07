@@ -1,6 +1,6 @@
 {
   "name": "live-skills",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Compile documents into verified Agent Skills, with a semantic quality gate over the compiled output",
   "license": "MIT",
   "type": "module",
