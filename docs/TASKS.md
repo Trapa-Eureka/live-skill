@@ -209,9 +209,10 @@
 
 ### H. CI·배포 파이프라인 — Medium/Low
 
-#### H1 — main 브랜치 보호 · 상태: TODO · 원본: AUD-016 · **코드 아님**
+#### H1 — main 브랜치 보호 · 상태: DONE(2026-09-07) · 원본: AUD-016 · **코드 아님**
 - 목표: 공개 전환/플랜 허용 시 ruleset(PR 필수·필수 CI·force push 금지). 그 전까지는 `docs/PUBLISHING.md` §4 사람 결정 항목에 편입하고 수동 통제를 기록.
-- 완료 기준: [ ] PUBLISHING §3·§4 반영
+- 완료(2026-09-07, PR #40): 2026-09-07 재확인 — private 무료 플랜이라 rulesets/branch protection API 403(켤 수 없음). PUBLISHING §0에 상태 스냅샷, §3-9에 **수동 통제**(배포 SHA로 `gh run list --branch main --commit <sha>` 성공 확인 + `origin/main` 일치 + PR 전용 머지 관행 — 관행이지 강제가 아님을 명시), §3-14-1에 **ruleset 활성화 절차**(이름·대상·규칙 6종·필수 검사 `check (node 20/22)`·bypass 없음·검증 명령·기존 자동화와의 호환), §4에 사람 결정 항목(활성화 시점: 공개 전환과 함께 vs Pro 선전환) 추가.
+- 완료 기준: [x] PUBLISHING §3·§4 반영(+§0 스냅샷)
 
 #### H2 — tarball 설치 스모크 · 상태: TODO · 원본: AUD-017
 - 목표: `npm pack` → 임시 디렉터리 `npm install --omit=dev <tgz>` → `live-skill --help` 실행 스크립트를 `prepublishOnly`·CI에 추가.
