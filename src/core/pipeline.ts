@@ -55,11 +55,19 @@ export type PipelineError =
       limit: number;
       message: string;
     }
-  | { kind: "assemble_failed"; detail: string; message: string };
+  | { kind: "assemble_failed"; detail: string; message: string }
+  | {
+      kind: "validation_failed";
+      /** pre_gate: 첫 조립본이 구조 검증에 걸림(게이트 호출 0회). final: 게이트 뒤 최종 조립본이 걸림(E1). */
+      stage: "pre_gate" | "final";
+      report: ValidationReport;
+      message: string;
+    };
 
 export interface CompileResult {
   manifest: Manifest;
   files: AssembledFile[];
+  /** 최종 조립본의 구조 검증 리포트 — 항상 passed(error면 compile이 validation_failed로 끝난다, E1). warning은 남는다. */
   validation: ValidationReport;
   /** outline이 만든 슬러그 — --out 없이 --target만 줬을 때 CLI가 타깃 경로를 계산하는 데 쓴다(DESIGN §5.1 T8 결정). */
   slug: string;
@@ -259,9 +267,30 @@ export async function compile(
   const firstAssembly = assemble(false); // 게이트가 읽을 조립본 — verified 값은 게이트 판정에 영향 없음
   if (!firstAssembly.ok) return firstAssembly;
 
+  // E1: 구조 검증은 배포 차단이다 — 게이트(LLM 비용) 전에, 그리고 --no-gate여도 똑같이.
+  function validated(
+    assembled: AssembledFile[],
+    stage: "pre_gate" | "final",
+  ): Result<ValidationReport, PipelineError> {
+    const report = validateSkill(assembled, deps.config.budgets);
+    if (report.passed) return ok(report);
+    const errors = report.issues.filter((i) => i.severity === "error");
+    const codes = [...new Set(errors.map((i) => i.code))].join(", ");
+    const when = stage === "pre_gate" ? "before the quality gate" : "after the quality gate";
+    return err({
+      kind: "validation_failed",
+      stage,
+      report,
+      message: `the assembled skill fails structural validation (${String(errors.length)} error(s): ${codes}) — stopped ${when}, nothing was written. Fix: re-run compile (the distill model overran a budget or broke a chapter link); if it repeats, split the source into smaller skills.`,
+    });
+  }
+  const preGate = validated(firstAssembly.value, "pre_gate");
+  if (!preGate.ok) return preGate;
+
   let gate: GateReport | { skipped: true };
   let goldenQa: GoldenQA[];
   let files: AssembledFile[];
+  let validation: ValidationReport;
   if (runsGate) {
     const gateChapters: GateChapter[] = plan.chapters.map((c, i) => ({
       file: chapterFilePath(i, c.title),
@@ -282,13 +311,16 @@ export async function compile(
     const finalAssembly = assemble(outcome.report.passed);
     if (!finalAssembly.ok) return finalAssembly;
     files = finalAssembly.value;
+    // E1: 쓰이는 파일은 검사를 통과한 파일이어야 한다 — verified로 다시 조립한 최종본도 재검사.
+    const final = validated(files, "final");
+    if (!final.ok) return final;
+    validation = final.value;
   } else {
     gate = { skipped: true };
     goldenQa = [];
     files = firstAssembly.value;
+    validation = preGate.value;
   }
-
-  const validation = validateSkill(files, deps.config.budgets);
 
   const sourceHashes = sources.map((s) => ({ path: s.path, sha256: sha256Hex(s.bytes) }));
   const manifestSections = plan.chapters.flatMap((chapter, i) =>

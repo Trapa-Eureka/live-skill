@@ -4,6 +4,7 @@
 // 을 스모크 스크립트에도 적용).
 import {
   compile,
+  formatCompileFailure,
   formatGateReport,
   formatSkippedGate,
   trackCost,
@@ -51,7 +52,7 @@ export async function runSmoke(opts: SmokeOptions, deps: SmokeDeps): Promise<num
   };
 
   if (!result.ok) {
-    deps.out(`컴파일 실패: ${result.error.message}`);
+    deps.out(formatCompileFailure(result.error)); // E1: 구조 검증 실패면 리포트까지
     printCostSummary();
     return 1;
   }

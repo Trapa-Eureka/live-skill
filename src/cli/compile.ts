@@ -2,8 +2,10 @@
 // 여긴 조립만. 게이트 미달 시 임시 디렉터리 보존 + 종료코드 1(완료 기준).
 import {
   compile,
+  formatCompileFailure,
   formatGateReport,
   formatSkippedGate,
+  formatValidationReport,
   type AssembledFile,
   type Clock,
   type Config,
@@ -66,11 +68,12 @@ export async function runCompile(opts: CompileOptions, deps: CompileDeps): Promi
   });
 
   if (!result.ok) {
-    deps.out(`컴파일 실패: ${result.error.message}`);
+    // E1: 구조 검증 실패면 어느 파일이 왜 걸렸는지 리포트까지 — 게이트 호출 0회, 아무것도 쓰지 않았다.
+    deps.out(formatCompileFailure(result.error));
     return 1;
   }
 
-  const { manifest, files, slug, llmCalls } = result.value;
+  const { manifest, files, slug, llmCalls, validation } = result.value;
   const gate = manifest.gate;
   const gateFailed = "passed" in gate && !gate.passed;
 
@@ -101,5 +104,7 @@ export async function runCompile(opts: CompileOptions, deps: CompileDeps): Promi
 
   deps.out(`컴파일 완료: ${outDir} (LLM 호출 ${String(llmCalls)}회)`);
   deps.out("passed" in gate ? formatGateReport(gate) : formatSkippedGate());
+  // E1: error는 여기까지 못 온다(compile이 validation_failed로 끝난다) — 남은 warning(앵커 비율)만 보여준다.
+  if (validation.issues.length > 0) deps.out(formatValidationReport(validation));
   return 0;
 }

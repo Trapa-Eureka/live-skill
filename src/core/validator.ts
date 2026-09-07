@@ -47,7 +47,7 @@ function checkBudgets(files: readonly SkillFile[], budgets: Budgets): Validation
         severity: "error",
         code: "budget_exceeded",
         file: f.path,
-        message: `estimated ${String(tokens)} tokens exceeds the ${String(budget)}-token budget for this file (DESIGN §3). Fix: shorten the content or raise the budget in config.`,
+        message: `estimated ${String(tokens)} tokens exceeds the ${String(budget)}-token budget for this file (DESIGN §3). Fix: shorten the file; if compile generated it, re-run compile or split the source into smaller skills.`,
       });
     }
   }

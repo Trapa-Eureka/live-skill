@@ -158,9 +158,10 @@
 
 ### E. 구조 검증·산출물 무결성 — Medium
 
-#### E1 — 구조 검증을 배포 차단에 연결 · 상태: TODO · 원본: 001-003, SEC-009, AUD-010
+#### E1 — 구조 검증을 배포 차단에 연결 · 상태: DONE(2026-09-07) · 원본: 001-003, SEC-009, AUD-010
 - 목표: 게이트 전에 `validateSkill` error면 중단(LLM 비용 절약), `--no-gate`에서도 강제, 최종 조립본 재검증. 리포트를 사용자에게 출력.
-- 완료 기준: [ ] 예산 초과 챕터 → 종료코드 1·미배포·LLM 게이트 미호출 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #31): `compile()`이 첫 조립본을 즉시 검사해 error면 `validation_failed`(`stage: "pre_gate"`, 리포트 동봉)로 끝남 — 게이트 호출 0회, 아무것도 쓰지 않음. `gate: "skip"`도 같은 검사를 지나므로 `--no-gate`로 우회 불가. 게이트 뒤 `verified`로 다시 조립한 최종본도 재검사(`stage: "final"`, 불변식 "쓰이는 파일 = 검사 통과 파일"). `formatCompileFailure`가 실패 메시지 + 검증 리포트를 출력(compile·smoke 공용), 성공 시 warning이 있으면 리포트 덧붙임. `budget_exceeded` 수정 방법 문구를 실제 가능한 조치(재컴파일/소스 분할, 손수 만든 스킬이면 파일 단축)로 정정. DESIGN §3.1·§5.1 기록.
+- 완료 기준: [x] 예산 초과 챕터 → 종료코드 1·미배포·LLM 게이트 미호출 테스트(pipeline: `validation_failed` pre_gate + 게이트 대본 0개로 `assertExhausted`, `--no-gate`도 동일 실패, warning은 통과; CLI: 종료 1·`writeSkill` 미호출·"[ERROR] chapters/ch01-a.md (budget_exceeded)" 출력, 성공 시 `[WARNING] low_anchor_ratio` 출력; smoke: 실 PDF로 호출 3회 후 리포트 출력) [x] check 통과(24 files·377 tests)
 
 #### E2 — YAML frontmatter 직렬화·파싱 · 상태: TODO · 원본: 001-009, SEC-009, AUD-010
 - 목표: frontmatter 값을 YAML 규칙으로 이스케이프해 생성하고, validator는 실제 YAML 파싱으로 `name`/`description` 타입·값 검사.

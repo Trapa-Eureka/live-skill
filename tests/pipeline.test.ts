@@ -358,6 +358,77 @@ describe("compile — gate integration (T7, 게이트 판별력 5/5 포함)", ()
   });
 });
 
+describe("compile — structural validation blocks deployment (E1, 완료 기준)", () => {
+  // 챕터 예산을 5토큰으로 — 정상 증류 본문("Mount the unit on a flat surface. [§a]")도 넘긴다.
+  const tinyChapterBudget = { ...config, budgets: { ...config.budgets, chapter: 5 } };
+
+  it("a chapter over its token budget fails before the gate: validation_failed, no gate LLM calls, nothing returned", async () => {
+    const llm = script()
+      .outline(twoChapterPlan)
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .distill("b", "Check the fault LED. [§b]")
+      .build(); // 게이트 대본은 없다 — 게이트가 불리면 ScriptedLlm이 던져서 테스트가 실패한다
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [new FixtureExtractor({ md: twoSectionDoc })],
+      llm,
+      clock,
+      config: tinyChapterBudget,
+      gate: "run",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.kind).toBe("validation_failed");
+    if (result.error.kind !== "validation_failed") throw new Error("unreachable");
+    expect(result.error.stage).toBe("pre_gate");
+    expect(result.error.report.passed).toBe(false);
+    expect(result.error.report.issues.map((i) => [i.severity, i.code, i.file])).toEqual([
+      ["error", "budget_exceeded", "chapters/ch01-installation.md"],
+      ["error", "budget_exceeded", "chapters/ch02-troubleshooting.md"],
+    ]);
+    expect(result.error.message).toMatch(/before the quality gate.*nothing was written.*Fix:/u);
+    llm.assertExhausted(); // outline 1 + distill 2 — 게이트는 0회
+  });
+
+  it("--no-gate (gate: 'skip') is not a way around it: the same input fails the same way", async () => {
+    const llm = script()
+      .outline(twoChapterPlan)
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .distill("b", "Check the fault LED. [§b]")
+      .build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [new FixtureExtractor({ md: twoSectionDoc })],
+      llm,
+      clock,
+      config: tinyChapterBudget,
+      gate: "skip",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.kind).toBe("validation_failed");
+  });
+
+  it("warnings (anchor ratio) do not block: the compile succeeds and carries them in validation", async () => {
+    const llm = script()
+      .outline(twoChapterPlan)
+      .distill("a", "Mount the unit on a flat surface.") // 앵커 없음 → warning
+      .distill("b", "Check the fault LED. [§b]")
+      .build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [new FixtureExtractor({ md: twoSectionDoc })],
+      llm,
+      clock,
+      config,
+      gate: "skip",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.value.validation.passed).toBe(true);
+    expect(result.value.validation.issues.map((i) => [i.severity, i.code, i.file])).toEqual([
+      ["warning", "low_anchor_ratio", "chapters/ch01-installation.md"],
+    ]);
+  });
+});
+
 describe("compile — outline schema violation", () => {
   it("rejects with outline_invalid when the outline response isn't valid SkillPlan JSON", async () => {
     const extractor = new FixtureExtractor({ md: twoSectionDoc });

@@ -1,5 +1,6 @@
 // 게이트/검증 리포트를 사람이 읽을 텍스트로 바꾼다 — 순수 문자열 포맷팅, 외부 IO 없음. `report`/`validate`/
 // `compile`/`eval` CLI가 전부 이 함수들만 호출한다("cli는 조립만", DESIGN §6).
+import type { PipelineError } from "./pipeline.js";
 import type { GateReport } from "./types.js";
 import type { ValidationReport } from "./validator.js";
 
@@ -34,6 +35,13 @@ export function formatGateReport(report: GateReport): string {
 
 export function formatSkippedGate(): string {
   return "게이트: SKIPPED (--no-gate) — 산출물은 unverified 표시로 배포됐습니다.";
+}
+
+/** 파이프라인 실패 한 줄 + (구조 검증 실패면) 어느 파일이 왜 걸렸는지 리포트까지(E1). compile·smoke 공용. */
+export function formatCompileFailure(error: PipelineError): string {
+  const head = `컴파일 실패: ${error.message}`;
+  if (error.kind !== "validation_failed") return head;
+  return `${head}\n${formatValidationReport(error.report)}`;
 }
 
 export function formatValidationReport(report: ValidationReport): string {

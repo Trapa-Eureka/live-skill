@@ -94,7 +94,7 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 | 챕터 링크 | **error** | `SKILL.md` 본문에서 역따옴표로 감싼 `chapters/*.md` 경로를 전부 뽑아, 실제로 주어진 파일 목록에 그 경로가 있는지 확인 — 없으면 깨진 링크 |
 | 앵커 비율 | **warning** | 챕터 파일마다 헤딩·빈 줄을 뺀 실질 줄 중 `[§`를 포함하지 않는 비율을 계산, 기본 50% 초과 시 경고(§3 "앵커 없는 문장은 validator가 경고") — 게이트 실패 원인은 아니지만 리포트에 남는다 |
 
-`ValidationReport.passed`는 error가 하나도 없을 때만 true — warning은 통과를 막지 않는다.
+`ValidationReport.passed`는 error가 하나도 없을 때만 true — warning은 통과를 막지 않는다. **compile은 이 판정을 배포 차단으로 쓴다**(§5.1 E1): 게이트 전에 error면 중단, 최종 조립본도 재검사, 리포트는 CLI가 출력한다.
 
 ## 4. 품질 게이트 (core/gate.ts) — 제품의 심장
 
@@ -139,6 +139,7 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 - **출력 쓰기는 파이프라인 밖**: `core/pipeline.ts`는 `AssembledFile[]` + `Manifest`만 반환한다. 실제 디스크 쓰기(`--force`/out 경계 포함)는 `adapters/fsTargets.ts`가 한다 — core는 여전히 외부 IO가 없다.
 - **T8 결정**: `CompileResult`에 `slug: string`(outline이 만든 `plan.slug`)을 추가한다 — `--out` 없이 `--target`만 줬을 때 CLI가 타깃 경로(`~/.claude/skills/<slug>` 등)를 계산하려면 컴파일이 끝난 뒤에야 나오는 이 값이 필요하다(§6).
 - **B1 결정(2026-09-07, 001-004·SEC-004·AUD-004) — 검증 모집단은 모델 재량이 아니다**: 예전에는 outline이 빠뜨린 섹션이 증류·manifest·qaGen·게이트에서 전부 조용히 사라져, 쉬운 일부만으로 100% 통과할 수 있었다. 이제 (1) **모집단**은 파이프라인이 결정론으로 정한다 — `namespaceSections` 결과 중 **본문이 있는 섹션 전부**(`core/outlineCoverage.ts`의 `isSubstantiveSection`: `text.trim() !== ""`). 본문 없는 헤딩(하위 헤딩만 거느린 컨테이너 — 증류할 것도 질문을 뽑을 원문도 없다)은 outline에 보여주지 않고 배정도 요구하지 않는다; 모델이 그 id를 쓰면 "알 수 없는 id"다. 마크다운의 HTML 주석(`<!-- … -->`)은 렌더러도 보여주지 않는 텍스트이므로 `normalizeText`가 지운다 — 주석만 있던 "헤딩 없는 선두 섹션"이 모집단에 끼지 않게(자체 제작 픽스처의 가드레일 4 주석이 그 예). (2) outline 파싱 직후 `checkOutlineCoverage(plan, 모집단)`이 **모든 모집단 섹션의 정확히 1회 배정, 알 수 없는 id 부재, 섹션 중복 배정 부재, chapter id 유일성**을 검사하고, 하나라도 어긋나면 네 종류를 전부 모은 detail과 함께 `outline_invalid`로 끝난다 — distill·게이트 비용을 쓰기 전이다. 재시도(다른 outline 응답)는 v0.1에서 하지 않는다(우회 아님 — 실패 보고). `gate.ts`의 `section === undefined → continue`는 방어 코드로만 남는다.
+- **E1 결정(2026-09-07, 001-003·SEC-009·AUD-010) — 구조 검증은 배포 차단이다**: 예전엔 `validateSkill`을 게이트 *뒤에* 돌려 `CompileResult.validation`에 담기만 하고 CLI가 보지 않았다 — 1,000토큰 예산에 1,501토큰 챕터가 그대로 쓰이고 종료코드 0이 나왔고, 구조가 이미 깨진 조립본에 게이트 LLM 비용까지 썼다. 이제 순서가 문서 그대로 `assemble → validate → gate`다. (1) 첫 조립본(`verified:false`)을 즉시 `validateSkill`로 검사해 **error가 하나라도 있으면 `validation_failed`(`stage: "pre_gate"`, 리포트 동봉)로 끝난다** — 게이트 호출 0회, 아무것도 쓰지 않는다. `gate: "skip"`(`--no-gate`)도 같은 검사를 지나므로 구조 검증은 게이트 유무와 무관하게 강제된다. (2) 게이트 뒤 `verified` 값으로 다시 조립한 최종본도 한 번 더 검사한다(`stage: "final"`) — 현재 조립기는 verified일 때 unverified 배너만 빼므로 첫 검사를 통과했으면 더 짧아질 뿐이지만, 조립기가 바뀌어도 "쓰이는 파일은 검사를 통과한 파일"이라는 불변식을 코드가 지키게 한다. (3) warning(앵커 비율)은 예전처럼 배포를 막지 않되 CLI가 리포트를 출력한다 — 실패 시 `formatCompileFailure`가 메시지와 검증 리포트를 함께, 성공 시 warning이 있으면 리포트를 덧붙인다. `smoke`도 같은 포맷터를 쓴다. 검증 실패의 수정 방법은 "재컴파일(증류 모델이 예산을 넘겼거나 링크를 깨뜨림), 반복되면 소스 분할" — 예산은 §3의 정책이라 env로 열지 않는다(가드레일 1: 게이트 완화 금지의 구조판).
 
 ## 6. CLI (src/cli/)
 
