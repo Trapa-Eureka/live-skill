@@ -163,9 +163,10 @@
 - 완료(2026-09-07, PR #31): `compile()`이 첫 조립본을 즉시 검사해 error면 `validation_failed`(`stage: "pre_gate"`, 리포트 동봉)로 끝남 — 게이트 호출 0회, 아무것도 쓰지 않음. `gate: "skip"`도 같은 검사를 지나므로 `--no-gate`로 우회 불가. 게이트 뒤 `verified`로 다시 조립한 최종본도 재검사(`stage: "final"`, 불변식 "쓰이는 파일 = 검사 통과 파일"). `formatCompileFailure`가 실패 메시지 + 검증 리포트를 출력(compile·smoke 공용), 성공 시 warning이 있으면 리포트 덧붙임. `budget_exceeded` 수정 방법 문구를 실제 가능한 조치(재컴파일/소스 분할, 손수 만든 스킬이면 파일 단축)로 정정. DESIGN §3.1·§5.1 기록.
 - 완료 기준: [x] 예산 초과 챕터 → 종료코드 1·미배포·LLM 게이트 미호출 테스트(pipeline: `validation_failed` pre_gate + 게이트 대본 0개로 `assertExhausted`, `--no-gate`도 동일 실패, warning은 통과; CLI: 종료 1·`writeSkill` 미호출·"[ERROR] chapters/ch01-a.md (budget_exceeded)" 출력, 성공 시 `[WARNING] low_anchor_ratio` 출력; smoke: 실 PDF로 호출 3회 후 리포트 출력) [x] check 통과(24 files·377 tests)
 
-#### E2 — YAML frontmatter 직렬화·파싱 · 상태: TODO · 원본: 001-009, SEC-009, AUD-010
+#### E2 — YAML frontmatter 직렬화·파싱 · 상태: DONE(2026-09-07) · 원본: 001-009, SEC-009, AUD-010
 - 목표: frontmatter 값을 YAML 규칙으로 이스케이프해 생성하고, validator는 실제 YAML 파싱으로 `name`/`description` 타입·값 검사.
-- 완료 기준: [ ] `Guide: Setup` 제목 라운드트립 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #32): 새 `core/frontmatter.ts`(의존성 `yaml` 2.9, ISC 추가). `serializeFrontmatter`는 값을 **항상 큰따옴표**로 직렬화(`lineWidth: 0`) — YAML 1.1 파서가 `yes`/`no`/`null`을 불리언·null로 읽는 함정까지 차단, 출력 결정론(스냅샷 갱신). `parseFrontmatter`는 실제 `parse`로 읽어 `missing_block`/`syntax`/`not_a_map`/`missing_field`/`invalid_field`를 구분하고 zod로 `name`(§2 slug 스키마)·`description`(비어 있지 않은 ≤1,024자, 제어문자 금지) 검사, 표준 밖 키는 `unknownKeys`. validator: 정규식 키 존재 검사를 이 함수로 교체 — `invalid_frontmatter`(error)·`unknown_frontmatter_key`(warning) 코드 추가. assembler는 `serializeFrontmatter` 사용. DESIGN §3·§3.1 기록.
+- 완료 기준: [x] `Guide: Setup` 제목 라운드트립 테스트(assembler → validator 통과 → 파서가 원문 그대로 반환; 13종 적대 제목 라운드트립; `yes`/`no` 항상 인용; 긴 값 접기 없음; 문제 5종 구분; 타입·값 오류 8종; validator가 미인용 `Guide: Setup`을 거부하고 인용본은 허용, 미지 키 warning) [x] check 통과(25 files·414 tests)
 
 #### E3 — report 변조·손상 탐지 · 상태: TODO · 원본: AUD-012 · 의존: A3
 - 목표: manifest `outputs`에 파일별 sha256 추가(스키마 갱신), `report`/`eval`이 현재 파일과 대조해 불일치면 STALE/TAMPERED로 실패.

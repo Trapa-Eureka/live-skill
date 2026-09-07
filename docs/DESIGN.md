@@ -61,7 +61,7 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 
 | 파일 | 내용 | 예산(기본) |
 |---|---|---|
-| `SKILL.md` | 핵심 멘탈 모델 + 챕터 인덱스(파일·주제·로딩 힌트) + `unverified` 표시(게이트 스킵 시) | ~4,000 tok |
+| `SKILL.md` | YAML 프런트매터(`name`=slug, `description`=제목 — E2: 라이브러리 직렬화, 값은 항상 인용) + 핵심 멘탈 모델 + 챕터 인덱스(파일·주제·로딩 힌트) + `unverified` 표시(게이트 스킵 시) | ~4,000 tok |
 | `chapters/chNN-*.md` | 챕터별 증류 본문 + 원문 앵커 각주(`[§sectionId]`) | ~1,000 tok/개 |
 | `glossary.md` | 핵심 용어 — **원문 용어 그대로**, 챕터 참조 | ~1,500 tok |
 | `patterns.md` | 기법·절차·안티패턴 | ~2,000 tok |
@@ -90,11 +90,13 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 | 검사 | 판정 | 규칙 |
 |---|---|---|
 | 예산 초과 | **error** | 파일마다 `estimateTokens(content)`를 경로로 판별한 예산(§3 표, `Config.budgets`)과 비교. `chapters/*.md`는 파일마다 개별로. 초과 시 강제 실패(§3 "validator가 강제한다") |
-| 프런트매터 | **error** | `SKILL.md`가 없거나, `---`로 시작하는 YAML 프런트매터에 `name`·`description` 필드가 없으면 실패 |
+| 프런트매터 | **error** / warning | `SKILL.md`가 없거나 `---` 블록이 없거나 `name`·`description`이 없으면 `missing_frontmatter`; 블록이 YAML로 파싱되지 않거나(`description: Guide: Setup`), 맵이 아니거나, `name`이 slug 형식(§2)이 아니거나, `description`이 비었거나 1,024자를 넘거나 제어문자를 담으면 `invalid_frontmatter`(E2). 표준에 없는 키는 `unknown_frontmatter_key` **warning** |
 | 챕터 링크 | **error** | `SKILL.md` 본문에서 역따옴표로 감싼 `chapters/*.md` 경로를 전부 뽑아, 실제로 주어진 파일 목록에 그 경로가 있는지 확인 — 없으면 깨진 링크 |
 | 앵커 비율 | **warning** | 챕터 파일마다 헤딩·빈 줄을 뺀 실질 줄 중 `[§`를 포함하지 않는 비율을 계산, 기본 50% 초과 시 경고(§3 "앵커 없는 문장은 validator가 경고") — 게이트 실패 원인은 아니지만 리포트에 남는다 |
 
 `ValidationReport.passed`는 error가 하나도 없을 때만 true — warning은 통과를 막지 않는다. **compile은 이 판정을 배포 차단으로 쓴다**(§5.1 E1): 게이트 전에 error면 중단, 최종 조립본도 재검사, 리포트는 CLI가 출력한다.
+
+**E2 결정(2026-09-07, 001-009·SEC-009·AUD-010) — 프런트매터는 YAML 라이브러리로 쓰고 읽는다**: 예전엔 assembler가 `description: ${title}`처럼 값을 이어 붙이고 validator는 `^name:` 키 존재만 정규식으로 봤다 — `Guide: Setup` 같은 제목은 YAML을 깨뜨리는데도(중첩 매핑 오류) 자체 검증을 통과해 배포됐고, 실제 Agent Skills 소비자가 읽다 실패한다. `core/frontmatter.ts`가 한 쌍을 제공한다. (1) **직렬화** `serializeFrontmatter({ name: slug, description: title })`: `yaml` 패키지(ISC, 새 의존성)로 만들되 **값은 항상 큰따옴표**(`defaultStringType: "QUOTE_DOUBLE"`, `lineWidth: 0`으로 접기 금지) — 라이브러리가 필요할 때만 인용하는 기본 동작은 `yes`/`no`/`null`/`true`를 평문으로 내놓는데, YAML 1.2(이 라이브러리)에선 문자열이어도 YAML 1.1 파서(PyYAML 등)는 불리언·null로 읽는다. 늘 인용하면 어느 소비자든 같은 문자열을 얻고 출력도 결정론이다(스냅샷 갱신). (2) **파싱** `parseFrontmatter(content)`: `---` 블록을 실제 `parse`로 읽어 구문 오류·맵 아님·필수 키 누락·타입/값 오류를 구분해 돌려주고, 필드는 zod로 검사한다 — `name`은 §2 slug 스키마(Agent Skills의 name 규칙과 같고 디렉터리 이름과 맞아야 한다), `description`은 비어 있지 않은 1,024자 이하 텍스트(개행·탭 외 제어문자 금지). 표준(`name`·`description`·`license`·`allowed-tools`·`metadata`·`compatibility`)에 없는 키는 error가 아니라 warning — 표준이 자라도 손수 만든 스킬을 막지 않기 위해. validator의 프런트매터 검사는 전부 이 함수 위에 있다. 자체 최소 파서 대신 라이브러리를 택한 이유: 검증기가 "소비자가 읽는 방식"과 같아야 손수 편집한 SKILL.md도 정확히 판정할 수 있다.
 
 ## 4. 품질 게이트 (core/gate.ts) — 제품의 심장
 

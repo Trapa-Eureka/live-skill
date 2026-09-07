@@ -2,6 +2,7 @@
 // 않는다(완료 기준, tests/assembler.test.ts의 "LLM 의존 0" 검사가 이 파일 자체를 스캔해 강제한다).
 // 같은 입력(plan + distilled)은 항상 같은 산출을 낸다 — 파일명도 outline 제안을 신뢰하지 않고 여기서
 // 다시 계산한다(§2 T4 결정).
+import { serializeFrontmatter } from "./frontmatter.js";
 import { slugifyHeading } from "./sectionId.js";
 import { estimateTokens } from "./tokenEstimate.js";
 import type { ChapterPlan, DistilledChapter, SkillPlan } from "./types.js";
@@ -134,10 +135,8 @@ function buildSkillMd(
   verified: boolean,
 ): string {
   const lines: string[] = [
-    "---",
-    `name: ${plan.slug}`,
-    `description: ${plan.title}`,
-    "---",
+    // E2: 값을 이어 붙이지 않고 YAML로 직렬화한다 — "Guide: Setup" 같은 제목도 소비자가 그대로 읽는다.
+    serializeFrontmatter({ name: plan.slug, description: plan.title }),
     "",
     `# ${plan.title}`,
     "",
