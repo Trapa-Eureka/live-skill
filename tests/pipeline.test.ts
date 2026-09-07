@@ -119,6 +119,44 @@ describe("compile — multi-source section-id namespacing (DESIGN §5.1)", () =>
     if (!result.ok) throw new Error("expected success");
     expect(result.value.manifest.sections.map((s) => s.id)).toEqual(["a/overview", "b/overview"]);
   });
+
+  // F2 (001-006, 완료 기준): 다른 폴더의 같은 파일명 — 예전 basename 접두어는 둘 다 "readme/overview"가 되어
+  // 뒤 파일이 앞 파일의 원문을 덮어썼다.
+  it("keeps sections from same-named files in different folders apart (relative-path prefixes)", async () => {
+    const doc: ExtractedDoc = {
+      sections: [{ id: "overview", heading: "Overview", level: 1, text: "Overview text." }],
+    };
+    const plan: SkillPlan = {
+      slug: "s",
+      title: "S",
+      chapters: [
+        { id: "c1", file: "x", title: "A", sectionIds: ["a-readme/overview"] },
+        { id: "c2", file: "y", title: "B", sectionIds: ["b-readme/overview"] },
+      ],
+    };
+    const llm = script()
+      .outline(plan)
+      .distill("c1", "A. [§a-readme/overview]")
+      .distill("c2", "B. [§b-readme/overview]")
+      .build();
+    const result = await compile(
+      [
+        { path: "/root/docs/a/readme.md", bytes: nameAsBytes("readme.md") },
+        { path: "/root/docs/b/readme.md", bytes: nameAsBytes("readme.md") },
+      ],
+      { extractors: [new FixtureExtractor({ md: doc })], llm, clock, config, gate: "skip" },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.value.manifest.sections.map((s) => s.id)).toEqual([
+      "a-readme/overview",
+      "b-readme/overview",
+    ]);
+    // outline이 본 모집단에도 두 섹션이 모두 있었다(덮어쓰기 없음).
+    const outline = llm.calls.find((c) => c.role === "outline");
+    expect(outline?.prompt).toContain("[§a-readme/overview]");
+    expect(outline?.prompt).toContain("[§b-readme/overview]");
+  });
 });
 
 describe("compile — empty input", () => {

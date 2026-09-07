@@ -180,9 +180,10 @@
 - 완료(2026-09-07, PR #34): `distillPrompt`의 `sections` 블록이 섹션 **전문**을 담는다(400자 발췌는 outline 전용으로만 남김). 청크 분할·병합은 두지 않음 — `compile()`이 outline 전에 전체 입력을 `MAX_INPUT_TOKENS`(30k, `core/tokenEstimate.ts`로 이동해 prompts·pipeline 공용)로 막으므로 챕터 원문이 그 값을 넘는 일은 구조적으로 없고, `distillPrompt`는 그 불변식을 명시적으로 검사해 넘으면 조용히 자르는 대신 throw(호출자 버그로 드러남). DESIGN §5.1 기록.
 - 완료 기준: [x] 2,000자 초과 섹션의 뒷부분이 distill 프롬프트에 포함되는 테스트(프롬프트 단위: 전문 포함·`…` 없음·상한 초과 throw·outline은 발췌 유지; 파이프라인: 실제 `compile()`이 보낸 distill 요청에 뒷부분 그대로) [x] check 통과(26 files·425 tests)
 
-#### F2 — 섹션 ID 충돌 · 상태: TODO · 원본: 001-006 · High
+#### F2 — 섹션 ID 충돌 · 상태: DONE(2026-09-07) · 원본: 001-006 · High
 - 목표: 최종 ID 집합 기준으로 충돌 없는 접미사 생성(`A, A, A-2` → 3개 고유). 다중 소스 namespace를 basename 대신 입력 루트 상대 경로(또는 안정 해시) 기반으로.
-- 완료 기준: [ ] `A, A, A-2` 고유 ID 테스트 [ ] 다른 폴더 같은 파일명 충돌 없음 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #35): `core/sectionId.ts`에 `disambiguate(base, used)`(이미 쓰인 id와 겹치지 않는 첫 `-n` 후보) 도입 — `assignSectionIds`가 이를 쓰고 자식은 조상의 최종 id 위에 붙음(`overview-2/steps`). 새 `namespacePrefixes(paths)`: 공통 상위 디렉터리를 뺀 상대 경로 슬러그(확장자 제거) + 같은 접미사 규칙; pipeline `namespaceSections`가 사용하고 결과 유일성을 검사해 겹치면 throw. DESIGN §2·§5.1 기록.
+- 완료 기준: [x] `A, A, A-2` 고유 ID 테스트(정순·역순, 중복 부모 아래 자식 분리, 200회 무작위 속성 테스트) [x] 다른 폴더 같은 파일명 충돌 없음 테스트(`namespacePrefixes` 단위 + `compile()` 파이프라인에서 `a-readme/overview`·`b-readme/overview`가 모두 outline 모집단에 존재) [x] check 통과(26 files·438 tests)
 
 #### F3 — eval namespace 공용화 · 상태: TODO · 원본: 001-008 · 의존: F2
 - 목표: `namespaceSections`를 공용 함수로 분리해 compile/eval 동일 적용. manifest와 매칭되지 않는 원문은 명시적 오류.
