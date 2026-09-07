@@ -17,38 +17,46 @@
 - 완료(2026-09-06, PR #2): `package.json`(`bin: live-skill`)·`tsconfig(.build).json`·`eslint.config.js`·`vitest.config.ts`·`.env.example`를 msg-agent 이식으로 작성, `src/cli/index.ts`(commander, compile/validate/eval/report 4종 스텁)·`src/version.ts`·`scripts/check-tarball.sh`(msg-agent 이식)·`scripts/smoke.ts`(T10 전까지 스텁) 추가.
 - 완료 기준: [x] `npm run check` 통과 [x] 더미 테스트 1개(`tests/version.test.ts`) [x] `npm run cli -- --help` 동작 [x] git init + 첫 커밋
 
-### T1 — 도메인 타입 + config · 상태: TODO · 의존: T0
+### T1 — 도메인 타입 + config · 상태: DONE(2026-09-06) · 의존: T0
 - 목표: `core/types.ts`(DESIGN §2 전체 — SkillPlan/DistilledChapter/GoldenQA/GateReport/Manifest), config zod(예산·임계치·k·상한, env 병합), 섹션 id 슬러그 규칙(헤딩 경로 기반, 안정성).
 - 설계 참고(2026-09-06 확인): `../msg-agent/src/core/index.ts`의 `DocumentExtractor.extract()`는 예외 대신 `Result<ExtractedDoc, ExtractError>`를 반환한다 — TESTING §4 "빈 문서/미지원 형식 → 수정 방법 담긴 거절" 요구를 결정론적으로 표현하기 좋은 패턴. DESIGN §2의 `extract(): Promise<ExtractedDoc>`를 이 형태로 조정할지 이 태스크에서 결정하고, 채택 시 DESIGN.md를 코드보다 먼저 갱신(CLAUDE.md 컨벤션).
+- 완료(2026-09-06, PR #5): `core/types.ts`(DESIGN §2)·`core/config.ts`(zod, env 병합)·`core/sectionId.ts`(헤딩 경로 슬러그) — `DocumentExtractor.extract()`는 msg-agent 규약대로 `Result`를 반환하도록 DESIGN §2 조정.
 - 완료 기준: [ ] 전 스키마 라운드트립 테스트 [ ] 슬러그 안정성 테스트(같은 문서 재추출 → 같은 id) [ ] check 통과
 
-### T2 (레인 A) — 추출기 4종 + 자작 픽스처 · 상태: TODO · 의존: T1
+### T2 (레인 A) — 추출기 4종 + 자작 픽스처 · 상태: DONE(2026-09-06) · 의존: T1
 - 목표: pdf-parse·mammoth·MD/TXT·HTML(cheerio) 추출기(섹션 헤딩 구조화, message 규약 동일 시그니처) + `fixtures/docs/` 자작 3종·엣지 문서·`samples/manual.pdf` 제작.
 - 참고 구현(2026-09-06 확인): `../msg-agent/src/adapters/extractors/`(`pdf.ts`·`docx.ts`·`text.ts`·`route.ts`·`limits.ts`·`index.ts`)가 CLAUDE.md가 말하는 "message 레포의 추출기 시그니처와 동일 규약"의 실체 — pdf-parse·mammoth를 그대로 쓰고 있어 직접 이식 가능(HTML/cheerio 추출기는 live-skill 신규 작성, 참고 구현 없음).
+- 완료(2026-09-06, PR #6): PDF(pdf-parse)·DOCX(mammoth)·MD/TXT·HTML(cheerio) 추출기 + `fixtures/docs/` 자작 픽스처·`samples/manual.pdf`.
 - 완료 기준: [ ] 형식별 구조 추출 테스트 [ ] 저작권 텍스트 부재(자작 확인 주석) [ ] check 통과
 
-### T3 (레인 B) — LlmProvider + ScriptedLlm · 상태: TODO · 의존: T1
+### T3 (레인 B) — LlmProvider + ScriptedLlm · 상태: DONE(2026-09-06) · 의존: T1
 - 목표: `LlmProvider` 인터페이스 + Claude 어댑터(주입 fetch, MODEL env) + `ScriptedLlm`(역할 라우팅·순차 재생·assert_exhausted) + `script()` 빌더 + 프롬프트 5종(outline/distill/qaGen/answer/grade — 원문 용어 보존·앵커 필수·보수 채점 명시).
+- 완료(2026-09-06, PR #7): `LlmProvider` + Claude 어댑터, `ScriptedLlm`(역할 라우팅·assertExhausted)·`script()` 빌더, 프롬프트 5종.
 - 완료 기준: [ ] 대본 소진·역할 불일치 명확 실패 테스트 [ ] 목 fetch 요청 형태 테스트 [ ] check 통과
 
-### T4 (레인 C) — Assembler (결정론 조립) · 상태: TODO · 의존: T1
+### T4 (레인 C) — Assembler (결정론 조립) · 상태: DONE(2026-09-06) · 의존: T1
 - 목표: DistilledChapter[] → 5파일 산출(DESIGN §3 템플릿), 토큰 예산 계산, unverified 표시 삽입 로직.
+- 완료(2026-09-06, PR #8): `core/assembler.ts` — 5파일 템플릿 조립·토큰 예산·unverified 표시, 스냅샷 테스트, LLM 의존 0.
 - 완료 기준: [ ] 고정 입력 스냅샷 일치 [ ] 예산 계산 단위 테스트 [ ] LLM 의존 0 (import 검사) [ ] check 통과
 
-### T5 — Validator (구조 검증) · 상태: TODO · 의존: T4
+### T5 — Validator (구조 검증) · 상태: DONE(2026-09-06) · 의존: T4
 - 목표: 예산·프런트매터·챕터 링크·앵커 비율 검사, `validate` 명령용 리포트 타입.
+- 완료(2026-09-06, PR #9): `core/validator.ts` — 예산·프런트매터·챕터 링크·앵커 비율(DESIGN §3.1), LLM 0회 import 검사.
 - 완료 기준: [ ] TESTING §3 validator 4항목 검출 테스트 [ ] LLM 0회 보장 [ ] check 통과
 
-### T6 — 컴파일 파이프라인 + manifest · 상태: TODO · 의존: T2, T3, T4, T5
+### T6 — 컴파일 파이프라인 + manifest · 상태: DONE(2026-09-06) · 의존: T2, T3, T4, T5
 - 목표: extract→outline→distill→assemble→validate 오케스트레이션, Manifest 기록(소스·섹션 해시), 비용 상한 산식, `--force`/out 경계.
+- 완료(2026-09-06, PR #10): `core/pipeline.ts` — extract→outline→distill→assemble→validate, manifest(소스·섹션 해시), 비용 상한 산식, 결정론 테스트.
 - 완료 기준: [ ] 정상 대본 e2e(게이트 제외) 통과 [ ] manifest 결정론(TESTING §3) [ ] 상한·덮어쓰기·경계 케이스(TESTING §4 파이프라인 항목) [ ] check 통과
 
-### T7 — 품질 게이트 · 상태: TODO · 의존: T3, T6
+### T7 — 품질 게이트 · 상태: DONE(2026-09-06) · 의존: T3, T6
 - 목표: qaGen(앵커 실존 검사·재생성 1회) → answerer 격리 시뮬레이터(SKILL.md→챕터 선택→선택 파일만 로드, 로드 이력 기록) → 이중 채점 → 판정·GateReport.
+- 완료(2026-09-06, PR #11): `core/gate.ts` — qaGen(앵커 실존 검사·재생성 1회)·answerer 격리 시뮬레이터·이중 채점·GateReport, 게이트 판별력 5항목·격리 2항목 테스트.
 - 완료 기준: [ ] **TESTING §4 "게이트 판별력" 5항목 전부** (훼손 주입 검출 포함) [ ] **격리 2항목 전부** [ ] check 통과
 
-### T8 — CLI 4종 · 상태: TODO · 의존: T6, T7
+### T8 — CLI 4종 · 상태: DONE(2026-09-06) · 의존: T6, T7
 - 목표: `compile/validate/eval/report` (DESIGN §6), 종료코드 규약, 게이트 미달 시 임시 디렉터리 보존.
+- 완료(2026-09-06, PR #12): `compile/validate/eval/report`(`run<Command>(opts, deps)` 조립), 종료코드 규약, 게이트 미달 시 임시 디렉터리 보존.
 - 완료 기준: [ ] TESTING §4 CLI 관련 항목(eval 재사용·report·종료코드) [ ] cli는 조립만(로직 없음) [ ] check 통과
 
 ### T9 — e2e-mock + 커버리지 · 상태: DONE(2026-09-06) · 의존: T8
@@ -231,17 +239,20 @@
 
 ### I. 저수준·문서 정합성 — Low
 
-#### I1 — `--target` 값 검증 · 상태: TODO · 원본: 001-018
+#### I1 — `--target` 값 검증 · 상태: DONE(2026-09-07) · 원본: 001-018
 - 목표: `claude|agents` 외 값은 실행 전 명시적 오류(commander `choices`).
-- 완료 기준: [ ] 오탈자 → 종료코드≠0 + 메시지 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #42 — I1·I2·I3 묶음, 커밋은 태스크별): commander 정의를 `src/cli/program.ts`(`buildProgram()`)로 뽑고 `--target`을 `Option.choices(["claude","agents"])`로 — 오탈자는 액션 실행 전에 거부(예전엔 조용히 claude). `index.ts`는 .env 로드 + 오류 경계 + 실행만.
+- 완료 기준: [x] 오탈자 → 종료코드≠0 + 메시지 테스트(`tests/program.test.ts`: `claud`·`Claude`·`agent`·`codex`·빈 값 → `commander.invalidArgument`, "claude, agents" 안내; choices·기본값 선언 확인) [x] check 통과
 
-#### I2 — Node 지원 범위 정합 · 상태: TODO · 원본: 001-016, AUD-019
+#### I2 — Node 지원 범위 정합 · 상태: DONE(2026-09-07) · 원본: 001-016, AUD-019
 - 목표: 의존성(commander 15 `>=22.12`, vitest 5)이 지원하는 최소 버전으로 `engines`·CI matrix·README·CLAUDE.md를 맞추거나 Node 20 호환 버전을 고정 — 착수 시 사용자에게 방향 확인(CLAUDE.md "Node.js 20+" 변경 여부).
-- 완료 기준: [ ] engines·CI·문서 일치 [ ] check 통과
+- 완료(2026-09-07, PR #42): **방향 (a) 상향**으로 진행(사용자가 묶음 진행만 지시하고 방향은 지정하지 않아 추천안 적용 — 되돌리려면 이 커밋만 revert). 런타임 의존성 실측: commander `>=22.12.0`, pdf-parse `>=22.3.0`, cheerio `>=20.18.1` → `engines.node >= 22.12.0`. CI matrix 22·24(Node 20은 2026-04 EOL, 의존성 미지원이라 "우연히 동작"이었음), CLAUDE.md·README·PUBLISHING §0/§3-2 정합.
+- 완료 기준: [x] engines·CI·문서 일치 [x] check 통과
 
-#### I3 — 상태 문서 정합성 · 상태: TODO · 원본: 001-019, AUD-020
+#### I3 — 상태 문서 정합성 · 상태: DONE(2026-09-07) · 원본: 001-019, AUD-020
 - 목표: T1~T8 상태 마커 DONE 반영, `docs/PUBLISHING.md` §0·§2의 "코드 미착수" 문구 갱신, README 상태 동기화. 과거 기록은 날짜 붙은 상태 로그로 유지.
-- 완료 기준: [ ] TASKS·PUBLISHING·README 상태 일치 [ ] check 통과
+- 완료(2026-09-07, PR #42): T1~T8에 `DONE(2026-09-06)` + PR 번호(#5~#12)·한 줄 요약, PUBLISHING §0 "코드 구현" 행과 §2 문구를 현재 상태(T0~T11 완료, 검수 수정 30/30)로 갱신, README(en/ko) 상태 절에 2026-09-06 T11·2026-09-07 검수 수정 완료 항목 추가 — 과거 항목은 날짜 붙은 로그로 유지.
+- 완료 기준: [x] TASKS·PUBLISHING·README 상태 일치 [x] check 통과
 
 ---
 
