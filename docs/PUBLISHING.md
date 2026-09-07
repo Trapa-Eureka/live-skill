@@ -19,6 +19,8 @@
 
 동일 카테고리 경쟁사·명칭 충돌 조사는 `docs/MARKET.md` §2 참조.
 
+- **main 보호 상태(2026-09-07, H1)**: 저장소 private, `main.protected=false`, rulesets/branch-protection API 403(무료 private 플랜 제한). 강제 수단이 없으므로 §3-9의 수동 통제로 대신한다 — 활성화 절차는 §3-14-1, 결정 시점은 §4.
+
 ## 1. 실전 선례 — 형제 레포에서 이미 확인된 함정
 
 같은 저자(Trapa-Eureka, npm 계정 `shiz_son`)의 두 레포가 이미 이 경로를 지났다. 처음부터 다시 겪을 필요 없는 함정들:
@@ -58,12 +60,13 @@ T0(스캐폴딩) → T1(타입/config) → {T2 추출기, T3 LlmProvider, T4 Ass
 6. **`bin` 스크립트 점검**: `dist/cli/index.js`에 `#!/usr/bin/env node` shebang, 빌드 스크립트에서 `chmod +x`(§1 REL-002) — `tsconfig.build.json`으로 `dist/`만 빌드, `tsx`는 devDependency 유지(§1 REL-003).
 7. **`npm pack --dry-run`**: 파일 목록 검수. msg-agent의 `scripts/check-tarball.sh` 패턴을 포팅해 `.env`·key-like 문자열 자동 검사(가드레일 7 최종 방어선, §1 참고).
 8. **`npm publish --dry-run`**: 레지스트리 응답까지 포함한 최종 리허설.
-9. **CI 그린 확인**: GHA `ci.yml`(T11 원 항목)이 `npm run check`를 실행하고 통과하는지 확인.
+9. **CI 그린 확인 — 정확한 커밋으로**: GHA `ci.yml`(T11 원 항목)이 `npm run check`를 실행하고 통과하는지 확인한다. **main 보호가 아직 없는 동안(H1, AUD-016)은 이것이 수동 통제다**: 배포할 커밋 SHA에 대해 `main` 브랜치의 CI 실행이 성공했는지 *그 SHA로* 확인한다 — `gh run list --branch main --commit <sha> --json conclusion,name --jq '.[] | {name, conclusion}'`가 `check` 워크플로 `success`를 보여야 하고, `git rev-parse HEAD`·`git rev-parse origin/main`이 그 SHA와 같아야 한다(로컬 미푸시 커밋으로 배포하지 않는다). 실행 규칙(현재 관행, CLAUDE.md "작업 방식"): main에 직접 push하지 않고 모든 변경은 PR → PR CI 그린 → 스쿼시 머지 → 머지 커밋의 main CI 재확인. 이 규칙은 사람이 지키는 것이므로 §3-14-1의 ruleset이 켜지기 전까지는 "강제"가 아니라 "관행"이다.
 10. **`prepublishOnly` 게이트 wiring**: `"prepublishOnly": "npm run check && npm run verify:pack"` 형태로 — 로컬/CI 어디서 `npm publish`를 실행하든 체크·빌드·tarball 검증이 강제되게(§1 REL-007).
 11. **버전·태깅 전략 확정**: `0.1.0`부터 semver 시작, `public beta`/`alpha` 태그(`npm publish --tag beta`) 사용 여부를 SPEC 성숙도(§6 성공 기준 충족 여부)에 맞춰 결정.
 12. **npm 2FA 확인**: 계정 `shiz_son`의 2단계 인증·publish 시 OTP 요구 여부 확인 — CI에서 publish 시엔 automation 토큰 필요.
 13. **(권장) provenance 배포**: GitHub Actions + OIDC로 `npm publish --provenance`(retail-mcp가 이미 `.github/workflows/release.yml`로 채택한 패턴 — 태그 푸시 → publish). `id-token: write` 권한 필요.
 14. **GitHub 저장소 공개 전환 — 타이밍 명시**: `package.json`의 `repository`/`bugs`/`homepage`가 GitHub URL을 가리키므로, **npm 배포 직전(§3-9까지 통과 확인 후) 공개로 전환**한다. 전환 직후 재점검: README에 비공개 시절 흔적 없는지 / LICENSE 노출 / GitHub Actions 시크릿(`NPM_TOKEN`)이 fork PR에 노출되지 않는지.
+14-1. **main 브랜치 보호 ruleset 활성화** (H1, AUD-016 — 공개 전환 직후 또는 GitHub Pro 플랜 전환 시; private 무료 플랜에서는 rulesets/branch protection API가 403이라 켤 수 없음, 2026-09-07 확인). Settings → Rules → Rulesets → New branch ruleset: 이름 `main-protection`, Enforcement `Active`, Target `main`(default branch). 규칙: **Restrict deletions** / **Block force pushes** / **Require linear history**(스쿼시 머지만 남긴다) / **Require a pull request before merging**(승인 수 0 — 단독 유지보수자; "Dismiss stale pull request approvals when new commits are pushed" 켜기 — 승인자가 생기면 의미를 갖는다) / **Require status checks to pass**(필수 검사 `check (node 20)`, `check (node 22)`; "Require branches to be up to date before merging" 켜기). **Bypass list는 비운다** — 관리자 우회를 허용하면 단독 레포에서는 보호가 무의미해진다; 긴급 수정도 PR로 간다. 검증: `gh api repos/Trapa-Eureka/live-skill/rulesets --jq '.[] | {name, enforcement}'`가 `main-protection`/`active`를 돌려주고, 임시 브랜치에서 `git push origin HEAD:main`이 거부돼야 한다. 기존 자동화(에이전트 세션의 커밋→PR→스쿼시 머지 흐름)는 그대로 동작한다 — `gh pr merge --squash`는 필수 검사 통과 후에만 성공하므로 오히려 흐름이 강제된다.
 15. **`npm publish`** 실행 (unscoped면 기본 public, scoped면 `--access public` 필요). **이 버튼은 사람이 누른다** (WORKFLOW §4).
 16. **배포 후 확인**: `https://www.npmjs.com/package/<name>` 페이지 렌더링, `npx <name> --help` 실제 설치 스모크.
 17. **GitHub Release 태그** 생성 + CHANGELOG 첫 항목 작성.
@@ -75,6 +78,7 @@ T0(스캐폴딩) → T1(타입/config) → {T2 추출기, T3 LlmProvider, T4 Ass
 - LICENSE 저작권자 표기(개인/법인)
 - `npm publish` 실행 시점
 - GitHub 공개 전환 시점
+- **main 브랜치 보호(ruleset) 활성화 시점** — 공개 전환과 함께, 또는 그 전에 GitHub Pro로 올려 먼저 켤지(H1, AUD-016). 켜기 전까지는 §3-9의 수동 통제(정확한 SHA의 main CI 성공 확인 + PR 전용 머지 관행)가 유일한 방어선이다.
 - 게이트 임계치·k 기본값, 실 LLM 스모크 비용 지출
 
 ## 5. 리스크·주의사항
