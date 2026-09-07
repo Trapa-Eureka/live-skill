@@ -59,7 +59,7 @@ live-skill은 그 두 빈칸을 제품의 축으로 삼는 **별도 신규 제�
 
 ## 8. 미결 사항
 
-- [x] npm 패키지명 가용성 조사 완료(2026-09-06, T11): `live-skill`·`live-skills` 재조회로 여전히 미등록 확인(2026-09-06 기준), 후보 2개째로 `skill-gate`(품질 게이트 차별점을 이름에 직접 반영, 미등록 확인)를 추가 조사 — SPEC이 요구한 "후보 2개" 충족. `skillgate`(하이픈 없음)는 이미 등록돼 있어 후보에서 제외. **최종 확정은 실제 `npm publish` 직전에 사람이 결정**(WORKFLOW §4, `docs/PUBLISHING.md` §3-1) — npm 이름은 선착순이라 그 시점에 재조회 필요. 상세: `docs/PUBLISHING.md` §0.
-- [ ] 게이트 기본 임계치 90%·섹션당 질문 수 k=3 — 스모크 후 튜닝
+- [x] npm 패키지명 가용성 조사 완료(2026-09-06, T11): `live-skill`·`live-skills` 재조회로 여전히 미등록 확인(2026-09-06 기준), 후보 2개째로 `skill-gate`(품질 게이트 차별점을 이름에 직접 반영, 미등록 확인)를 추가 조사 — SPEC이 요구한 "후보 2개" 충족. `skillgate`(하이픈 없음)는 이미 등록돼 있어 후보에서 제외. **최종 확정은 실제 `npm publish` 직전에 사람이 결정**(WORKFLOW §4, `docs/PUBLISHING.md` §3-1) — npm 이름은 선착순이라 그 시점에 재조회 필요. 상세: `docs/PUBLISHING.md` §0. **2026-09-07 확정: `live-skills`**(사람 결정; 배포 직전 재조회로 `live-skill`·`live-skills` 모두 미등록 확인). `package.json.name`·`bin`·CLI 표시명 모두 `live-skills`, GitHub 저장소명은 `live-skill` 유지.
+- [x] 게이트 기본 임계치 90%·섹션당 질문 수 k=3 — 2026-09-07 사람 결정: 실 LLM 스모크(비용 지출) 없이 현재 기본값 그대로 확정. 튜닝은 실사용 게이트 리포트가 쌓인 뒤 재검토(하한 0.5는 DESIGN §7 B4).
 - [ ] 채점기 이중화(루브릭 LLM + 앵커 문자열 일치)의 가중치
 - [ ] 타깃 디렉터리 우선순위(claude/agents/copilot)와 자동 감지 여부

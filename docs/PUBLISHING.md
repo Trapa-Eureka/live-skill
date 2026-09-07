@@ -7,10 +7,10 @@
 | 항목 | 상태 |
 |---|---|
 | 코드 구현 | **v0.1 완료** — T0~T11 전부 DONE(2026-09-06), 검수 3건(`docs/001~003_*.md`) 수정 태스크 30/30 완료(2026-09-07, PR #16~#42). 남은 것은 §4의 사람 결정뿐(I3 갱신; 2026-09-06 시점엔 미착수였다) |
-| GitHub 저장소 | `Trapa-Eureka/live-skill`, **PRIVATE**, origin 연결 확인됨 |
+| GitHub 저장소 | `Trapa-Eureka/live-skill`, **PUBLIC**(2026-09-07 사람이 전환; 그 전까지 PRIVATE), origin 연결 확인됨 |
 | npm 계정 | 로컬에 `shiz_son` 로그인 확인됨 (registry.npmjs.org) — 배포 실행 권한은 이미 있음 |
-| 패키지명 `live-skill` | npm 레지스트리 미등록 → **사용 가능** (2026-09-06 T11에서 재조회, 여전히 사용 가능) |
-| 백업 후보 `live-skills` | npm 레지스트리 미등록 → **사용 가능** (SPEC §8 "후보 2개" 중 1개) |
+| 패키지명 `live-skill` | npm 레지스트리 미등록 → **사용 가능** (2026-09-06 T11에서 재조회, 2026-09-07 재조회 여전히 미등록) — **채택하지 않음**(아래) |
+| **확정 패키지명 `live-skills`** | 2026-09-07 사람 결정. 재조회 미등록 확인 → `package.json.name`·`bin`·CLI 표시명 `live-skills`로 변경, GitHub 저장소명은 `live-skill` 유지(SPEC §8) |
 | 백업 후보 2 `skill-gate` | npm 레지스트리 미등록 → **사용 가능** (2026-09-06 T11에서 조사·확정 — SPEC §8 "후보 2개" 충족. `skillgate`는 이미 등록돼 있어 제외) |
 | `LICENSE` | 없었음 → 이번 세션에 MIT 초안 추가 (저작권자 `Trapa-Eureka` — msg-agent·sheet_mcp와 표기 통일) |
 | `.gitignore` | 없었음 → 이번 세션에 Node/TS 표준안 추가 |
@@ -19,7 +19,7 @@
 
 동일 카테고리 경쟁사·명칭 충돌 조사는 `docs/MARKET.md` §2 참조.
 
-- **main 보호 상태(2026-09-07, H1)**: 저장소 private, `main.protected=false`, rulesets/branch-protection API 403(무료 private 플랜 제한). 강제 수단이 없으므로 §3-9의 수동 통제로 대신한다 — 활성화 절차는 §3-14-1, 결정 시점은 §4.
+- **main 보호 상태(2026-09-07, H1)**: 저장소 private, `main.protected=false`, rulesets/branch-protection API 403(무료 private 플랜 제한). 강제 수단이 없으므로 §3-9의 수동 통제로 대신한다 — 활성화 절차는 §3-14-1, 결정 시점은 §4. **→ 같은 날 공개 전환 직후 ruleset `main-protection`(id 22433755, Active) 생성 완료**(§3-14-1) — 이후 `main` 변경은 PR + 필수 검사(`check (node 22)`·`check (node 24)`) 통과 + 스쿼시 머지로만 가능하고, 관리자 우회 없음.
 
 ## 1. 실전 선례 — 형제 레포에서 이미 확인된 함정
 
@@ -52,9 +52,9 @@ T0(스캐폴딩) → T1(타입/config) → {T2 추출기, T3 LlmProvider, T4 Ass
 
 ## 3. npm 배포 실행 순서
 
-1. **패키지명 최종 확정** (사람 결정 — WORKFLOW §4). §0 조사 결과(`live-skill` 가용) 기준 그대로 갈지, `@shiz_son/live-skill` 스코프로 갈지(§1 retail-mcp 선례) 결정하고 SPEC §8을 갱신한다.
+1. **패키지명 최종 확정** (사람 결정 — WORKFLOW §4). §0 조사 결과(`live-skill` 가용) 기준 그대로 갈지, `@shiz_son/live-skill` 스코프로 갈지(§1 retail-mcp 선례) 결정하고 SPEC §8을 갱신한다. **→ 2026-09-07 확정: unscoped `live-skills`**(재조회 미등록). `name`·`bin`·`program.name()`·`verify-pack.sh`·README 설치 절을 함께 바꿨고, 내부 식별자(역할 태그 `[live-skill:…]`, 임시 디렉터리 접두사, `.live-skill/` 상태 디렉터리 규칙)와 GitHub 저장소명은 그대로다.
 2. **`package.json` 필드 점검**: `name`, `version`(`0.1.0`부터), `description`, `keywords`(`agent-skills`, `claude`, `skill-compiler`, `docs-to-skill` 등 — MARKET.md 경쟁사 키워드 참고), `license: "MIT"`, `repository`/`bugs`/`homepage`(GitHub URL과 일치), `engines.node >= 22.12.0`(I2), `bin`, `main`, `type`. **`private` 필드를 넣지 않거나 배포 직전 명시적으로 관리**(§1 REL-001).
-3. **LICENSE 확정**: 이미 추가된 MIT 초안의 저작권자 표기를 실명/법인명으로 확정할지 확인.
+3. **LICENSE 확정**: 이미 추가된 MIT 초안의 저작권자 표기를 실명/법인명으로 확정할지 확인. **→ 2026-09-07: `Trapa-Eureka` 표기 유지**(형제 레포와 통일; 별도 변경 지시 없음).
 4. **영어 README 초안** (T11 원 항목) — 내부 `docs/`는 한국어 유지, 배포용 `README.md` 상단에 영어 섹션 추가 또는 `README.en.md` 분리.
 5. **배포 파일 화이트리스트**: `package.json.files = ["dist", "README.md", "LICENSE"]`로 명시(§1 REL-004) — `docs/`·`samples/`·`fixtures/`·`tests/`·`.env*`·`scripts/smoke.ts` 등 전부 제외.
 6. **`bin` 스크립트 점검**: `dist/cli/index.js`에 `#!/usr/bin/env node` shebang, 빌드 스크립트에서 `chmod +x`(§1 REL-002) — `tsconfig.build.json`으로 `dist/`만 빌드, `tsx`는 devDependency 유지(§1 REL-003).
@@ -66,8 +66,8 @@ T0(스캐폴딩) → T1(타입/config) → {T2 추출기, T3 LlmProvider, T4 Ass
 11. **버전·태깅 전략 확정**: `0.1.0`부터 semver 시작, `public beta`/`alpha` 태그(`npm publish --tag beta`) 사용 여부를 SPEC 성숙도(§6 성공 기준 충족 여부)에 맞춰 결정.
 12. **npm 2FA 확인**: 계정 `shiz_son`의 2단계 인증·publish 시 OTP 요구 여부 확인 — CI에서 publish 시엔 automation 토큰 필요.
 13. **(권장) provenance 배포**: GitHub Actions + OIDC로 `npm publish --provenance`(retail-mcp가 이미 `.github/workflows/release.yml`로 채택한 패턴 — 태그 푸시 → publish). `id-token: write` 권한 필요.
-14. **GitHub 저장소 공개 전환 — 타이밍 명시**: `package.json`의 `repository`/`bugs`/`homepage`가 GitHub URL을 가리키므로, **npm 배포 직전(§3-9까지 통과 확인 후) 공개로 전환**한다. 전환 직후 재점검: README에 비공개 시절 흔적 없는지 / LICENSE 노출 / GitHub Actions 시크릿(`NPM_TOKEN`)이 fork PR에 노출되지 않는지.
-14-1. **main 브랜치 보호 ruleset 활성화** (H1, AUD-016 — 공개 전환 직후 또는 GitHub Pro 플랜 전환 시; private 무료 플랜에서는 rulesets/branch protection API가 403이라 켤 수 없음, 2026-09-07 확인). Settings → Rules → Rulesets → New branch ruleset: 이름 `main-protection`, Enforcement `Active`, Target `main`(default branch). 규칙: **Restrict deletions** / **Block force pushes** / **Require linear history**(스쿼시 머지만 남긴다) / **Require a pull request before merging**(승인 수 0 — 단독 유지보수자; "Dismiss stale pull request approvals when new commits are pushed" 켜기 — 승인자가 생기면 의미를 갖는다) / **Require status checks to pass**(필수 검사 `check (node 20)`, `check (node 22)`; "Require branches to be up to date before merging" 켜기). **Bypass list는 비운다** — 관리자 우회를 허용하면 단독 레포에서는 보호가 무의미해진다; 긴급 수정도 PR로 간다. 검증: `gh api repos/Trapa-Eureka/live-skill/rulesets --jq '.[] | {name, enforcement}'`가 `main-protection`/`active`를 돌려주고, 임시 브랜치에서 `git push origin HEAD:main`이 거부돼야 한다. 기존 자동화(에이전트 세션의 커밋→PR→스쿼시 머지 흐름)는 그대로 동작한다 — `gh pr merge --squash`는 필수 검사 통과 후에만 성공하므로 오히려 흐름이 강제된다.
+14. **GitHub 저장소 공개 전환 — 타이밍 명시**: `package.json`의 `repository`/`bugs`/`homepage`가 GitHub URL을 가리키므로, **npm 배포 직전(§3-9까지 통과 확인 후) 공개로 전환**한다. 전환 직후 재점검: README에 비공개 시절 흔적 없는지 / LICENSE 노출 / GitHub Actions 시크릿(`NPM_TOKEN`)이 fork PR에 노출되지 않는지. **→ 2026-09-07 공개 전환 완료(사람). 재점검 결과**: README(en/ko)에 비공개 언급 없음, LICENSE(MIT, `Trapa-Eureka`) 루트에 노출, Actions 시크릿 0건(`gh secret list` 빈 목록)·release 워크플로 없음이라 fork PR 노출 대상 자체가 없다(`ci.yml`은 `contents: read`만).
+14-1. **main 브랜치 보호 ruleset 활성화** (H1, AUD-016 — 공개 전환 직후 또는 GitHub Pro 플랜 전환 시; private 무료 플랜에서는 rulesets/branch protection API가 403이라 켤 수 없음, 2026-09-07 확인). Settings → Rules → Rulesets → New branch ruleset: 이름 `main-protection`, Enforcement `Active`, Target `main`(default branch). 규칙: **Restrict deletions** / **Block force pushes** / **Require linear history**(스쿼시 머지만 남긴다) / **Require a pull request before merging**(승인 수 0 — 단독 유지보수자; "Dismiss stale pull request approvals when new commits are pushed" 켜기 — 승인자가 생기면 의미를 갖는다) / **Require status checks to pass**(필수 검사 `check (node 22)`, `check (node 24)` — I2 이후 matrix; "Require branches to be up to date before merging" 켜기). **Bypass list는 비운다** — 관리자 우회를 허용하면 단독 레포에서는 보호가 무의미해진다; 긴급 수정도 PR로 간다. 검증: `gh api repos/Trapa-Eureka/live-skill/rulesets --jq '.[] | {name, enforcement}'`가 `main-protection`/`active`를 돌려주고, 임시 브랜치에서 `git push origin HEAD:main`이 거부돼야 한다. 기존 자동화(에이전트 세션의 커밋→PR→스쿼시 머지 흐름)는 그대로 동작한다 — `gh pr merge --squash`는 필수 검사 통과 후에만 성공하므로 오히려 흐름이 강제된다. **→ 2026-09-07 활성화 완료**: 공개 전환 직후 `gh api -X POST repos/Trapa-Eureka/live-skill/rulesets`로 위 규칙 그대로 생성(id 22433755, `enforcement: active`, bypass 없음, 허용 머지 방식 squash만). 검증: `gh api …/rulesets`가 `main-protection`/`active`를 돌려줌; 첫 실제 검증은 이 결정을 담은 PR의 스쿼시 머지(필수 검사 통과 후에만 성공).
 15. **`npm publish`** 실행 (unscoped면 기본 public, scoped면 `--access public` 필요). **이 버튼은 사람이 누른다** (WORKFLOW §4).
 16. **배포 후 확인**: `https://www.npmjs.com/package/<name>` 페이지 렌더링, `npx <name> --help` 실제 설치 스모크.
 17. **GitHub Release 태그** 생성 + CHANGELOG 첫 항목 작성.
@@ -75,12 +75,14 @@ T0(스캐폴딩) → T1(타입/config) → {T2 추출기, T3 LlmProvider, T4 Ass
 
 ## 4. 사람이 반드시 결정할 것 (WORKFLOW §4 재확인, 위임 불가)
 
-- 최종 패키지명 — **unscoped `live-skill` vs `@shiz_son/live-skill` 스코프**(§1 retail-mcp 선례: 조직 스코프가 없어 개인 계정으로 전환한 사례가 있음)
-- LICENSE 저작권자 표기(개인/법인)
-- `npm publish` 실행 시점
-- GitHub 공개 전환 시점
-- **main 브랜치 보호(ruleset) 활성화 시점** — 공개 전환과 함께, 또는 그 전에 GitHub Pro로 올려 먼저 켤지(H1, AUD-016). 켜기 전까지는 §3-9의 수동 통제(정확한 SHA의 main CI 성공 확인 + PR 전용 머지 관행)가 유일한 방어선이다.
-- 게이트 임계치·k 기본값, 실 LLM 스모크 비용 지출
+2026-09-07에 사람이 전부 결정했다(각 항목 뒤 **→**):
+
+- 최종 패키지명 — **unscoped `live-skill` vs `@shiz_son/live-skill` 스코프**(§1 retail-mcp 선례: 조직 스코프가 없어 개인 계정으로 전환한 사례가 있음) **→ unscoped `live-skills`**(§3-1).
+- LICENSE 저작권자 표기(개인/법인) **→ `Trapa-Eureka` 유지**(§3-3).
+- `npm publish` 실행 시점 **→ 위 결정 반영 PR 머지 + §3-9 SHA 확인 직후 0.1.0 배포**(§3-15; 실행 기록은 §3-16 뒤 상태 절).
+- GitHub 공개 전환 시점 **→ 2026-09-07 전환 완료**(§3-14).
+- **main 브랜치 보호(ruleset) 활성화 시점** — 공개 전환과 함께, 또는 그 전에 GitHub Pro로 올려 먼저 켤지(H1, AUD-016). 켜기 전까지는 §3-9의 수동 통제(정확한 SHA의 main CI 성공 확인 + PR 전용 머지 관행)가 유일한 방어선이다. **→ 공개 전환 직후 활성화**(§3-14-1).
+- 게이트 임계치·k 기본값, 실 LLM 스모크 비용 지출 **→ 비용을 쓰지 않고 현재 기본값(0.9·k=3) 확정**(SPEC §8); 실 스모크는 사람 전용 선택 항목으로 남긴다.
 
 ## 5. 리스크·주의사항
 

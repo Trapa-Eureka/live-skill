@@ -42,7 +42,7 @@ function requireApiKey(): string {
 export function buildProgram(): Command {
   const program = new Command();
   program
-    .name("live-skill")
+    .name("live-skills")
     .description("Compile documents, folders, and URLs into verified agent skills")
     .version(PACKAGE_VERSION);
 
