@@ -168,9 +168,10 @@
 - 완료(2026-09-07, PR #32): 새 `core/frontmatter.ts`(의존성 `yaml` 2.9, ISC 추가). `serializeFrontmatter`는 값을 **항상 큰따옴표**로 직렬화(`lineWidth: 0`) — YAML 1.1 파서가 `yes`/`no`/`null`을 불리언·null로 읽는 함정까지 차단, 출력 결정론(스냅샷 갱신). `parseFrontmatter`는 실제 `parse`로 읽어 `missing_block`/`syntax`/`not_a_map`/`missing_field`/`invalid_field`를 구분하고 zod로 `name`(§2 slug 스키마)·`description`(비어 있지 않은 ≤1,024자, 제어문자 금지) 검사, 표준 밖 키는 `unknownKeys`. validator: 정규식 키 존재 검사를 이 함수로 교체 — `invalid_frontmatter`(error)·`unknown_frontmatter_key`(warning) 코드 추가. assembler는 `serializeFrontmatter` 사용. DESIGN §3·§3.1 기록.
 - 완료 기준: [x] `Guide: Setup` 제목 라운드트립 테스트(assembler → validator 통과 → 파서가 원문 그대로 반환; 13종 적대 제목 라운드트립; `yes`/`no` 항상 인용; 긴 값 접기 없음; 문제 5종 구분; 타입·값 오류 8종; validator가 미인용 `Guide: Setup`을 거부하고 인용본은 허용, 미지 키 warning) [x] check 통과(25 files·414 tests)
 
-#### E3 — report 변조·손상 탐지 · 상태: TODO · 원본: AUD-012 · 의존: A3
+#### E3 — report 변조·손상 탐지 · 상태: DONE(2026-09-07) · 원본: AUD-012 · 의존: A3
 - 목표: manifest `outputs`에 파일별 sha256 추가(스키마 갱신), `report`/`eval`이 현재 파일과 대조해 불일치면 STALE/TAMPERED로 실패.
-- 완료 기준: [ ] DESIGN §5 갱신 [ ] 챕터 수정 후 report → STALE 테스트 [ ] check 통과
+- 완료(2026-09-07, PR #33): manifest에 `outputHashes: {path, sha256}[]` 추가(`outputs`는 유지, B6 superRefine이 두 집합 일치·경로 유일 강제, `version: 1` 유지). 새 `core/integrity.ts`의 `checkOutputs(manifest, files)`가 missing/modified/unexpected(manifest.json·점 파일 제외)를 가려 **STALE**(드리프트) / **TAMPERED**(manifest가 모르는 파일, 우선)를 판정, `formatOutputIntegrity`가 파일 목록 + 수정 방법 출력. `report`는 `readSkillDir`도 받아 대조 후 어긋나면 게이트 판정 대신 무결성 리포트 + 종료 1, `eval`은 두 경로 다 LLM 호출 전에 같은 대조로 중단. 세대 ID는 A3의 원자 교체가 필요를 없애 두지 않음. DESIGN §2·§5 기록.
+- 완료 기준: [x] DESIGN §5 갱신 [x] 챕터 수정 후 report → STALE 테스트(e2e: 실제 컴파일 산출물의 챕터를 손으로 고쳐 `report` 1 + STALE + 파일명, PASSED 미출력; eval 재사용 경로도 LLM 0회로 STALE 중단; 되돌리면 PASSED; 미등록 챕터 주입 → TAMPERED. 단위: 수정/삭제/주입/점 파일 무시/1글자 변경; CLI: eval STALE·없는 챕터; 스키마: outputHashes 집합 불일치·중복·누락 거부) [x] check 통과(26 files·421 tests)
 
 ### F. 추출·증류 정확성 (001 고유) — High/Medium
 

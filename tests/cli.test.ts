@@ -2,6 +2,7 @@
 // 실제 fs/네트워크 없음). 패턴 출처: ../msg-agent/tests/cli.test.ts.
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/core/config.js";
+import { sha256Hex } from "../src/core/hash.js";
 import { trackCost } from "../src/core/costTracker.js";
 import { createExtractors } from "../src/adapters/extractors/index.js";
 import { FsTargetError } from "../src/adapters/fsTargets.js";
@@ -76,6 +77,7 @@ describe("runReport", () => {
       sourceFiles: [],
       sections: [],
       outputs: [],
+      outputHashes: [],
       gate: {
         passRate: 0.5,
         threshold: 0.9,
@@ -87,7 +89,11 @@ describe("runReport", () => {
       },
       goldenQa: [],
     };
-    const deps: ReportDeps = { out: captured.out, readManifest: () => Promise.resolve(manifest) };
+    const deps: ReportDeps = {
+      out: captured.out,
+      readManifest: () => Promise.resolve(manifest),
+      readSkillDir: () => Promise.resolve([]),
+    };
     expect(await runReport(undefined, deps)).toBe(0);
     expect(captured.all.join("\n")).toContain("FAILED");
   });
@@ -100,6 +106,7 @@ describe("runReport", () => {
       sourceFiles: [],
       sections: [],
       outputs: [],
+      outputHashes: [],
       gate: {
         passRate: 1,
         threshold: 0.9,
@@ -114,7 +121,11 @@ describe("runReport", () => {
       },
       goldenQa: [],
     };
-    await runReport("dir", { out: captured.out, readManifest: () => Promise.resolve(manifest) });
+    await runReport("dir", {
+      out: captured.out,
+      readManifest: () => Promise.resolve(manifest),
+      readSkillDir: () => Promise.resolve([]),
+    });
     const text = captured.all.join("\n");
     expect(text).toContain("FAILED");
     expect(text).toContain("미검증 섹션");
@@ -131,10 +142,15 @@ describe("runReport", () => {
       sourceFiles: [],
       sections: [],
       outputs: [],
+      outputHashes: [],
       gate: { skipped: true },
       goldenQa: [],
     };
-    const deps: ReportDeps = { out: captured.out, readManifest: () => Promise.resolve(manifest) };
+    const deps: ReportDeps = {
+      out: captured.out,
+      readManifest: () => Promise.resolve(manifest),
+      readSkillDir: () => Promise.resolve([]),
+    };
     expect(await runReport("some/dir", deps)).toBe(0);
     expect(captured.all.join("\n")).toContain("SKIPPED");
   });
@@ -147,6 +163,7 @@ describe("runReport", () => {
         seenDir = dir;
         return Promise.reject(new Error("no manifest"));
       },
+      readSkillDir: () => Promise.resolve([]),
     };
     await runReport(undefined, deps);
     expect(seenDir).toBe(".");
@@ -157,6 +174,7 @@ describe("runReport", () => {
     const deps: ReportDeps = {
       out: captured.out,
       readManifest: () => Promise.reject(new Error("ENOENT")),
+      readSkillDir: () => Promise.resolve([]),
     };
     expect(await runReport("dir", deps)).toBe(1);
     expect(captured.all.join("\n")).toContain("compile");
@@ -184,6 +202,7 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     sourceFiles: [],
     sections: [{ id: "a", sha256: "x".repeat(64), chapterFile: chapterFile.path }],
     outputs: [chapterFile.path],
+    outputHashes: [{ path: chapterFile.path, sha256: sha256Hex(chapterFile.content) }],
     gate: {
       passRate: 1,
       threshold: 0.9,
@@ -354,7 +373,7 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     llm.assertExhausted();
   });
 
-  it("returns 1 before any LLM call when the manifest names a chapter that is not on disk (B3)", async () => {
+  it("returns 1 before any LLM call when the manifest names a chapter that is not on disk (B3 → E3 STALE)", async () => {
     const captured = lines();
     const llm = script().build(); // 대본 0개 — 호출되면 즉시 실패
     const code = await runEval(
@@ -362,11 +381,34 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
       baseDeps({
         out: captured.out,
         llm,
-        readSkillDir: () => Promise.resolve([{ path: "SKILL.md", content: "# x" }]), // 챕터 파일이 없다
+        readSkillDir: () => Promise.resolve([]), // 챕터 파일이 없다
       }),
     );
     expect(code).toBe(1);
-    expect(captured.all.join("\n")).toContain("chapters/ch01-a.md");
+    const text = captured.all.join("\n");
+    expect(text).toContain("STALE");
+    expect(text).toContain("chapters/ch01-a.md");
+    expect(text).toContain("LLM은 부르지 않았습니다");
+    llm.assertExhausted();
+  });
+
+  it("refuses to re-grade files that no longer match the manifest hashes (E3 STALE), before any LLM call", async () => {
+    const captured = lines();
+    const llm = script().build();
+    const code = await runEval(
+      { skillDir: "dir" },
+      baseDeps({
+        out: captured.out,
+        llm,
+        readSkillDir: () =>
+          Promise.resolve([{ ...chapterFile, content: "Mount the unit on the wall. [§a]" }]),
+      }),
+    );
+    expect(code).toBe(1);
+    const text = captured.all.join("\n");
+    expect(text).toContain("STALE");
+    expect(text).toContain("수정된 파일");
+    expect(text).toContain("compile --force");
     llm.assertExhausted();
   });
 });

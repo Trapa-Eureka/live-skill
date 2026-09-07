@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AssembledFile, Manifest } from "../src/core/index.js";
+import { sha256Hex } from "../src/core/hash.js";
 import {
   FsTargetError,
   INPUT_LIMITS,
@@ -36,10 +37,17 @@ const manifest: Manifest = {
   sourceFiles: [],
   sections: [],
   outputs: ["SKILL.md"],
+  outputHashes: [{ path: "SKILL.md", sha256: sha256Hex("# Skill\n") }],
   gate: { skipped: true },
   goldenQa: [],
 };
 const files: AssembledFile[] = [{ path: "SKILL.md", content: "# Skill\n", estimatedTokens: 3 }];
+/** E3: outputs와 outputHashes를 같은 파일 집합으로 채운 manifest. */
+const manifestFor = (gen: readonly AssembledFile[]): Manifest => ({
+  ...manifest,
+  outputs: gen.map((f) => f.path),
+  outputHashes: gen.map((f) => ({ path: f.path, sha256: sha256Hex(f.content) })),
+});
 
 let dir: string;
 
@@ -340,7 +348,7 @@ describe("writeSkill — atomic staging swap (A3, 완료 기준)", () => {
     { path: "chapters/ch01-a.md", content: "v1 a\n", estimatedTokens: 2 },
     { path: "chapters/ch02-b.md", content: "v1 b\n", estimatedTokens: 2 },
   ];
-  const gen1Manifest: Manifest = { ...manifest, outputs: gen1.map((f) => f.path) };
+  const gen1Manifest: Manifest = manifestFor(gen1);
 
   async function debris(parent: string): Promise<string[]> {
     return (await readdir(parent)).filter((n) => n.includes(".live-skill-"));
@@ -373,7 +381,7 @@ describe("writeSkill — atomic staging swap (A3, 완료 기준)", () => {
       { path: "SKILL.md", content: "# v2\n", estimatedTokens: 2 },
       { path: "chapters/ch01-a.md", content: "v2 a\n", estimatedTokens: 2 },
     ];
-    const gen2Manifest: Manifest = { ...manifest, outputs: gen2.map((f) => f.path) };
+    const gen2Manifest: Manifest = manifestFor(gen2);
     await writeSkill(outDir, gen2, gen2Manifest, { force: true });
 
     expect(await readdir(join(outDir, "chapters"))).toEqual(["ch01-a.md"]);

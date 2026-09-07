@@ -233,6 +233,7 @@ export const manifestSchema = z
       }),
     ),
     outputs: z.array(z.string().min(1)),
+    outputHashes: z.array(z.object({ path: z.string().min(1), sha256: sha256Schema })),
     gate: z.union([gateReportSchema, z.object({ skipped: z.literal(true) })]),
     goldenQa: z.array(goldenQaSchema).max(MAX_GOLDEN_QA_ENTRIES),
   })
@@ -242,6 +243,12 @@ export const manifestSchema = z
     };
 
     if (!unique(m.outputs)) issue("outputs must be unique", ["outputs"]);
+    // E3: 해시 목록은 outputs와 정확히 같은 파일 집합을 덮어야 한다 — 빠진 파일은 대조 없이 통과할 구멍이 된다.
+    const hashPaths = m.outputHashes.map((h) => h.path);
+    if (!unique(hashPaths)) issue("outputHashes paths must be unique", ["outputHashes"]);
+    if (!sameSet(new Set(hashPaths), new Set(m.outputs))) {
+      issue("outputHashes must cover exactly the files listed in outputs", ["outputHashes"]);
+    }
     if (!unique(m.sections.map((s) => s.id))) issue("section ids must be unique", ["sections"]);
     const outputSet = new Set(m.outputs);
     m.sections.forEach((s, i) => {

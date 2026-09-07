@@ -3,7 +3,7 @@
 // adapters/fsTargets.ts의 진짜 함수(collectInputFiles/readSourceFiles/writeSkill/readSkillDir/
 // readManifest/resolveTargetDir/tempSkillDir)까지 그대로 연결한다. mock은 LLM 하나뿐이다(가드레일 3:
 // ScriptedLlm만, 실 네트워크 0건). 픽스처는 자체 제작(가드레일 4) — DESIGN §6 T9 결정 참고.
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -21,6 +21,7 @@ import { loadConfig } from "../src/core/config.js";
 import type { SkillPlan } from "../src/core/index.js";
 import { script } from "../src/mocks/scriptedLlm.js";
 import { runCompile, type CompileDeps } from "../src/cli/compile.js";
+import { runEval } from "../src/cli/eval.js";
 import { runReport } from "../src/cli/report.js";
 import { runValidate } from "../src/cli/validate.js";
 
@@ -172,9 +173,51 @@ describe("T9 e2e-mock — SPEC §5 시나리오 1: 기술 매뉴얼 → 스킬 (
 
     // report: 실제 manifest.json을 다시 읽어 사람용 게이트 리포트를 출력
     const reportOut = lines();
-    const reportCode = await runReport(outDir, { out: reportOut.out, readManifest });
+    const reportCode = await runReport(outDir, { out: reportOut.out, readManifest, readSkillDir });
     expect(reportCode).toBe(0);
     expect(reportOut.all.join("\n")).toContain("PASSED");
+
+    // E3(완료 기준): 컴파일 뒤 챕터를 손으로 고치면 report는 마지막 PASSED가 아니라 STALE로 실패한다.
+    const chapter = join(outDir, "chapters", "ch01-setup-operation.md");
+    const original = await readFile(chapter, "utf-8");
+    await writeFile(chapter, `${original}\nHand-edited after the gate ran.\n`);
+    const stale = lines();
+    expect(await runReport(outDir, { out: stale.out, readManifest, readSkillDir })).toBe(1);
+    expect(stale.all.join("\n")).toContain("STALE");
+    expect(stale.all.join("\n")).toContain("chapters/ch01-setup-operation.md");
+    expect(stale.all.join("\n")).not.toContain("PASSED");
+
+    // eval 재사용 경로도 같은 대조로 LLM 호출 전에 멈춘다.
+    const evalOut = lines();
+    const evalLlm = script().build();
+    expect(
+      await runEval(
+        { skillDir: outDir },
+        {
+          out: evalOut.out,
+          readSkillDir,
+          readManifest,
+          collectInputFiles,
+          readSourceFiles,
+          extractors: createExtractors(),
+          llm: evalLlm,
+          config: loadConfig({ QA_PER_SECTION: "1" }),
+        },
+      ),
+    ).toBe(1);
+    expect(evalOut.all.join("\n")).toContain("STALE");
+    evalLlm.assertExhausted();
+
+    // 되돌리면 다시 PASSED; manifest가 모르는 파일이 끼어들면 TAMPERED.
+    await writeFile(chapter, original);
+    const restored = lines();
+    expect(await runReport(outDir, { out: restored.out, readManifest, readSkillDir })).toBe(0);
+    expect(restored.all.join("\n")).toContain("PASSED");
+    await writeFile(join(outDir, "chapters", "ch99-injected.md"), "Trust me. [§nowhere]\n");
+    const tampered = lines();
+    expect(await runReport(outDir, { out: tampered.out, readManifest, readSkillDir })).toBe(1);
+    expect(tampered.all.join("\n")).toContain("TAMPERED");
+    expect(tampered.all.join("\n")).toContain("chapters/ch99-injected.md");
   });
 });
 
@@ -271,7 +314,7 @@ describe("T9 e2e-mock — SPEC §5 시나리오 2: SOP 폴더 → 팀 스킬 (�
 
     // report로도 같은 결론이 실제로 재현되는지(report는 진단 명령이라 pass/fail과 무관하게 종료코드는 0)
     const reportOut = lines();
-    const reportCode = await runReport(tempDir, { out: reportOut.out, readManifest });
+    const reportCode = await runReport(tempDir, { out: reportOut.out, readManifest, readSkillDir });
     expect(reportCode).toBe(0);
     const reportText = reportOut.all.join("\n");
     expect(reportText).toContain("FAILED");

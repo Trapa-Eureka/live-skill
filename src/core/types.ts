@@ -95,6 +95,8 @@ export interface Manifest {
   sourceFiles: { path: string; sha256: string }[];
   sections: { id: string; sha256: string; chapterFile: string }[];
   outputs: string[];
+  /** outputs 각 파일 내용(UTF-8)의 sha256 — report/eval이 현재 파일과 대조해 드리프트를 잡는다(E3). 집합은 outputs와 같다. */
+  outputHashes: { path: string; sha256: string }[];
   gate: GateReport | { skipped: true };
   /** eval이 원문 없이 재사용할 골든 QA 원본(DESIGN §6 T8 결정). 게이트 스킵 시 빈 배열. */
   goldenQa: GoldenQA[];
