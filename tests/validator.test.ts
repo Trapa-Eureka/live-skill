@@ -128,6 +128,63 @@ describe("validateSkill — frontmatter (TESTING §3, error)", () => {
   });
 });
 
+describe("validateSkill — frontmatter is really parsed as YAML (E2)", () => {
+  const withSkillMd = (content: string): SkillFile[] => [
+    { path: "SKILL.md", content },
+    VALID_CHAPTER,
+    VALID_GLOSSARY,
+    VALID_PATTERNS,
+    VALID_CHEATSHEET,
+  ];
+
+  it("rejects the unquoted 'Guide: Setup' description that used to pass (invalid_frontmatter, syntax)", () => {
+    const report = validateSkill(
+      withSkillMd("---\nname: manual\ndescription: Guide: Setup\n---\n\n# Manual"),
+      BUDGETS,
+    );
+    expect(report.passed).toBe(false);
+    const issue = report.issues.find((i) => i.code === "invalid_frontmatter");
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toMatch(/not valid YAML.*Fix: quote/u);
+  });
+
+  it("accepts the same title once quoted — what compile now emits", () => {
+    const report = validateSkill(
+      withSkillMd('---\nname: manual\ndescription: "Guide: Setup"\n---\n\n# Manual'),
+      BUDGETS,
+    );
+    expect(report.issues.filter((i) => i.file === "SKILL.md")).toEqual([]);
+  });
+
+  it.each([
+    ["---\nname: Not A Slug\ndescription: x\n---", /field "name"/u],
+    ["---\nname: 42\ndescription: x\n---", /field "name"/u],
+    ["---\nname: manual\ndescription: ''\n---", /field "description"/u],
+    ["---\n- name\n- description\n---", /YAML mapping/u],
+  ])("flags wrong types and values, not just missing keys: %j", (content, expected) => {
+    const report = validateSkill(withSkillMd(content), BUDGETS);
+    expect(report.passed).toBe(false);
+    const issue = report.issues.find((i) => i.code === "invalid_frontmatter");
+    expect(issue?.message).toMatch(expected);
+  });
+
+  it("warns (does not fail) on keys the Agent Skills standard does not define", () => {
+    const report = validateSkill(
+      withSkillMd("---\nname: manual\ndescription: x\nlicense: MIT\ncolour: blue\n---"),
+      BUDGETS,
+    );
+    expect(report.passed).toBe(true);
+    expect(report.issues).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        code: "unknown_frontmatter_key",
+        file: "SKILL.md",
+        message: expect.stringContaining('"colour"') as string,
+      }),
+    ]);
+  });
+});
+
 describe("validateSkill — chapter links (TESTING §3, error)", () => {
   it("flags a link to a chapter file that was not provided", () => {
     const files: SkillFile[] = [

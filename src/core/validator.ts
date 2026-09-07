@@ -1,5 +1,6 @@
 // Validator — 구조 검증(DESIGN §3.1), LLM 0회. AssembledFile[]과 형태만 같은 {path, content}[]를 받아
 // assembler 산출물이든 디스크에서 읽은 기존 스킬 디렉터리(파일 읽기는 어댑터 몫, T8)든 똑같이 검사한다.
+import { parseFrontmatter } from "./frontmatter.js";
 import { estimateTokens } from "./tokenEstimate.js";
 import type { Budgets } from "./config.js";
 
@@ -10,7 +11,12 @@ export interface SkillFile {
 
 export type ValidationSeverity = "error" | "warning";
 export type ValidationCode =
-  "budget_exceeded" | "missing_frontmatter" | "broken_link" | "low_anchor_ratio";
+  | "budget_exceeded"
+  | "missing_frontmatter"
+  | "invalid_frontmatter"
+  | "unknown_frontmatter_key"
+  | "broken_link"
+  | "low_anchor_ratio";
 
 export interface ValidationIssue {
   severity: ValidationSeverity;
@@ -54,44 +60,56 @@ function checkBudgets(files: readonly SkillFile[], budgets: Budgets): Validation
   return issues;
 }
 
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/u;
-
+/** E2(DESIGN §3.1): 키 존재를 정규식으로 보던 검사를 실제 YAML 파싱 + 타입·값·키 검사로 바꿨다 — 손수 고친 SKILL.md든
+ * assembler 산출물이든 Agent Skills 소비자가 읽는 방식 그대로 판정한다. */
 function checkFrontmatter(files: readonly SkillFile[]): ValidationIssue[] {
   const skillMd = files.find((f) => f.path === "SKILL.md");
-  if (skillMd === undefined) {
-    return [
-      {
-        severity: "error",
-        code: "missing_frontmatter",
-        file: "SKILL.md",
-        message:
-          "SKILL.md is missing entirely. Fix: run compile, or add a SKILL.md with name/description frontmatter.",
-      },
-    ];
-  }
-  const match = FRONTMATTER_RE.exec(skillMd.content);
-  if (match?.[1] === undefined) {
-    return [
-      {
-        severity: "error",
-        code: "missing_frontmatter",
-        file: "SKILL.md",
-        message:
-          'SKILL.md has no "---" YAML frontmatter block at the start of the file (Agent Skills standard). Fix: add one with name/description.',
-      },
-    ];
-  }
-  const body = match[1];
-  const missing = ["name", "description"].filter((key) => !new RegExp(`^${key}:`, "mu").test(body));
-  if (missing.length === 0) return [];
-  return [
-    {
-      severity: "error",
-      code: "missing_frontmatter",
-      file: "SKILL.md",
-      message: `SKILL.md frontmatter is missing required field(s): ${missing.join(", ")}. Fix: add them between the "---" markers.`,
-    },
+  const error = (code: ValidationCode, message: string): ValidationIssue[] => [
+    { severity: "error", code, file: "SKILL.md", message },
   ];
+  if (skillMd === undefined) {
+    return error(
+      "missing_frontmatter",
+      "SKILL.md is missing entirely. Fix: run compile, or add a SKILL.md with name/description frontmatter.",
+    );
+  }
+  const parsed = parseFrontmatter(skillMd.content);
+  if (parsed.ok) {
+    return parsed.value.unknownKeys.map((key) => ({
+      severity: "warning",
+      code: "unknown_frontmatter_key",
+      file: "SKILL.md",
+      message: `SKILL.md frontmatter has a key the Agent Skills standard does not define: "${key}". Fix: remove it, or keep it if your skill consumer expects it.`,
+    }));
+  }
+  const problem = parsed.error;
+  switch (problem.kind) {
+    case "missing_block":
+      return error(
+        "missing_frontmatter",
+        'SKILL.md has no "---" YAML frontmatter block at the start of the file (Agent Skills standard). Fix: add one with name/description.',
+      );
+    case "missing_field":
+      return error(
+        "missing_frontmatter",
+        `SKILL.md frontmatter is missing required field(s): ${problem.fields.join(", ")}. Fix: add them between the "---" markers.`,
+      );
+    case "syntax":
+      return error(
+        "invalid_frontmatter",
+        `SKILL.md frontmatter is not valid YAML (${problem.detail}). Fix: quote values that contain ": " or "#" — e.g. description: "Guide: Setup" — or re-run compile, which always quotes them.`,
+      );
+    case "not_a_map":
+      return error(
+        "invalid_frontmatter",
+        'SKILL.md frontmatter must be a YAML mapping of key: value lines (it parsed as a list, a bare value, or nothing). Fix: write name: and description: lines between the "---" markers.',
+      );
+    case "invalid_field":
+      return error(
+        "invalid_frontmatter",
+        `SKILL.md frontmatter field "${problem.field}" is invalid: ${problem.detail}. Fix: name must be a lowercase slug (letters, digits, single hyphens, max 64 chars) matching the skill directory; description must be non-empty text of at most 1024 characters.`,
+      );
+  }
 }
 
 const CHAPTER_LINK_RE = /`(chapters\/[^`\s]+\.md)`/gu;

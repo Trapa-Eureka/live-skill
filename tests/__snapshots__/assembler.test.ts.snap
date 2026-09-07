@@ -4,8 +4,8 @@ exports[`assembleSkill — fixed-input snapshot (완료 기준) > produces the s
 [
   {
     "content": "---
-name: skillsync-x200
-description: SkillSync X200 Manual
+name: "skillsync-x200"
+description: "SkillSync X200 Manual"
 ---
 
 # SkillSync X200 Manual
@@ -21,7 +21,7 @@ description: SkillSync X200 Manual
 - \`patterns.md\` — 기법·절차·안티패턴
 - \`cheatsheet.md\` — 결정 표·즉답 규칙
 ",
-    "estimatedTokens": 121,
+    "estimatedTokens": 122,
     "path": "SKILL.md",
   },
   {
