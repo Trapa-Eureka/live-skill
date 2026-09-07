@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-09-07
+
+Documentation-only release so the npm page matches the repository README.
+
+### Changed
+
+- README restructured: a Features section, a "Where live-skills can be used" section organized by field (collapsible groups), the 60-second demo section removed, and the Status section reduced to the essentials. The Korean README mirrors the same structure. No code changes.
+
 ## [0.1.1] - 2026-09-07
 
 Patch release: the first real-LLM runs after 0.1.0 exposed three defects that made `compile` fail on real input (DESIGN §4 L2–L4). 0.1.0 fails at the outline step; upgrade.
@@ -25,5 +33,6 @@ First public release, published to npm as `live-skills`.
 - Cost and safety limits: `MAX_LLM_CALLS` enforced during the run, input size limits, parser timeouts, prompt data/instruction boundaries, and stale/tampered detection for compiled output.
 - Claude as the default LLM provider via `ANTHROPIC_API_KEY`; the automated test suite runs against a scripted mock LLM with no network access.
 
+[0.1.2]: https://github.com/Trapa-Eureka/live-skill/releases/tag/v0.1.2
 [0.1.1]: https://github.com/Trapa-Eureka/live-skill/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Trapa-Eureka/live-skill/releases/tag/v0.1.0
