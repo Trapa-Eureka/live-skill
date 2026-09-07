@@ -214,17 +214,20 @@
 - 완료(2026-09-07, PR #40): 2026-09-07 재확인 — private 무료 플랜이라 rulesets/branch protection API 403(켤 수 없음). PUBLISHING §0에 상태 스냅샷, §3-9에 **수동 통제**(배포 SHA로 `gh run list --branch main --commit <sha>` 성공 확인 + `origin/main` 일치 + PR 전용 머지 관행 — 관행이지 강제가 아님을 명시), §3-14-1에 **ruleset 활성화 절차**(이름·대상·규칙 6종·필수 검사 `check (node 20/22)`·bypass 없음·검증 명령·기존 자동화와의 호환), §4에 사람 결정 항목(활성화 시점: 공개 전환과 함께 vs Pro 선전환) 추가.
 - 완료 기준: [x] PUBLISHING §3·§4 반영(+§0 스냅샷)
 
-#### H2 — tarball 설치 스모크 · 상태: TODO · 원본: AUD-017
+#### H2 — tarball 설치 스모크 · 상태: DONE(2026-09-07) · 원본: AUD-017
 - 목표: `npm pack` → 임시 디렉터리 `npm install --omit=dev <tgz>` → `live-skill --help` 실행 스크립트를 `prepublishOnly`·CI에 추가.
-- 완료 기준: [ ] 로컬·CI 통과 [ ] check 통과
+- 완료(2026-09-07, PR #41 — H2·H3·H4 묶음, 커밋은 태스크별): `scripts/verify-pack.sh` — 실제 tgz를 임시 프로젝트에 `--omit=dev`로 설치, `bin` 실행 가능 여부·devDependency 미혼입·`--help`에 `compile`·`--version` = package.json 확인. `verify:pack` 스크립트를 `prepublishOnly`와 `ci.yml`(check:tarball 뒤)에 추가. 레지스트리 접속 때문에 vitest 밖(가드레일 3). PUBLISHING §3-7-1·§3-10 기록.
+- 완료 기준: [x] 로컬·CI 통과(로컬 `npm run verify:pack` ok, CI Node 20/22 그린) [x] check 통과
 
-#### H3 — check-tarball.sh 구조화 · 상태: TODO · 원본: SEC-012, AUD-018
+#### H3 — check-tarball.sh 구조화 · 상태: DONE(2026-09-07) · 원본: SEC-012, AUD-018
 - 목표: `npm pack --dry-run --json`의 `files[].path`를 검사, 명령·읽기 오류는 실패 처리.
-- 완료 기준: [ ] 합성 `.env.production` 항목 검출 확인 [ ] check 통과
+- 완료(2026-09-07, PR #41): 셸 스크립트를 `scripts/check-tarball.ts`(tsx) + 순수 규칙 `scripts/tarballRules.ts`로 교체 — `files[].path`를 허용 목록(`dist/**`+루트 4파일)과 비밀·상태 파일 규칙 5종으로 검사(위반 전부 나열), 실제 tgz를 풀어 텍스트 파일 전부를 키 패턴 6종으로 스캔(오탐 방지: 정규식 소스·`api_key` 단어엔 반응 안 함), 명령·JSON 형태·읽기 오류는 전부 `publish blocked`. PUBLISHING §3-7 기록.
+- 완료 기준: [x] 합성 `.env.production` 항목 검출 확인(`tests/tarballRules.test.ts`: env 변형 7종·중첩 config.json·pem/id_rsa·npmrc/git·허용 목록 밖·전부 나열; 키 6종·오탐 없음; 바이너리 판정; JSON 형태) [x] check 통과
 
-#### H4 — .gitignore env 변형 · 상태: TODO · 원본: SEC-013, AUD-018
+#### H4 — .gitignore env 변형 · 상태: DONE(2026-09-07) · 원본: SEC-013, AUD-018
 - 목표: `.env*` 제외 + `!.env.example`.
-- 완료 기준: [ ] `git check-ignore .env.production .env.staging` 확인 [ ] `.env.example` 추적 유지
+- 완료(2026-09-07, PR #41): `.env` + `.env.*` 제외, `!.env.example` 재포함.
+- 완료 기준: [x] `git check-ignore .env.production .env.staging` 확인(둘 다 무시, `.env.local`·`.env`도) [x] `.env.example` 추적 유지(`git ls-files` 확인)
 
 ### I. 저수준·문서 정합성 — Low
 

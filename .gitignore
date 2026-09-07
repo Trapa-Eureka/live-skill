@@ -6,9 +6,11 @@ dist/
 build/
 *.tsbuildinfo
 
-# env / secrets
+# env / secrets — every .env variant (.env.local, .env.production, .env.staging, …) except the
+# committed template (SEC-013, AUD-018; CLAUDE.md guardrail 7)
 .env
-.env.local
+.env.*
+!.env.example
 
 # test / coverage
 coverage/
