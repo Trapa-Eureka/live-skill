@@ -117,7 +117,7 @@ program
   .description("마지막 GateReport 사람용 출력")
   .argument("[skillDir]", "스킬 디렉터리 (미지정 시 현재 디렉터리)")
   .action(async (skillDir: string | undefined) => {
-    process.exitCode = await runReport(skillDir, { out, readManifest });
+    process.exitCode = await runReport(skillDir, { out, readManifest, readSkillDir });
   });
 
 await program.parseAsync(process.argv);

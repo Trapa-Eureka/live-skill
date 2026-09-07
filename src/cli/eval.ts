@@ -4,10 +4,12 @@
 import {
   LlmCallCapError,
   chaptersFromManifest,
+  checkOutputs,
   estimateEvalCalls,
   estimateGateCalls,
   evaluateGoldenQa,
   formatGateReport,
+  formatOutputIntegrity,
   missingChapterFiles,
   runGate,
   trackCost,
@@ -48,6 +50,13 @@ export async function runEval(opts: EvalOptions, deps: EvalDeps): Promise<number
     deps.out(
       `"${opts.skillDir}"를 읽을 수 없습니다. 수정 방법: 먼저 compile을 실행했는지, 경로가 맞는지 확인하세요. (${detail})`,
     );
+    return 1;
+  }
+  // E3: manifest의 QA·챕터 배정은 그 manifest가 해시한 파일에 대한 것이다 — 파일이 달라졌으면 재채점도 무의미하다.
+  const integrity = checkOutputs(manifest, files);
+  if (integrity.status !== "ok") {
+    deps.out(formatOutputIntegrity(integrity));
+    deps.out("재채점 중단: 현재 파일이 manifest와 다릅니다 — LLM은 부르지 않았습니다.");
     return 1;
   }
   const chapters = chaptersFromManifest(manifest);

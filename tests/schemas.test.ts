@@ -285,9 +285,19 @@ describe("manifestSchema", () => {
     sourceFiles: [{ path: "samples/manual.pdf", sha256: sha }],
     sections: [{ id: "installation", sha256: sha, chapterFile: "chapters/ch01-installation.md" }],
     outputs: ["SKILL.md", "chapters/ch01-installation.md"],
+    outputHashes: [
+      { path: "SKILL.md", sha256: sha },
+      { path: "chapters/ch01-installation.md", sha256: sha },
+    ],
     gate: { skipped: true },
     goldenQa: [],
   };
+  /** E3: outputs를 바꾸면 outputHashes도 같은 집합으로 — 두 필드의 불일치가 아닌, 각 테스트가 노리는 규칙으로 실패하게. */
+  const withOutputs = (m: Manifest, outputs: string[]): Manifest => ({
+    ...m,
+    outputs,
+    outputHashes: outputs.map((path) => ({ path, sha256: sha })),
+  });
   const withGate: Manifest = {
     ...valid,
     gate: consistentReport,
@@ -336,9 +346,8 @@ describe("manifestSchema", () => {
     "",
   ])("rejects chapterFile %j", (chapterFile) => {
     const invalid = {
-      ...valid,
+      ...withOutputs(valid, [...valid.outputs, chapterFile]),
       sections: [{ id: "x", sha256: sha, chapterFile }],
-      outputs: [...valid.outputs, chapterFile],
     };
     expect(() => manifestSchema.parse(invalid)).toThrow();
   });
@@ -347,9 +356,8 @@ describe("manifestSchema", () => {
     "accepts chapterFile %j",
     (chapterFile) => {
       const ok = {
-        ...valid,
+        ...withOutputs(valid, ["SKILL.md", chapterFile]),
         sections: [{ id: "x", sha256: sha, chapterFile }],
-        outputs: ["SKILL.md", chapterFile],
       };
       expect(manifestSchema.parse(ok).sections[0]?.chapterFile).toBe(chapterFile);
     },
@@ -359,9 +367,8 @@ describe("manifestSchema", () => {
     for (const [i, title] of ["Setup & Operation", "설치 및 문제 해결", "---", "A / B"].entries()) {
       const chapterFile = chapterFilePath(i, title);
       const ok = {
-        ...valid,
+        ...withOutputs(valid, ["SKILL.md", chapterFile]),
         sections: [{ id: "x", sha256: sha, chapterFile }],
-        outputs: ["SKILL.md", chapterFile],
       };
       expect(manifestSchema.parse(ok).sections[0]?.chapterFile).toBe(chapterFile);
     }
@@ -386,7 +393,7 @@ describe("manifestSchema", () => {
 
   // B6 (AUD-011, 완료 기준): 섹션·산출물·골든 QA·게이트가 서로를 정확히 가리켜야 한다.
   it("rejects a chapterFile that is not listed in outputs (B3 cross-reference)", () => {
-    expect(() => manifestSchema.parse({ ...valid, outputs: ["SKILL.md"] })).toThrow(
+    expect(() => manifestSchema.parse(withOutputs(valid, ["SKILL.md"]))).toThrow(
       /not listed in outputs/u,
     );
   });
@@ -395,6 +402,26 @@ describe("manifestSchema", () => {
     expect(() =>
       manifestSchema.parse({ ...valid, outputs: [...valid.outputs, "SKILL.md"] }),
     ).toThrow(/outputs must be unique/u);
+  });
+
+  // E3 (AUD-012): 해시 목록은 outputs와 같은 파일 집합을 정확히 덮어야 한다.
+  it("rejects outputHashes that do not cover exactly the outputs, or repeat a path (E3)", () => {
+    expect(() => manifestSchema.parse({ ...valid, outputHashes: [] })).toThrow(
+      /outputHashes must cover exactly/u,
+    );
+    expect(() =>
+      manifestSchema.parse({
+        ...valid,
+        outputHashes: [...valid.outputHashes, { path: "extra.md", sha256: sha }],
+      }),
+    ).toThrow(/outputHashes must cover exactly/u);
+    expect(() =>
+      manifestSchema.parse({
+        ...valid,
+        outputHashes: [...valid.outputHashes, { path: "SKILL.md", sha256: sha }],
+      }),
+    ).toThrow(/outputHashes paths must be unique/u);
+    expect(() => manifestSchema.parse({ ...valid, outputHashes: undefined })).toThrow();
     expect(() =>
       manifestSchema.parse({ ...valid, sections: [...valid.sections, ...valid.sections] }),
     ).toThrow(/section ids must be unique/u);

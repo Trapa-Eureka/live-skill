@@ -48,7 +48,8 @@ export interface GateReport {
 export interface Manifest {
   version: 1; createdAt: string; sourceFiles: { path: string; sha256: string }[];
   sections: { id: string; sha256: string; chapterFile: string }[];   // v0.2 증분의 키. chapterFile은 ^chapters/[\p{L}\p{N}-]+\.md$ 만(B3 — assembler의 chapterFilePath() 형태; manifest.json·SKILL.md·상위 경로는 스키마에서 거부)
-  outputs: string[]; gate: GateReport | { skipped: true };
+  outputs: string[]; outputHashes: { path: string; sha256: string }[]; // E3: report/eval이 현재 파일과 대조
+  gate: GateReport | { skipped: true };
   goldenQa: GoldenQA[];   // T8 결정(§6): eval이 원문 없이 재사용할 골든 QA 원본. 게이트 스킵 시 빈 배열. 최대 1,000개(D2 — 외부 manifest의 비용·메모리 상한)
 }
 ```
@@ -124,6 +125,8 @@ Agent Skills 표준 호환. 파일별 토큰 예산은 config 기본값이며 va
 ## 5. Manifest와 v0.2 준비
 
 **B6 결정(2026-09-07, AUD-011) — manifest는 형식만이 아니라 의미까지 검사한다**: 예전 스키마는 `passed=true, passRate=0, asked=1, correct=50` 같은 모순도 통과시켰고 `createdAt`은 아무 문자열, 해시는 길이만 봤다 — 외부 스킬 디렉터리의 manifest를 조작하면 `report`가 거짓 PASSED를 그대로 읽었다. `readManifest` 경계에서 zod `superRefine`으로 다음을 강제한다. **GateReport 내부**: `correct ≤ asked`(챕터별), 챕터 파일·qaId·sectionId 유일, `Σasked = loadHistory 길이`, `Σcorrect = Σasked − 채점 실패 수`, `passRate = Σcorrect/Σasked`(질문 0개면 0), 채점 실패의 qaId는 loadHistory에 존재, `qa_generation_failed` 실패 ⇔ `coverage.generated = 0`인 섹션(`<sectionId>-q0`), `generated ≤ requested`, `threshold ∈ [0.5, 1]`(B4), 그리고 **`passed`는 `core/gateVerdict.ts`의 `decidePassed`(gate.ts가 실제 판정에 쓰는 바로 그 함수)로 재계산한 값과 같아야 한다** — 판정 규칙을 한 곳에 두어 "코드의 판정"과 "파일의 판정"이 어긋날 수 없게 했다. **Manifest 수준**: `createdAt`은 ISO 8601, 해시는 소문자 16진수 64자(`sha256Hex` 출력 그대로), outputs·섹션 id 유일, `sections[].chapterFile ∈ outputs`(B3에서 미룬 상호 참조), `goldenQa[].sectionId ∈ sections`, 게이트를 돌렸다면 `loadHistory` qaId ⊆ `goldenQa`, `coverage`의 섹션 집합 = `sections` 집합, `perChapter`의 파일 집합 = 챕터 파일 집합. 위반하면 `readManifest`가 첫 문제들을 사람 말로 담은 Error를 던진다(zod 덤프 노출 안 함). 진위(누가 만들었나)는 여전히 검증하지 않는다 — manifest 서명/신뢰 저장소는 v0.2 대기열. 컴파일 파이프라인이 만드는 manifest는 이 규칙을 전부 만족한다(e2e가 실제 파일을 다시 읽어 확인).
+
+**E3 결정(2026-09-07, AUD-012) — 판정은 해시한 파일 집합에만 유효하다**: 예전 `report`는 manifest의 `gate`만 읽었다 — 컴파일 뒤 챕터를 손으로 고치거나 지워도 마지막 PASSED를 그대로 보여줬다. (1) **스키마**: `outputHashes: {path, sha256}[]`를 추가한다(`sourceFiles`와 같은 꼴, 내용은 UTF-8 문자열의 `sha256Hex`). `outputs: string[]`는 그대로 두고(빠른 목록, 기존 소비 코드·픽스처 유지, `version: 1` 유지) B6 `superRefine`이 두 집합의 일치와 경로 유일성을 강제한다 — 해시 목록에서 빠진 파일은 대조 없이 통과할 구멍이므로 스키마에서 막는다. (2) **대조** `core/integrity.ts`의 `checkOutputs(manifest, files)`(순수): manifest가 적은 파일이 디스크에 없으면 `missing`, 해시가 다르면 `modified`, 디스크에는 있는데 manifest가 모르면 `unexpected`(`manifest.json` 자신과 `.DS_Store` 같은 점 파일은 제외). 상태는 **STALE**(missing/modified — 컴파일 뒤 파일이 바뀌었다, 판정은 현재 파일에 적용되지 않는다) 또는 **TAMPERED**(unexpected — 게이트가 검증한 적 없는 파일이 스킬 디렉터리에 끼어들었다; 소비 에이전트는 그 파일도 읽는다). 둘 다면 TAMPERED가 우선하되 세 목록을 전부 보여준다. (3) **CLI**: `report`는 `readSkillDir`도 받아 대조하고, 어긋나면 게이트 판정을 출력하지 않고 무결성 리포트(어느 파일이 어떻게, 수정 방법)와 종료코드 1. `eval`은 두 경로 다 LLM을 부르기 전에 같은 대조를 하고 어긋나면 중단한다 — manifest의 골든 QA·챕터 배정은 그 manifest가 해시한 파일에 대한 것이라 손본 파일을 "재채점"하는 것은 판정 위조에 가깝다; 손본 뒤 다시 검증하려면 `compile --force`다. `validate`는 manifest가 없는 디렉터리도 검사하는 구조 검증이라 그대로 둔다. **세대 ID는 두지 않는다**: AUD-012가 제안한 컴파일 세대 ID는 부분 쓰기로 이전 manifest가 남는 시나리오를 잡기 위한 것인데, A3의 staging 원자 교체가 그 시나리오 자체를 없앴고 해시 대조가 나머지를 덮는다. **한계**: manifest.json 자체를 해시와 함께 일관되게 고쳐 쓰면 잡지 못한다 — 진위는 서명(v0.2 대기열)의 몫이고, E3는 "손상·드리프트"를 잡는다.
 
 - 모든 컴파일은 `manifest.json`을 스킬 디렉터리에 남긴다 (§2 스키마).
 - v0.2 `update`는 소스 재해시 → 변한 섹션만 distill·해당 챕터만 재조립·해당 문항만 재평가하는 설계가 되도록, **섹션 id는 안정적**(헤딩 경로 기반 슬러그)이어야 한다. v0.1에서 이 안정성까지 구현·테스트한다.

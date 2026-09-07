@@ -337,6 +337,7 @@ export async function compile(
     sourceFiles: sourceHashes,
     sections: manifestSections,
     outputs: files.map((f) => f.path),
+    outputHashes: files.map((f) => ({ path: f.path, sha256: sha256Hex(f.content) })), // E3
     gate,
     goldenQa,
   };

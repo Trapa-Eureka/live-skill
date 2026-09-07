@@ -1,5 +1,6 @@
 // 게이트/검증 리포트를 사람이 읽을 텍스트로 바꾼다 — 순수 문자열 포맷팅, 외부 IO 없음. `report`/`validate`/
 // `compile`/`eval` CLI가 전부 이 함수들만 호출한다("cli는 조립만", DESIGN §6).
+import type { OutputIntegrity } from "./integrity.js";
 import type { PipelineError } from "./pipeline.js";
 import type { GateReport } from "./types.js";
 import type { ValidationReport } from "./validator.js";
@@ -30,6 +31,33 @@ export function formatGateReport(report: GateReport): string {
     lines.push("", "실패 문항:");
     for (const f of report.failures) lines.push(`  - ${f.qaId}: ${f.reason}`);
   }
+  return lines.join("\n");
+}
+
+/** 산출물 무결성 실패를 사람 말로(E3) — 어떤 파일이 어떻게 어긋났는지와 수정 방법. status가 ok면 빈 문자열. */
+export function formatOutputIntegrity(r: OutputIntegrity): string {
+  if (r.status === "ok") return "";
+  const lines: string[] =
+    r.status === "stale"
+      ? [
+          "산출물 무결성: STALE — manifest가 검증한 파일과 현재 파일이 다릅니다. 게이트 판정은 현재 파일에 적용되지 않습니다.",
+        ]
+      : [
+          "산출물 무결성: TAMPERED — manifest가 모르는 파일이 스킬 디렉터리에 있습니다. 게이트는 그 파일을 검증한 적이 없습니다.",
+        ];
+  const section = (title: string, items: readonly string[]): void => {
+    if (items.length === 0) return;
+    lines.push(`  ${title}:`);
+    for (const item of items) lines.push(`    - ${item}`);
+  };
+  section("수정된 파일", r.modified);
+  section("없는 파일", r.missing);
+  section("manifest에 없는 파일", r.unexpected);
+  lines.push(
+    r.status === "stale"
+      ? "수정 방법: `compile --force`로 다시 컴파일하거나, 파일을 컴파일 당시 상태로 되돌리세요."
+      : "수정 방법: 그 파일을 스킬 디렉터리에서 치우거나, `compile --force`로 다시 컴파일하세요.",
+  );
   return lines.join("\n");
 }
 
