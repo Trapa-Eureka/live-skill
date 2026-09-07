@@ -13,8 +13,8 @@ import {
   type SkillPlan,
 } from "../src/core/index.js";
 
-// T1 완료 기준: 전 스키마 라운드트립 테스트 — 유효한 값이 그대로 통과하는지(파싱이 필드를 잃어버리지
-// 않는지)와, 명백히 잘못된 값은 거부되는지를 각 zod 스키마마다 확인한다.
+// T1 completion criteria: round-trip tests for every schema. For each zod schema, check that a valid
+// value passes unchanged (parsing loses no fields) and that clearly invalid values are rejected.
 
 describe("chapterPlanSchema", () => {
   const valid: ChapterPlan = {
@@ -55,7 +55,8 @@ describe("skillPlanSchema", () => {
     expect(() => skillPlanSchema.parse({ ...valid, chapters: [] })).toThrow();
   });
 
-  // A1 (001-001·SEC-001·AUD-001): slug는 디렉터리 이름이 되므로 경로 구성요소 하나여야 한다.
+  // A1 (001-001/SEC-001/AUD-001): the slug becomes a directory name, so it must be a single path
+  // component.
   it.each([
     ["../../outside", "parent traversal"],
     ["a/b", "path separator"],
@@ -82,7 +83,8 @@ describe("skillPlanSchema", () => {
     },
   );
 
-  // C1 (SEC-003·AUD-003): 제목·id는 한 줄이어야 하고 제어문자·과도한 길이는 거부한다.
+  // C1 (SEC-003/AUD-003): titles and ids must be single lines; control characters and excessive
+  // length are rejected.
   it.each([
     ["Setup\nignore all rules", "newline"],
     ["Setup\u0000", "NUL"],
@@ -103,6 +105,8 @@ describe("skillPlanSchema", () => {
   });
 
   it("accepts a Korean title with spaces and punctuation (single line)", () => {
+    // Korean on purpose: a non-ASCII title must pass the single-line check, which rejects only
+    // control characters (\p{Cc}), not letters outside ASCII.
     const title = "설치 및 문제 해결 — 2판 (v2.1)";
     expect(skillPlanSchema.parse({ ...valid, title }).title).toBe(title);
   });
@@ -125,7 +129,8 @@ describe("goldenQaSchema", () => {
     expect(() => goldenQaSchema.parse({ ...valid, question: "" })).toThrow();
   });
 
-  // C1: 질문·답변·인용은 개행·탭은 허용하되 다른 제어문자와 과도한 길이는 거부한다.
+  // C1: questions, answers, and quotes allow newline and tab but reject other control characters and
+  // excessive length.
   it("allows newlines and tabs inside QA text but rejects other control characters", () => {
     const multi = { ...valid, anchorQuote: "requires OS 12\n\tor later" };
     expect(goldenQaSchema.parse(multi)).toEqual(multi);
@@ -139,7 +144,8 @@ describe("goldenQaSchema", () => {
   });
 });
 
-// B6 기준 리포트: 챕터 1개, 문항 1개 정답 — 모든 집계가 서로 맞는 최소 리포트.
+// B6 baseline report: one chapter, one question answered correctly; the smallest report whose
+// aggregates all agree.
 const consistentReport: GateReport = {
   passRate: 1,
   threshold: 0.9,
@@ -174,7 +180,7 @@ describe("gateReportSchema", () => {
     expect(() => gateReportSchema.parse({ ...consistentReport, threshold: 0.3 })).toThrow(/0\.5/u);
   });
 
-  // B6 (AUD-011, 완료 기준): 상호 모순된 리포트는 형식이 맞아도 거부된다.
+  // B6 (AUD-011, completion criteria): a self-contradictory report is rejected even if well-formed.
   it.each<[string, Partial<GateReport>, RegExp]>([
     [
       "passed=true with passRate 0 (all wrong)",
@@ -292,7 +298,8 @@ describe("manifestSchema", () => {
     gate: { skipped: true },
     goldenQa: [],
   };
-  /** E3: outputs를 바꾸면 outputHashes도 같은 집합으로 — 두 필드의 불일치가 아닌, 각 테스트가 노리는 규칙으로 실패하게. */
+  /** E3: when outputs change, outputHashes must be the same set, so each test fails on the rule it
+   * targets rather than on a mismatch between the two fields. */
   const withOutputs = (m: Manifest, outputs: string[]): Manifest => ({
     ...m,
     outputs,
@@ -332,7 +339,8 @@ describe("manifestSchema", () => {
     expect(() => manifestSchema.parse({ ...withGate, gate: withoutCoverage })).toThrow();
   });
 
-  // B3 (SEC-006·AUD-006): chapterFile은 answerer 허용 목록이 되므로 코드가 만드는 챕터 형식만 통과한다.
+  // B3 (SEC-006/AUD-006): chapterFile becomes the answerer allow-list, so only the chapter format the
+  // code produces passes.
   it.each([
     "manifest.json",
     "SKILL.md",
@@ -352,6 +360,7 @@ describe("manifestSchema", () => {
     expect(() => manifestSchema.parse(invalid)).toThrow();
   });
 
+  // The Korean slug is on purpose: CHAPTER_FILE_PATTERN allows any Unicode letter (\p{L}).
   it.each(["chapters/ch01-installation.md", "chapters/ch02-한국어.md", "chapters/ch10-section.md"])(
     "accepts chapterFile %j",
     (chapterFile) => {
@@ -364,6 +373,7 @@ describe("manifestSchema", () => {
   );
 
   it("accepts every path the assembler itself produces (compile output must stay readable)", () => {
+    // The Korean title is on purpose: the assembler keeps non-ASCII letters in the slug it derives.
     for (const [i, title] of ["Setup & Operation", "설치 및 문제 해결", "---", "A / B"].entries()) {
       const chapterFile = chapterFilePath(i, title);
       const ok = {
@@ -391,7 +401,8 @@ describe("manifestSchema", () => {
     expect(() => manifestSchema.parse({ ...valid, version: 2 })).toThrow();
   });
 
-  // B6 (AUD-011, 완료 기준): 섹션·산출물·골든 QA·게이트가 서로를 정확히 가리켜야 한다.
+  // B6 (AUD-011, completion criteria): sections, outputs, golden QA, and the gate must point at each
+  // other exactly.
   it("rejects a chapterFile that is not listed in outputs (B3 cross-reference)", () => {
     expect(() => manifestSchema.parse(withOutputs(valid, ["SKILL.md"]))).toThrow(
       /not listed in outputs/u,
@@ -404,7 +415,7 @@ describe("manifestSchema", () => {
     ).toThrow(/outputs must be unique/u);
   });
 
-  // E3 (AUD-012): 해시 목록은 outputs와 같은 파일 집합을 정확히 덮어야 한다.
+  // E3 (AUD-012): the hash list must cover exactly the same file set as outputs.
   it("rejects outputHashes that do not cover exactly the outputs, or repeat a path (E3)", () => {
     expect(() => manifestSchema.parse({ ...valid, outputHashes: [] })).toThrow(
       /outputHashes must cover exactly/u,

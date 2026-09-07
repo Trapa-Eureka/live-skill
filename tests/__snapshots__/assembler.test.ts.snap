@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`assembleSkill — fixed-input snapshot (완료 기준) > produces the same 5 files for the same input, every time 1`] = `
+exports[`assembleSkill — fixed-input snapshot (completion criterion) > produces the same 5 files for the same input, every time 1`] = `
 [
   {
     "content": "---
@@ -10,18 +10,18 @@ description: "SkillSync X200 Manual"
 
 # SkillSync X200 Manual
 
-## 챕터 인덱스
+## Chapter index
 
-- \`chapters/ch01-installation.md\` — Installation (원문 섹션: installation, installation/prerequisites)
-- \`chapters/ch02-troubleshooting.md\` — Troubleshooting (원문 섹션: troubleshooting)
+- \`chapters/ch01-installation.md\` — Installation (source sections: installation, installation/prerequisites)
+- \`chapters/ch02-troubleshooting.md\` — Troubleshooting (source sections: troubleshooting)
 
-## 참고 파일
+## Reference files
 
-- \`glossary.md\` — 핵심 용어
-- \`patterns.md\` — 기법·절차·안티패턴
-- \`cheatsheet.md\` — 결정 표·즉답 규칙
+- \`glossary.md\` — key terms
+- \`patterns.md\` — techniques, procedures, anti-patterns
+- \`cheatsheet.md\` — decision tables and quick rules
 ",
-    "estimatedTokens": 122,
+    "estimatedTokens": 117,
     "path": "SKILL.md",
   },
   {
@@ -55,11 +55,11 @@ description: "SkillSync X200 Manual"
   {
     "content": "# Patterns
 
-## 절차
+## Procedures
 
 - Assign a static address before powering on. [§installation/prerequisites] (\`chapters/ch01-installation.md\`)
 
-## 안티패턴
+## Anti-patterns
 
 - Do not substitute a higher-rated fuse. [§troubleshooting] (\`chapters/ch02-troubleshooting.md\`)
 ",

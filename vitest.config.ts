@@ -9,9 +9,10 @@ export default defineConfig({
       include: ["src/core/**"],
       reporter: ["text", "json-summary", "html"],
       reportsDirectory: "coverage",
-      // SPEC §6 / TASKS.md T9: src/core는 90% 이상이어야 한다.
-      // `npm run test:coverage`에서만 적용된다(`npm run check`에는 안 물림) —
-      // src/core가 아직 없는 T0 시점엔 의미가 없고, T1부터 core 코드가 쌓이며 실제로 강제된다.
+      // SPEC §6 / TASKS.md T9: src/core must stay at 90% or above.
+      // Applied only by `npm run test:coverage` (not wired into `npm run check`). It meant nothing
+      // at T0, when src/core did not exist yet; it is enforced for real as core code accumulates
+      // from T1 on.
       thresholds: { statements: 90, lines: 90, functions: 90, branches: 80 },
     },
   },

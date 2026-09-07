@@ -1,4 +1,5 @@
-// F3(DESIGN §5.1): compile과 eval --source가 공유하는 원문 → 모집단 코드와 manifest 대조. 순수 계산, LLM 0회.
+// F3 (DESIGN §5.1): the source → population code shared by compile and eval --source, and the
+// manifest comparison. Pure computation, zero LLM calls.
 import { describe, expect, it } from "vitest";
 import {
   buildPopulation,

@@ -44,11 +44,11 @@ const VALID_GLOSSARY: SkillFile = {
 };
 const VALID_PATTERNS: SkillFile = {
   path: "patterns.md",
-  content: "# Patterns\n\n(추출된 패턴이 없습니다.)",
+  content: "# Patterns\n\n(no patterns extracted.)",
 };
 const VALID_CHEATSHEET: SkillFile = {
   path: "cheatsheet.md",
-  content: "# Cheatsheet\n\n(추출된 규칙이 없습니다.)",
+  content: "# Cheatsheet\n\n(no rules extracted.)",
 };
 const validFiles: SkillFile[] = [
   VALID_SKILL_MD,
@@ -66,7 +66,7 @@ describe("validateSkill — clean input", () => {
 
 describe("validateSkill — budget exceeded (TESTING §3, error)", () => {
   it("flags a chapter file over its per-file budget", () => {
-    const oversized = "word ".repeat(2000); // 훨씬 웃도는 분량
+    const oversized = "word ".repeat(2000); // far over the budget
     const files: SkillFile[] = [
       VALID_SKILL_MD,
       { path: "chapters/ch01-a.md", content: `${oversized} [§a]` },
@@ -228,7 +228,7 @@ describe("validateSkill — anchor ratio (TESTING §3, warning — does not fail
       VALID_CHEATSHEET,
     ];
     const report = validateSkill(files, BUDGETS);
-    expect(report.passed).toBe(true); // warning만으로는 실패하지 않는다
+    expect(report.passed).toBe(true); // a warning alone does not fail it
     expect(report.issues).toContainEqual(
       expect.objectContaining({
         severity: "warning",
@@ -253,7 +253,7 @@ describe("validateSkill — anchor ratio (TESTING §3, warning — does not fail
   });
 });
 
-describe("validateSkill — integration with assembleSkill (T4/T5 통합)", () => {
+describe("validateSkill — integration with assembleSkill (T4/T5 integration)", () => {
   it("passes on a well-anchored assembler output", () => {
     const chapter: ChapterPlan = {
       id: "a",
@@ -275,7 +275,7 @@ describe("validateSkill — integration with assembleSkill (T4/T5 통합)", () =
   });
 });
 
-describe("validator.ts — LLM 0회 보장 (완료 기준, import 검사)", () => {
+describe("validator.ts — zero LLM calls guaranteed (completion criterion, import check)", () => {
   it("never imports an LLM provider, ScriptedLlm, or the Anthropic SDK", () => {
     const source = readFileSync(join(process.cwd(), "src/core/validator.ts"), "utf-8");
     const importLines = source

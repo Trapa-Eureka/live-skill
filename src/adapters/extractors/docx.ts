@@ -1,5 +1,5 @@
-// DOCX 추출기 (mammoth). 헤딩을 마크다운 헤딩으로 바꿔 공유 구조화기(structureText)가 그대로 인식하게
-// 한다. 이식 출처: ../msg-agent/src/adapters/extractors/docx.ts.
+// DOCX extractor (mammoth). Headings are converted to Markdown headings so the shared structurer
+// (structureText) recognizes them as-is. Ported from ../msg-agent/src/adapters/extractors/docx.ts.
 import JSZip from "jszip";
 import mammoth from "mammoth";
 import type { DocumentExtractor, ExtractError, ExtractedDoc, Result } from "../../core/index.js";
@@ -19,8 +19,8 @@ const ENTITIES: Record<string, string> = {
 };
 
 /**
- * mammoth가 만든 HTML을 마크다운 느낌의 블록으로 바꾼다(선형 태그 스캔): 헤딩은 레벨을 유지하고, 링크는
- * [텍스트](url)로, 순서 있는 목록은 번호를, 중첩 목록은 들여쓰기를 유지한다.
+ * Turns the HTML mammoth produced into Markdown-like blocks (linear tag scan): headings keep their
+ * level, links become [text](url), ordered lists keep their numbers, nested lists keep their indent.
  */
 export function htmlToBlocks(html: string): string {
   const decode = (t: string): string =>
@@ -98,12 +98,13 @@ export type ZipMeasure =
   | { ok: true; entries: number; uncompressed: number }
   | { ok: false; reason: "too_many_entries" | "too_many_bytes" | "aborted" };
 
-/** JSZip이 d.ts에 싣지 않은 공개 API(문서화됨) — 엔트리를 스트리밍으로 푼다. */
+/** Public JSZip API that its d.ts omits (it is documented): inflates an entry as a stream. */
 interface StreamingEntry {
   internalStream(type: "uint8array"): JSZip.JSZipStreamHelper<Uint8Array>;
 }
 
-/** 엔트리 하나를 실제로 풀며 바이트를 센다. budget을 넘는 순간 스트림을 멈추고 undefined — 푼 바이트는 버린다. */
+/** Actually inflates one entry while counting its bytes. The moment the count exceeds budget, the
+ * stream is paused and undefined is returned; the inflated bytes are discarded. */
 function inflatedSize(entry: JSZip.JSZipObject, budget: number): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
     const stream = (entry as unknown as StreamingEntry).internalStream("uint8array");
@@ -124,9 +125,11 @@ function inflatedSize(entry: JSZip.JSZipObject, budget: number): Promise<number 
   });
 }
 
-/** mammoth에 넘기기 전 ZIP 예산을 실측한다(D4, zip bomb·엔트리 폭탄 방지): 헤더가 *선언한* 크기가 아니라
- * inflate가 실제로 내놓는 바이트를 세고, 누적이 상한을 넘는 순간 멈춘다 — 메모리는 상한 + 청크 하나로 묶인다.
- * 같은 deflate 스트림은 같은 바이트를 내놓으므로 뒤이어 mammoth가 푸는 양도 이 상한 안이다. */
+/** Measures the ZIP budget before handing the file to mammoth (D4, zip-bomb and entry-bomb guard):
+ * counts the bytes inflate actually produces rather than the sizes the headers *declare*, and stops
+ * the moment the running total exceeds the cap, so memory is bounded by the cap plus one chunk. The
+ * same deflate stream yields the same bytes, so what mammoth inflates afterwards stays within the
+ * cap as well. */
 export async function measureZip(
   bytes: Uint8Array,
   limits: ZipLimits,
@@ -145,7 +148,7 @@ export async function measureZip(
   return { ok: true, entries: files.length, uncompressed };
 }
 
-/** 이미지는 디코딩 전에 버린다 — 변환기가 image.read()를 아예 호출하지 않는다. */
+/** Images are dropped before decoding: the converter never calls image.read(). */
 const dropImages = mammoth.images.imgElement(() => Promise.resolve({ src: "" }));
 
 export class DocxExtractor implements DocumentExtractor {
@@ -163,7 +166,8 @@ export class DocxExtractor implements DocumentExtractor {
     return mime.toLowerCase() === MIME || hasExtension(name, [".docx"]);
   }
 
-  /** signal(선택)은 바깥에서 취소할 때 — 인터페이스(DocumentExtractor)보다 넓은 시그니처(D4). */
+  /** The optional signal lets the caller cancel from outside: a wider signature than the
+   * DocumentExtractor interface requires (D4). */
   extract(bytes: Uint8Array, signal?: AbortSignal): Promise<Result<ExtractedDoc, ExtractError>> {
     return withDeadline((s) => this.parse(bytes, s), this.timeoutMs, signal);
   }
@@ -184,9 +188,9 @@ export class DocxExtractor implements DocumentExtractor {
           ? TIMEOUT
           : err({ kind: "corrupt", detail: "zip_budget" });
       }
-      if (signal.aborted) return TIMEOUT; // mammoth는 취소할 수 없다 — 들어가기 전에 한 번 더 본다
+      if (signal.aborted) return TIMEOUT; // mammoth cannot be cancelled: check once more before entering
       const result = await mammoth.convertToHtml(
-        { buffer: asBuffer(bytes) }, // D3: 복사 대신 뷰 — mammoth는 읽기만 한다
+        { buffer: asBuffer(bytes) }, // D3: a view instead of a copy; mammoth only reads it
         { convertImage: dropImages },
       );
       html = result.value;

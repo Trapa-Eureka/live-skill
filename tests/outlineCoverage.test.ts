@@ -1,5 +1,5 @@
-// B1 — outline 커버리지 검증(core/outlineCoverage.ts)의 순수 함수 단위 테스트. 파이프라인 연결은
-// tests/pipeline.test.ts "compile — outline coverage".
+// B1: unit tests for the pure functions of the outline coverage check (core/outlineCoverage.ts). The
+// pipeline wiring is covered by tests/pipeline.test.ts "compile — outline coverage".
 import { describe, expect, it } from "vitest";
 import {
   checkOutlineCoverage,

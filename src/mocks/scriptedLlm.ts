@@ -1,5 +1,6 @@
-// ScriptedLlm — 실 LLM 호출 없이 파이프라인을 검증하는 목(TESTING §1~§2). system 프롬프트의 역할 태그로
-// 라우팅하고(core/promptRole.ts), 역할별로 순차 재생한다. 대본 소진·역할 불일치는 명확한 에러로 실패한다.
+// ScriptedLlm: a mock that verifies the pipeline without real LLM calls (TESTING §1-§2). Routes on
+// the role tag of the system prompt (core/promptRole.ts) and replays per role in order. Script
+// exhaustion and role mismatch fail with clear errors.
 import type { LlmProvider, PromptRole, SkillPlan } from "../core/index.js";
 import { PROMPT_ROLES, detectPromptRole } from "../core/index.js";
 
@@ -26,7 +27,8 @@ export class UnknownRoleError extends Error {
 interface ScriptEntry {
   label?: string | undefined;
   value: string;
-  /** 있으면 이 차례에 응답 대신 이 오류로 거부한다(G1 — provider 실패 주입). */
+  /** When set, this turn rejects with this error instead of responding (G1: provider failure
+   * injection). */
   error?: Error | undefined;
 }
 
@@ -48,7 +50,7 @@ export class ScriptedLlm implements LlmProvider {
   readonly calls: RecordedCall[] = [];
 
   constructor(queues: Queues) {
-    // 얕은 복사 — 소비해도 호출자가 만든 원본 배열을 건드리지 않는다.
+    // Shallow copy: consuming entries must not touch the caller's original arrays.
     this.queues = emptyQueues();
     for (const role of PROMPT_ROLES) this.queues[role] = [...queues[role]];
   }
@@ -63,7 +65,8 @@ export class ScriptedLlm implements LlmProvider {
     return Promise.resolve(entry.value);
   }
 
-  /** 모든 역할의 대본이 소진됐는지 확인한다 — 남아 있으면 테스트가 실제 호출보다 더 많은 대본을 준 것이다. */
+  /** Checks that every role's script is exhausted; leftovers mean the test scripted more responses
+   * than the actual calls. */
   assertExhausted(): void {
     const leftover = PROMPT_ROLES.map((role) => [role, this.queues[role]] as const).filter(
       ([, entries]) => entries.length > 0,
@@ -79,7 +82,7 @@ export class ScriptedLlm implements LlmProvider {
   }
 }
 
-/** ScriptedLlm을 순서대로 채우는 빌더 — TESTING §2: script().outline({...}).distill("ch01", "...")… */
+/** Builder that fills a ScriptedLlm in order (TESTING §2): script().outline({...}).distill("ch01", "...")… */
 export class ScriptBuilder {
   private readonly queues: Queues = emptyQueues();
 
@@ -88,7 +91,8 @@ export class ScriptBuilder {
     return this;
   }
 
-  /** 이미 완성된 원시 JSON 문자열을 그대로 대본에 넣는다(스키마를 깨뜨리는 잘못된 응답을 흉내낼 때 씀). */
+  /** Puts a pre-built raw JSON string into the script as-is (for mimicking a malformed response that
+   * breaks the schema). */
   outlineRaw(raw: string, label?: string): this {
     this.queues.outline.push({ label, value: raw });
     return this;
@@ -104,7 +108,8 @@ export class ScriptBuilder {
     return this;
   }
 
-  /** qaGen 큐에 원시 문자열을 그대로 넣는다(스키마를 깨뜨리는 잘못된 응답을 흉내낼 때 씀). */
+  /** Puts a raw string into the qaGen queue as-is (for mimicking a malformed response that breaks the
+   * schema). */
   qaRaw(raw: string, label?: string): this {
     this.queues.qaGen.push({ label, value: raw });
     return this;
@@ -125,7 +130,8 @@ export class ScriptBuilder {
     return this;
   }
 
-  /** 해당 역할의 다음 차례에 응답 대신 error로 거부한다 — provider 실패(rate limit 등)를 흉내낼 때(G1). */
+  /** Rejects the role's next turn with error instead of a response; mimics a provider failure such as
+   * a rate limit (G1). */
   fail(role: PromptRole, error: Error, label?: string): this {
     this.queues[role].push({ label: label ?? `fail:${error.name}`, value: "", error });
     return this;

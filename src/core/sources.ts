@@ -1,7 +1,9 @@
-// 원문 → 검증 모집단(DESIGN §5.1 B1·F2·F3). compile과 eval --source가 **같은 코드**로 원문을 추출하고, 소스가 여러 개면
-// 같은 접두어를 붙이고, 같은 규칙(본문 있는 섹션만)으로 모집단을 만든다 — 예전엔 eval이 자기 루프로 재추출해 접두어가
-// 없었고, 다중 소스 스킬의 manifest 배정(`x/a`)과 재추출 id(`a`)가 어긋나 질문 0개로 게이트가 실패했다(001-008).
-// 순수 계산 + 주입된 추출기 호출만 — 파일 읽기는 어댑터 몫.
+// Source → verification population (DESIGN §5.1 B1, F2, F3). compile and eval --source extract
+// the source with **the same code**, apply the same prefixes when there are several sources, and
+// build the population by the same rule (sections with body text only). eval used to re-extract in
+// its own loop without prefixes, so for a multi-source skill the manifest's assignment (`x/a`) and
+// the re-extracted id (`a`) disagreed and the gate failed with zero questions (001-008).
+// Pure computation plus calls to the injected extractors; file reading belongs to the adapter.
 import { sha256Hex } from "./hash.js";
 import { isSubstantiveSection } from "./outlineCoverage.js";
 import { err, ok, type Result } from "./result.js";
@@ -11,7 +13,8 @@ import type { DocumentExtractor, ExtractError, Manifest, Section } from "./types
 export interface SourceFile {
   path: string;
   bytes: Uint8Array;
-  /** 없으면 "application/octet-stream" — 확장자 기반 라우팅으로 폴백(adapters/extractors/route.ts). */
+  /** Defaults to "application/octet-stream", which falls back to extension-based routing
+   * (adapters/extractors/route.ts). */
   mime?: string;
 }
 
@@ -28,9 +31,9 @@ export type SourceError =
   | { kind: "unsupported_format"; path: string; message: string }
   | { kind: "extract_failed"; path: string; error: ExtractError; message: string };
 
-export const SUPPORTED_FORMATS = "PDF(텍스트형)·DOCX·MD/TXT·HTML";
+export const SUPPORTED_FORMATS = "PDF (text-based), DOCX, MD/TXT, HTML";
 
-/** 소스 파일들을 순서대로 추출한다. 첫 실패에서 멈추고 원인 + 수정 방법을 담아 돌려준다. */
+/** Extracts the source files in order. Stops at the first failure and returns it with cause + fix. */
 export async function extractSources(
   sources: readonly SourceFile[],
   extractors: readonly DocumentExtractor[],
@@ -64,8 +67,9 @@ export async function extractSources(
   return ok(perFile);
 }
 
-/** 소스가 여러 개면 파일마다 접두어(공통 상위 디렉터리를 뺀 상대 경로 슬러그, F2)를 붙여 섹션 id 충돌을 막는다.
- * 결과 id는 전부 유일해야 한다 — 겹치면 뒤의 Map이 앞 섹션을 조용히 덮어쓰므로 여기서 크게 실패한다. */
+/** With several sources, prefixes each file's section ids (the slug of the relative path below the
+ * common directory, F2) to prevent collisions. Every resulting id must be unique: a collision would
+ * let the downstream Map silently overwrite the earlier section, so this fails loudly instead. */
 export function namespaceSections(perFile: readonly PerFileSections[]): NamedSection[] {
   const prefixes = namespacePrefixes(perFile.map((f) => f.path));
   const named = perFile.flatMap(({ path, sections }, i) => {
@@ -88,22 +92,27 @@ export function namespaceSections(perFile: readonly PerFileSections[]): NamedSec
   return named;
 }
 
-/** 검증 모집단(B1): 접두어를 붙인 뒤 본문 있는 섹션만. compile의 outline·게이트와 eval --source가 같은 집합을 본다(F3). */
+/** Verification population (B1): after prefixing, only sections with body text. compile's outline
+ * and gate and eval --source all see the same set (F3). */
 export function buildPopulation(perFile: readonly PerFileSections[]): NamedSection[] {
   return namespaceSections(perFile).filter(isSubstantiveSection);
 }
 
 export interface PopulationMatch {
-  /** manifest에는 있는데 지금 원문에서 나오지 않은 섹션 id — 파일이 빠졌거나 폴더 구조가 달라 접두어가 바뀌었다. */
+  /** Section ids in the manifest that the current source no longer produces: a file is missing, or
+   * a different folder layout changed the prefix. */
   missing: string[];
-  /** 지금 원문에는 있는데 manifest에 없는 섹션 id — 파일이 더 들어왔거나 헤딩이 추가됐다. */
+  /** Section ids in the current source that the manifest lacks: extra files came in, or headings
+   * were added. */
   unknown: string[];
-  /** 양쪽에 있지만 본문 해시가 다른 섹션 id — 컴파일 뒤 원문이 바뀌었다(문항은 현재 원문으로 새로 만든다). */
+  /** Section ids present on both sides whose body hash differs: the source changed after compile
+   * (questions are regenerated from the current source). */
   changed: string[];
 }
 
-/** eval --source가 재추출한 모집단이 manifest가 컴파일한 모집단과 같은 집합인지(F3). id 집합이 다르면 챕터 배정을
- * 적용할 수 없으므로 호출자는 명시적으로 실패해야 한다; 본문만 바뀐 것은 참고 사항이다. */
+/** Whether the population eval --source re-extracted is the same set the manifest compiled (F3).
+ * If the id sets differ, the chapter assignment cannot be applied and the caller must fail
+ * explicitly; a changed body alone is informational. */
 export function matchManifestSections(
   manifest: Manifest,
   population: readonly Section[],

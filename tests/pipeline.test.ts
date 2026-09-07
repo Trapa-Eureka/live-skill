@@ -30,7 +30,7 @@ const twoChapterPlan: SkillPlan = {
   ],
 };
 
-describe("compile — e2e with a normal script, gate excluded (완료 기준)", () => {
+describe("compile — e2e with a normal script, gate excluded (completion criterion)", () => {
   it("runs extract -> outline -> distill -> assemble -> validate and produces a manifest", async () => {
     const extractor = new FixtureExtractor({ md: twoSectionDoc });
     const llm = script()
@@ -44,7 +44,7 @@ describe("compile — e2e with a normal script, gate excluded (완료 기준)", 
       llm,
       clock,
       config,
-      gate: "skip", // 이 스위트는 게이트가 아니라 추출~조립~manifest를 검증한다(게이트는 tests/gate.test.ts)
+      gate: "skip", // this suite covers extract through assemble and manifest, not the gate (see tests/gate.test.ts)
     });
 
     expect(result.ok).toBe(true);
@@ -55,7 +55,7 @@ describe("compile — e2e with a normal script, gate excluded (완료 기준)", 
     expect(result.value.manifest.outputs).toContain("SKILL.md");
     expect(result.value.files.map((f) => f.path)).toContain("chapters/ch01-installation.md");
     expect(result.value.validation.passed).toBe(true);
-    llm.assertExhausted(); // 정확히 outline 1회 + distill 2회만 썼다
+    llm.assertExhausted(); // exactly 1 outline + 2 distill calls were used
   });
 });
 
@@ -93,7 +93,7 @@ describe("compile — multi-source section-id namespacing (DESIGN §5.1)", () =>
     const docB: ExtractedDoc = {
       sections: [{ id: "overview", heading: "Overview", level: 1, text: "Doc B overview." }],
     };
-    const extractor = new FixtureExtractor({ md: docA }); // supports()는 확장자만 보므로 파일 하나로 두 소스 다 처리
+    const extractor = new FixtureExtractor({ md: docA }); // supports() looks at the extension only, so one fixture serves both sources
     const extractorB = new FixtureExtractor({ txt: docB });
     const plan: SkillPlan = {
       slug: "s",
@@ -121,8 +121,8 @@ describe("compile — multi-source section-id namespacing (DESIGN §5.1)", () =>
     expect(result.value.manifest.sections.map((s) => s.id)).toEqual(["a/overview", "b/overview"]);
   });
 
-  // F2 (001-006, 완료 기준): 다른 폴더의 같은 파일명 — 예전 basename 접두어는 둘 다 "readme/overview"가 되어
-  // 뒤 파일이 앞 파일의 원문을 덮어썼다.
+  // F2 (001-006, completion criterion): the same file name in different folders. The old basename
+  // prefix made both "readme/overview", so the later file overwrote the earlier file's source.
   it("keeps sections from same-named files in different folders apart (relative-path prefixes)", async () => {
     const doc: ExtractedDoc = {
       sections: [{ id: "overview", heading: "Overview", level: 1, text: "Overview text." }],
@@ -153,7 +153,7 @@ describe("compile — multi-source section-id namespacing (DESIGN §5.1)", () =>
       "a-readme/overview",
       "b-readme/overview",
     ]);
-    // outline이 본 모집단에도 두 섹션이 모두 있었다(덮어쓰기 없음).
+    // The population outline saw also contained both sections (no overwrite).
     const outline = llm.calls.find((c) => c.role === "outline");
     expect(outline?.prompt).toContain("[§a-readme/overview]");
     expect(outline?.prompt).toContain("[§b-readme/overview]");
@@ -214,7 +214,7 @@ describe("compile — empty document (TESTING §4)", () => {
   });
 });
 
-describe("compile — distill receives whole sections (F1, 완료 기준)", () => {
+describe("compile — distill receives whole sections (F1, completion criterion)", () => {
   it("sends the tail of a section longer than 2,000 characters to the distill model, unabridged", async () => {
     const tail = "TAIL-RULE: torque the M3 screws to 0.6 N·m.";
     const text = `${"Mount the unit. ".repeat(200)}${tail}`;
@@ -237,19 +237,19 @@ describe("compile — distill receives whole sections (F1, 완료 기준)", () =
     });
     expect(result.ok).toBe(true);
     const distill = llm.calls.find((c) => c.role === "distill");
-    expect(distill?.prompt).toContain(text); // 전문 그대로
+    expect(distill?.prompt).toContain(text); // the full text, verbatim
     expect(distill?.prompt).toContain(tail);
     expect(distill?.prompt).not.toContain("…");
     const outline = llm.calls.find((c) => c.role === "outline");
-    expect(outline?.prompt).toContain("…"); // outline은 발췌 — 구조 결정에는 앞부분으로 충분
+    expect(outline?.prompt).toContain("…"); // outline gets an excerpt; the head is enough to decide structure
   });
 });
 
-describe("compile — oversized input (TESTING §4, 우회 없음)", () => {
+describe("compile — oversized input (TESTING §4, no bypass)", () => {
   it("rejects before calling any LLM when the extracted text is over MAX_INPUT_TOKENS", async () => {
-    const huge = syntheticDoc(MAX_INPUT_TOKENS * 5, 10, "en"); // 훨씬 웃도는 분량
+    const huge = syntheticDoc(MAX_INPUT_TOKENS * 5, 10, "en"); // far over the limit
     const extractor = new FixtureExtractor({ md: huge });
-    const llm = script().build(); // 대본 0개 — 호출되면 즉시 실패해야 한다
+    const llm = script().build(); // empty script: any call must fail immediately
     const result = await compile([{ path: "huge.md", bytes: nameAsBytes("huge.md") }], {
       extractors: [extractor],
       llm,
@@ -257,16 +257,16 @@ describe("compile — oversized input (TESTING §4, 우회 없음)", () => {
       config,
     });
     expect(result).toMatchObject({ ok: false, error: { kind: "input_too_large" } });
-    llm.assertExhausted(); // LLM 호출이 0회였다는 증거 — assert_exhausted가 아니라 대본이 원래 비어 있었음
+    llm.assertExhausted(); // proof of zero LLM calls: the script was empty to begin with
     expect(llm.calls).toEqual([]);
   });
 });
 
-describe("compile — MAX_LLM_CALLS cap (TESTING §4, 비용 누수 가드)", () => {
+describe("compile — MAX_LLM_CALLS cap (TESTING §4, cost-leak guard)", () => {
   it("aborts before any distill call once outline + chapters would exceed the cap (gate skip)", async () => {
-    const tightConfig = loadConfig({ MAX_LLM_CALLS: "2" }); // outline(1) + 챕터 2개 = 3 > 2
+    const tightConfig = loadConfig({ MAX_LLM_CALLS: "2" }); // outline (1) + 2 chapters = 3 > 2
     const extractor = new FixtureExtractor({ md: twoSectionDoc });
-    const llm = script().outline(twoChapterPlan).build(); // distill 대본은 아예 안 줌
+    const llm = script().outline(twoChapterPlan).build(); // no distill script at all
     const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
       extractors: [extractor],
       llm,
@@ -282,7 +282,8 @@ describe("compile — MAX_LLM_CALLS cap (TESTING §4, 비용 누수 가드)", ()
   });
 
   it("counts the gate's own upper-bound cost when gate runs (default), aborting before any distill or gate call", async () => {
-    // outline(1) + 챕터 2개(distill) + 게이트 상한선(섹션 2개 * (2+3*3)=22, DESIGN §4 D1 정정 산식) = 25 > 10
+    // outline (1) + 2 chapters (distill) + gate upper bound (2 sections * (2+3*3) = 22, the corrected
+    // D1 formula in DESIGN §4) = 25 > 10
     const tightConfig = loadConfig({ MAX_LLM_CALLS: "10" });
     const extractor = new FixtureExtractor({ md: twoSectionDoc });
     const llm = script().outline(twoChapterPlan).build();
@@ -291,7 +292,7 @@ describe("compile — MAX_LLM_CALLS cap (TESTING §4, 비용 누수 가드)", ()
       llm,
       clock,
       config: tightConfig,
-      // gate 기본값("run")
+      // gate defaults to "run"
     });
     expect(result).toMatchObject({
       ok: false,
@@ -301,13 +302,14 @@ describe("compile — MAX_LLM_CALLS cap (TESTING §4, 비용 누수 가드)", ()
   });
 
   it("enforces the cap during the run too: a cap tripped mid-run becomes call_cap_exceeded(runtime), nothing is returned (D1)", async () => {
-    // 사전 추정은 통과시키되(상한 300) 주입한 LlmProvider 자체가 2회에서 막히게 해 실행 중 경로를 밟는다 —
-    // 산식이 맞는 한 파이프라인의 자체 상한은 밟히지 않으므로, 어떤 상한이든 실행 중에 터졌을 때의 처리를 본다.
+    // Let the preflight estimate pass (cap 300) but make the injected LlmProvider itself block at
+    // 2 calls, so the mid-run path is exercised. As long as the formula is right the pipeline's own
+    // cap is never hit mid-run, so this checks how any cap tripping during the run is handled.
     const extractor = new FixtureExtractor({ md: twoSectionDoc });
     const inner = script()
       .outline(twoChapterPlan)
       .distill("a", "Mount the unit on a flat surface. [§a]")
-      .distill("b", "Check the fault LED. [§b]") // 3번째 호출 — 상한 2에 막혀 대본에 닿지 않는다
+      .distill("b", "Check the fault LED. [§b]") // 3rd call: blocked by the cap of 2, never reaches the script
       .build();
     const capped = trackCost(inner, { maxCalls: 2 });
     const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
@@ -323,7 +325,7 @@ describe("compile — MAX_LLM_CALLS cap (TESTING §4, 비용 누수 가드)", ()
     });
     if (result.ok) throw new Error("expected failure");
     expect(result.error.message).toContain("stopped mid-run");
-    expect(inner.calls).toHaveLength(2); // outline + distill 1개까지만 실제로 나갔다
+    expect(inner.calls).toHaveLength(2); // only outline + 1 distill actually went out
   });
 
   it("reports the actual number of LLM calls made (CompileResult.llmCalls)", async () => {
@@ -346,8 +348,8 @@ describe("compile — MAX_LLM_CALLS cap (TESTING §4, 비용 누수 가드)", ()
   });
 });
 
-describe("compile — gate integration (T7, 게이트 판별력 5/5 포함)", () => {
-  const oneQuestionConfig = loadConfig({ QA_PER_SECTION: "1" }); // qaGen이 한 번에 1개만 요청하게
+describe("compile — gate integration (T7, including gate discrimination 5/5)", () => {
+  const oneQuestionConfig = loadConfig({ QA_PER_SECTION: "1" }); // so qaGen requests only 1 at a time
 
   function scriptWithGate(verdict: "correct" | "wrong") {
     return script()
@@ -399,14 +401,14 @@ describe("compile — gate integration (T7, 게이트 판별력 5/5 포함)", ()
       clock,
       config: oneQuestionConfig,
     });
-    expect(result.ok).toBe(true); // 게이트 미달은 컴파일 자체의 실패가 아니다 — 산출물은 나오되 unverified
+    expect(result.ok).toBe(true); // failing the gate is not a compile failure: output is produced, but unverified
     if (!result.ok) throw new Error("expected success");
     expect(result.value.manifest.gate).toMatchObject({ passed: false, passRate: 0 });
     const skillMd = result.value.files.find((f) => f.path === "SKILL.md");
     expect(skillMd?.content).toContain("unverified");
   });
 
-  it("--no-gate (gate: 'skip') deploys unverified with manifest.gate = skipped (게이트 판별력 5/5)", async () => {
+  it("--no-gate (gate: 'skip') deploys unverified with manifest.gate = skipped (gate discrimination 5/5)", async () => {
     const extractor = new FixtureExtractor({ md: twoSectionDoc });
     const llm = script()
       .outline(twoChapterPlan)
@@ -425,12 +427,13 @@ describe("compile — gate integration (T7, 게이트 판별력 5/5 포함)", ()
     expect(result.value.manifest.gate).toEqual({ skipped: true });
     const skillMd = result.value.files.find((f) => f.path === "SKILL.md");
     expect(skillMd?.content).toContain("unverified");
-    llm.assertExhausted(); // qaGen/answerer/grader는 단 한 번도 호출되지 않았다
+    llm.assertExhausted(); // qaGen/answerer/grader were never called
   });
 });
 
-describe("compile — structural validation blocks deployment (E1, 완료 기준)", () => {
-  // 챕터 예산을 5토큰으로 — 정상 증류 본문("Mount the unit on a flat surface. [§a]")도 넘긴다.
+describe("compile — structural validation blocks deployment (E1, completion criterion)", () => {
+  // Chapter budget of 5 tokens: even a normal distilled body ("Mount the unit on a flat surface.
+  // [§a]") exceeds it.
   const tinyChapterBudget = { ...config, budgets: { ...config.budgets, chapter: 5 } };
 
   it("a chapter over its token budget fails before the gate: validation_failed, no gate LLM calls, nothing returned", async () => {
@@ -438,7 +441,7 @@ describe("compile — structural validation blocks deployment (E1, 완료 기준
       .outline(twoChapterPlan)
       .distill("a", "Mount the unit on a flat surface. [§a]")
       .distill("b", "Check the fault LED. [§b]")
-      .build(); // 게이트 대본은 없다 — 게이트가 불리면 ScriptedLlm이 던져서 테스트가 실패한다
+      .build(); // no gate script: if the gate is called, ScriptedLlm throws and the test fails
     const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
       extractors: [new FixtureExtractor({ md: twoSectionDoc })],
       llm,
@@ -457,7 +460,7 @@ describe("compile — structural validation blocks deployment (E1, 완료 기준
       ["error", "budget_exceeded", "chapters/ch02-troubleshooting.md"],
     ]);
     expect(result.error.message).toMatch(/before the quality gate.*nothing was written.*Fix:/u);
-    llm.assertExhausted(); // outline 1 + distill 2 — 게이트는 0회
+    llm.assertExhausted(); // outline 1 + distill 2, gate 0
   });
 
   it("--no-gate (gate: 'skip') is not a way around it: the same input fails the same way", async () => {
@@ -481,7 +484,7 @@ describe("compile — structural validation blocks deployment (E1, 완료 기준
   it("warnings (anchor ratio) do not block: the compile succeeds and carries them in validation", async () => {
     const llm = script()
       .outline(twoChapterPlan)
-      .distill("a", "Mount the unit on a flat surface.") // 앵커 없음 → warning
+      .distill("a", "Mount the unit on a flat surface.") // no anchor → warning
       .distill("b", "Check the fault LED. [§b]")
       .build();
     const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
@@ -500,7 +503,7 @@ describe("compile — structural validation blocks deployment (E1, 완료 기준
   });
 });
 
-describe("compile — LLM provider failures become llm_failed (G1, 완료 기준)", () => {
+describe("compile — LLM provider failures become llm_failed (G1, completion criterion)", () => {
   it("turns a rate_limit thrown mid-distill into llm_failed with stage, kind, retryable, calls so far and a sanitized detail", async () => {
     const llm = script()
       .outline(twoChapterPlan)
@@ -510,7 +513,7 @@ describe("compile — LLM provider failures become llm_failed (G1, 완료 기준
         new LlmProviderError(
           "rate_limit",
           true,
-          "429 Too Many Requests sk-ant-api03-SECRETSECRETSECRET",
+          "429 Too Many Requests\u0007 sk-ant-api03-SECRETSECRETSECRET",
         ),
       )
       .build();
@@ -530,7 +533,7 @@ describe("compile — LLM provider failures become llm_failed (G1, 완료 기준
       retryable: true,
       detail: "429 Too Many Requests sk-***",
     });
-    expect(result.error.calls).toBe(3); // outline 1 + distill a 1 + 실패한 distill b 1
+    expect(result.error.calls).toBe(3); // outline 1 + distill a 1 + the failed distill b 1
     expect(result.error.message).toMatch(/distill step failed.*rate_limit.*retryable.*3 LLM call/u);
     expect(result.error.message).toContain("Fix: wait a moment");
     expect(result.error.message).not.toContain("SECRET");
@@ -556,7 +559,7 @@ describe("compile — LLM provider failures become llm_failed (G1, 완료 기준
     });
     if (result.ok || result.error.kind !== "llm_failed") throw new Error("unreachable");
     expect(result.error.message).toContain("not retryable");
-    expect(result.error.message).not.toContain("Provider said"); // 종류와 같은 메시지는 되풀이하지 않는다
+    expect(result.error.message).not.toContain("Provider said"); // a detail equal to the kind is not repeated
   });
 
   it("still lets unexpected (non-provider) exceptions through — they are bugs, not user errors", async () => {
@@ -585,7 +588,7 @@ describe("compile — outline schema violation", () => {
     expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
   });
 
-  it("rejects with outline_invalid when the slug would escape the output root (A1, 완료 기준)", async () => {
+  it("rejects with outline_invalid when the slug would escape the output root (A1, completion criterion)", async () => {
     const extractor = new FixtureExtractor({ md: twoSectionDoc });
     const llm = script()
       .outline({
@@ -601,7 +604,7 @@ describe("compile — outline schema violation", () => {
       config,
     });
     expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
-    llm.assertExhausted(); // outline에서 끝난다 — distill·게이트 호출 0
+    llm.assertExhausted(); // ends at outline: zero distill and gate calls
   });
 });
 
@@ -623,7 +626,8 @@ describe("compile — distill body hygiene (C1)", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected success");
     const ch01 = result.value.files.find((f) => f.path === "chapters/ch01-installation.md");
-    // NUL과 ESC만 사라진다 — ESC 뒤의 "[0m"은 보통 글자라 남는다(제어문자 제거이지 ANSI 파싱이 아니다).
+    // Only NUL and ESC disappear; the "[0m" after ESC is ordinary text and stays (this strips
+    // control characters, it does not parse ANSI).
     expect(ch01?.content).toContain("Mount the unit on a flat[0m surface.\n\t[§a]");
     expect(ch01?.content).not.toContain("\u0000");
     expect(ch01?.content).not.toContain("\u001B");
@@ -651,10 +655,10 @@ describe("compile — distill body hygiene (C1)", () => {
   });
 });
 
-describe("compile — outline coverage (B1, 완료 기준: 누락·중복·미지 id 각각 거부)", () => {
+describe("compile — outline coverage (B1, completion criterion: missing, duplicate and unknown ids each rejected)", () => {
   async function compileWithPlan(plan: SkillPlan, doc: ExtractedDoc = twoSectionDoc) {
     const extractor = new FixtureExtractor({ md: doc });
-    const llm = script().outline(plan).build(); // distill 대본 없음 — 여기서 끝나야 한다
+    const llm = script().outline(plan).build(); // no distill script: it must stop here
     const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
       extractors: [extractor],
       llm,
@@ -714,10 +718,10 @@ describe("compile — outline coverage (B1, 완료 기준: 누락·중복·미�
     expect(result.error.message).toContain("duplicate chapter ids: same");
   });
 
-  it("does not offer heading-only sections to the outline and does not require them (정책: 실질 섹션만)", async () => {
+  it("does not offer heading-only sections to the outline and does not require them (policy: substantive sections only)", async () => {
     const withContainer: ExtractedDoc = {
       sections: [
-        { id: "install", heading: "Installation", level: 1, text: "" }, // 하위 헤딩만 거느린 컨테이너
+        { id: "install", heading: "Installation", level: 1, text: "" }, // a container with only sub-headings
         { id: "install/mount", heading: "Mounting", level: 2, text: "Mount it." },
       ],
     };
@@ -739,7 +743,7 @@ describe("compile — outline coverage (B1, 완료 기준: 누락·중복·미�
     });
     expect(result.ok).toBe(true);
     const outlineCall = llm.calls.find((c) => c.role === "outline");
-    expect(outlineCall?.prompt).not.toContain("§install]"); // 컨테이너 id는 outline 프롬프트에 없다
+    expect(outlineCall?.prompt).not.toContain("§install]"); // the container id is absent from the outline prompt
     expect(outlineCall?.prompt).toContain("install/mount");
     llm.assertExhausted();
   });
@@ -802,10 +806,12 @@ describe("compile — real HTML extractor on the mixed-unicode fixture (TESTING 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected success");
     const chapterFile = result.value.files.find((f) => f.path.startsWith("chapters/"));
-    expect(chapterFile?.content).toContain("커뮤니티 센터는"); // 한국어 본문이 안 깨짐
-    expect(chapterFile?.content).toContain("Kanselado ang lahat"); // 타갈로그어 본문이 안 깨짐
-    expect(chapterFile?.content).not.toContain("console.log"); // <script> 내용은 애초에 추출 단계에서 빠짐
-    // manifest 섹션 해시가 실제 추출된 원문 텍스트의 sha256과 일치하는지(앵커·조립 무결성).
+    // The fixture is deliberately multilingual: Korean and Tagalog body text must survive unbroken.
+    expect(chapterFile?.content).toContain("커뮤니티 센터는"); // Korean body text intact
+    expect(chapterFile?.content).toContain("Kanselado ang lahat"); // Tagalog body text intact
+    expect(chapterFile?.content).not.toContain("console.log"); // <script> content is dropped at extraction
+    // The manifest section hash matches the sha256 of the actually extracted source text (anchor
+    // and assembly integrity). The Korean heading below comes from the fixture.
     const koreanSection = sections.find((s) => s.heading === "한국어");
     expect(koreanSection).toBeDefined();
     const manifestEntry = result.value.manifest.sections.find((s) => s.id === koreanSection?.id);

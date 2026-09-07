@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-// npm 배포 tarball 검사(H3, SEC-012·AUD-018; 가드레일 7 최종 방어선). `npm run check:tarball` / prepublishOnly / CI.
-//   1) `npm pack --dry-run --json`의 files[].path — 허용 목록(dist/ + 루트 파일) 밖이거나 비밀·상태 파일이면 실패.
-//   2) 실제 tgz를 임시 디렉터리에 풀어 텍스트 파일 전부를 키 패턴으로 스캔.
-// 명령·파싱·읽기 오류는 전부 "publish blocked"로 끝난다 — 검사가 못 돌았는데 통과처럼 보이면 안 된다.
+// npm publish tarball check (H3, SEC-012·AUD-018; the last line of defense for guardrail 7). Run by
+// `npm run check:tarball` / prepublishOnly / CI.
+//   1) files[].path from `npm pack --dry-run --json`: fail on anything outside the allowlist
+//      (dist/ + root files) or any secret/state file.
+//   2) Unpack the real tgz into a temporary directory and scan every text file for key patterns.
+// Command, parsing, and read errors all end in "publish blocked": a check that could not run must
+// never look like a pass.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -46,7 +49,7 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-// 1) 구조화된 경로 목록
+// 1) Structured path list
 const paths = packedPaths(parseJson(run("npm", ["pack", "--dry-run", "--json"])));
 if (paths === undefined) blocked("npm pack --json had an unexpected shape (no files[].path)");
 const forbidden = findForbiddenPaths(paths);
@@ -57,7 +60,7 @@ if (forbidden.length > 0) {
   );
 }
 
-// 2) 실제 tarball의 텍스트 파일 전부 스캔
+// 2) Scan every text file in the real tarball
 const tmp = mkdtempSync(join(tmpdir(), "live-skill-tarball-"));
 try {
   const packed = packedPaths(parseJson(run("npm", ["pack", "--pack-destination", tmp, "--json"])));

@@ -1,8 +1,10 @@
-// HTML 추출기 (cheerio). DOM을 문서 순서로 **한 번만** 걸으며(F4, DESIGN §5.1) 헤딩·문단·컨테이너의 직접 텍스트·
-// 표·목록·코드 블록을 마크다운 느낌의 블록으로 바꾼 뒤 공유 구조화기(structureText)에 넘긴다. 예전엔 h1~h6·p·li·
-// blockquote·pre만 선택자로 골라 td/th와 div의 직접 텍스트를 버렸다(001-010) — 규칙·수치가 표에 든 문서에서 정보가
-// 조용히 사라졌다. 텍스트 노드는 가장 가까운 블록에서 정확히 한 번만 수집되므로 중첩 요소로 인한 중복이 없다.
-// msg-agent에 없는, live-skill 신규 구현(CLAUDE.md 스택: "cheerio+변환").
+// HTML extractor (cheerio). Walks the DOM **once** in document order (F4, DESIGN §5.1), turning
+// headings, paragraphs, the direct text of containers, tables, lists and code blocks into
+// Markdown-like blocks before handing them to the shared structurer (structureText). The previous
+// version selected only h1-h6, p, li, blockquote and pre, dropping td/th and the direct text of divs
+// (001-010), so documents that kept their rules and figures in tables silently lost information.
+// Every text node is collected exactly once, from its nearest block, so nested elements never
+// duplicate text. Not in msg-agent; new to live-skill (CLAUDE.md stack: "cheerio + conversion").
 import * as cheerio from "cheerio";
 import { isTag, isText, type AnyNode, type Element } from "domhandler";
 import type { DocumentExtractor, ExtractError, ExtractedDoc, Result } from "../../core/index.js";
@@ -12,7 +14,7 @@ import { hasExtension } from "./route.js";
 const MIMES = new Set(["text/html", "application/xhtml+xml"]);
 const EXTS = [".html", ".htm"];
 
-/** 본문이 아닌 것 — 통째로 건너뛴다. */
+/** Not body content: skipped entirely. */
 const SKIP = new Set([
   "script",
   "style",
@@ -25,7 +27,8 @@ const SKIP = new Set([
   "iframe",
   "object",
 ]);
-/** 앞뒤에서 줄을 끊는 블록 요소. 표·목록·헤딩·pre는 따로 다룬다. */
+/** Block elements that break the line before and after them. Tables, lists, headings and pre are
+ * handled separately. */
 const BLOCK = new Set([
   "html",
   "body",
@@ -66,7 +69,8 @@ const HEADING = /^h([1-6])$/u;
 const tagOf = (el: Element): string => el.tagName.toLowerCase();
 const collapse = (s: string): string => s.replace(/\s+/gu, " ").trim();
 
-/** 자손 텍스트를 한 줄로 모은다(헤딩·표 셀·목록 항목용). 블록 자식은 공백으로 띄워 단어가 붙지 않게 한다. */
+/** Collects descendant text onto a single line (for headings, table cells and list items). Block
+ * children are padded with spaces so words do not run together. */
 function inlineText(node: AnyNode): string {
   if (isText(node)) return node.data;
   if (!isTag(node)) return "";
@@ -77,7 +81,7 @@ function inlineText(node: AnyNode): string {
   return BLOCK.has(tag) || tag === "ul" || tag === "ol" || tag === "table" ? ` ${inner} ` : inner;
 }
 
-/** pre용 — 공백·개행을 그대로 둔다. */
+/** For pre: keeps whitespace and newlines as they are. */
 function rawText(node: AnyNode): string {
   if (isText(node)) return node.data;
   if (!isTag(node)) return "";
@@ -87,8 +91,9 @@ function rawText(node: AnyNode): string {
   return node.children.map(rawText).join("");
 }
 
-/** 표 하나 → 캡션(있으면) + 마크다운 파이프 표를 **한 블록**으로. 행은 문서 순서, 셀 안 `|`는 이스케이프한다.
- * 한 블록으로 묶는 이유: 한 줄짜리 표가 구조화기의 "짧은 한 줄 = 헤딩" 휴리스틱에 걸리지 않게. */
+/** One table becomes the caption (if any) plus a Markdown pipe table, as **one block**. Rows keep
+ * document order and `|` inside a cell is escaped. It is one block so that a single-row table does
+ * not trip the structurer's "short single line = heading" heuristic. */
 function tableBlock(table: Element): string {
   const rows: string[][] = [];
   const captions: string[] = [];
@@ -124,7 +129,8 @@ function tableBlock(table: Element): string {
   return lines.join("\n");
 }
 
-/** 목록 → 항목마다 한 줄(`- ` / `1. `), 중첩은 두 칸 들여쓰기. 항목의 인라인 내용은 표식 줄에, 중첩 목록은 그 뒤에. */
+/** A list becomes one line per item (`- ` / `1. `), nested lists indented by two spaces. An item's
+ * inline content goes on its marker line; its nested lists follow. */
 function listLines(list: Element, depth: number): string[] {
   const ordered = tagOf(list) === "ol";
   const lines: string[] = [];
@@ -133,7 +139,7 @@ function listLines(list: Element, depth: number): string[] {
     if (!isTag(item)) continue;
     const tag = tagOf(item);
     if (tag === "ul" || tag === "ol") {
-      lines.push(...listLines(item, depth + 1)); // li 없이 바로 중첩된 목록도 잃지 않는다
+      lines.push(...listLines(item, depth + 1)); // a list nested directly without an li is kept too
       continue;
     }
     if (tag !== "li") continue;
@@ -152,9 +158,10 @@ function listLines(list: Element, depth: number): string[] {
 }
 
 /**
- * 본문 DOM을 한 번 걸어 마크다운 느낌의 블록들로 바꾼다. 인라인 텍스트는 버퍼에 모였다가 블록 경계에서 한 블록이 되고,
- * `br`은 블록 안 줄바꿈이다(짧은 앞 줄이 헤딩으로 오인되지 않게 블록을 쪼개지 않는다). `pre`는 코드 펜스로 감싼다 —
- * 안의 `# …` 줄이 헤딩이 되면 안 된다.
+ * Walks the body DOM once and turns it into Markdown-like blocks. Inline text accumulates in a buffer
+ * and becomes one block at the next block boundary; `br` is a line break inside the block (the block
+ * is not split, so a short leading line is not mistaken for a heading). `pre` is wrapped in a code
+ * fence so that a `# …` line inside it cannot become a heading.
  */
 export function htmlToBlocks(html: string): string {
   const $ = cheerio.load(html);
@@ -176,7 +183,7 @@ export function htmlToBlocks(html: string): string {
       buffer.push(node.data);
       return;
     }
-    if (!isTag(node)) return; // 주석·처리 지시 등
+    if (!isTag(node)) return; // comments, processing instructions, etc.
     const tag = tagOf(node);
     if (SKIP.has(tag)) return;
     const heading = HEADING.exec(tag);
@@ -214,7 +221,7 @@ export function htmlToBlocks(html: string): string {
       flush();
       return;
     }
-    for (const c of node.children) walk(c); // 인라인 요소 — 텍스트가 현재 블록에 이어진다
+    for (const c of node.children) walk(c); // inline element: its text continues the current block
   }
 
   for (const root of $.root().children()) walk(root);

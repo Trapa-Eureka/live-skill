@@ -1,22 +1,23 @@
-// 산출물 무결성(DESIGN §5 E3) — manifest가 해시한 파일 집합과 스킬 디렉터리의 현재 파일을 대조한다. 순수 계산:
-// 파일 읽기는 어댑터(readSkillDir)가 하고 여기는 {path, content}[]만 받는다. 게이트 판정은 해시한 그 파일들에만
-// 유효하므로, 어긋나면 report는 판정을 보여주지 않고 eval은 LLM을 부르지 않는다.
+// Output integrity (DESIGN §5 E3): compares the set of files the manifest hashed against the files
+// currently in the skill directory. Pure computation: the adapter (readSkillDir) reads the files and
+// this module only receives {path, content}[]. The gate verdict is valid only for the files that were
+// hashed, so on a mismatch report withholds the verdict and eval does not call the LLM.
 import { sha256Hex } from "./hash.js";
 import type { Manifest } from "./types.js";
 import type { SkillFile } from "./validator.js";
 
 export interface OutputIntegrity {
-  /** ok: 전부 일치. stale: manifest가 적은 파일이 없거나 내용이 다르다. tampered: manifest가 모르는 파일이 있다(우선). */
+  /** ok: everything matches. stale: a file the manifest lists is missing or differs. tampered: a file the manifest does not know about exists (takes precedence). */
   status: "ok" | "stale" | "tampered";
-  /** manifest에는 있는데 디스크에 없는 파일. */
+  /** Files listed in the manifest but absent on disk. */
   missing: string[];
-  /** 디스크에 있지만 내용 해시가 manifest와 다른 파일. */
+  /** Files on disk whose content hash differs from the manifest. */
   modified: string[];
-  /** 디스크에 있는데 manifest가 모르는 파일(manifest.json 자신과 점 파일 제외). */
+  /** Files on disk that the manifest does not know about (excluding manifest.json itself and dot files). */
   unexpected: string[];
 }
 
-/** manifest.json 자신과 OS·도구가 흘리는 점 파일(.DS_Store 등)은 산출물이 아니다. */
+/** manifest.json itself and dot files dropped by the OS or tooling (.DS_Store etc.) are not outputs. */
 function isForeignButHarmless(path: string): boolean {
   if (path === "manifest.json") return true;
   const base = path.split("/").pop() ?? path;

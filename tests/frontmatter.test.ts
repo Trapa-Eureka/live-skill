@@ -1,5 +1,6 @@
-// E2 완료 기준(DESIGN §3.1): 프런트매터를 YAML 라이브러리로 쓰고 읽는다 — "Guide: Setup" 제목이 assembler →
-// validator → 파서를 거쳐 그대로 돌아와야 한다. 순수 계산이라 IO·LLM 없이 검증한다.
+// E2 completion criterion (DESIGN §3.1): frontmatter is written and read with a YAML library. A
+// "Guide: Setup" title must come back verbatim through assembler → validator → parser. Pure
+// computation, so it is verified without IO or an LLM.
 import { describe, expect, it } from "vitest";
 import {
   MAX_DESCRIPTION_CHARS,
@@ -36,7 +37,7 @@ describe("serializeFrontmatter / parseFrontmatter — round trip", () => {
     "null",
     "123",
     "  padded  ",
-    "한글 제목: 설정",
+    "한글 제목: 설정", // deliberately Korean: a non-Latin title with ": " must round-trip unchanged
     "key: [a, b] {c: d}",
     "*alias &anchor !tag @at | > %",
     "backslash \\ and tab\tinside",
@@ -111,13 +112,13 @@ describe("parseFrontmatter — problems, each told apart", () => {
   });
 
   it.each([
-    ["name: 123\ndescription: x", "name"], // 숫자 — 문자열이 아니다
+    ["name: 123\ndescription: x", "name"], // a number, not a string
     ["name: Not A Slug\ndescription: x", "name"],
     ["name: manual\ndescription: 42", "description"],
     ["name: manual\ndescription: ''", "description"],
     ["name: manual\ndescription: '   '", "description"],
     [`name: manual\ndescription: "${"x".repeat(MAX_DESCRIPTION_CHARS + 1)}"`, "description"],
-    ['name: manual\ndescription: "a\\u0007b"', "description"], // 제어문자
+    ['name: manual\ndescription: "a\\u0007b"', "description"], // control character
     ["name: manual\ndescription: [a, b]", "description"],
   ])("invalid_field: %j → field %s", (block, field) => {
     expect(parseFrontmatter(`---\n${block}\n---\n`)).toMatchObject({
@@ -136,7 +137,7 @@ describe("parseFrontmatter — problems, each told apart", () => {
   });
 });
 
-describe("assembler → validator → parser (완료 기준: Guide: Setup 라운드트립)", () => {
+describe("assembler → validator → parser (completion criterion: Guide: Setup round trip)", () => {
   const plan: SkillPlan = {
     slug: "guide-setup",
     title: "Guide: Setup",

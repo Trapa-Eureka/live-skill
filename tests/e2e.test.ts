@@ -1,8 +1,9 @@
-// T9 완료 기준: SPEC §5 시나리오 1·2를 "CLI 레벨" e2e-mock으로 검증한다. tests/pipeline.test.ts(T6)가
-// 이미 실 추출기 + core compile()을 조합했지만, 여기서는 그 위 계층 — 실제 run<Command>()와
-// adapters/fsTargets.ts의 진짜 함수(collectInputFiles/readSourceFiles/writeSkill/readSkillDir/
-// readManifest/resolveTargetDir/tempSkillDir)까지 그대로 연결한다. mock은 LLM 하나뿐이다(가드레일 3:
-// ScriptedLlm만, 실 네트워크 0건). 픽스처는 자체 제작(가드레일 4) — DESIGN §6 T9 결정 참고.
+// T9 acceptance criteria: verifies SPEC §5 scenarios 1 and 2 as a "CLI-level" e2e mock.
+// tests/pipeline.test.ts (T6) already combines the real extractors with core compile(); this covers
+// the layer above it, wiring the real run<Command>() functions to the real adapters/fsTargets.ts
+// functions (collectInputFiles/readSourceFiles/writeSkill/readSkillDir/readManifest/
+// resolveTargetDir/tempSkillDir). The only mock is the LLM (guardrail 3: ScriptedLlm only, zero real
+// network). The fixtures are self-authored (guardrail 4); see the DESIGN §6 T9 decision.
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,8 +35,8 @@ function fixture(name: string): string {
   return join(process.cwd(), "fixtures/docs", name);
 }
 
-// 게이트 통과 케이스는 --out으로 지정한 스크래치 디렉터리에, 미달 케이스는 실제 tempSkillDir()가
-// 고른 os.tmpdir() 경로에 쓴다 — 어느 쪽이든 테스트가 끝나면 지운다.
+// The gate-pass case writes to a scratch directory given via --out; the gate-fail case writes to the
+// os.tmpdir() path the real tempSkillDir() picks. Either way it is removed when the test ends.
 const cleanupDirs: string[] = [];
 afterEach(async () => {
   await Promise.all(cleanupDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
@@ -56,8 +57,8 @@ function realDeps(overrides: Partial<CompileDeps> & Pick<CompileDeps, "llm">): C
   };
 }
 
-describe("T9 e2e-mock — SPEC §5 시나리오 1: 기술 매뉴얼 → 스킬 (게이트 통과)", () => {
-  it("실 추출기·조립·게이트·파일쓰기로 컴파일하고, 그 결과물을 실제로 다시 읽어 validate/report까지 통과시킨다", async () => {
+describe("T9 e2e-mock — SPEC §5 scenario 1: technical manual → skill (gate passes)", () => {
+  it("compiles with the real extractor, assembler, gate, and file writer, then reads the output back and passes validate/report", async () => {
     const plan: SkillPlan = {
       slug: "linkbox-r7",
       title: "LinkBox R7 Field Manual",
@@ -143,10 +144,10 @@ describe("T9 e2e-mock — SPEC §5 시나리오 1: 기술 매뉴얼 → 스킬 (
     expect(code).toBe(0);
     llm.assertExhausted();
     const output = captured.all.join("\n");
-    expect(output).toContain(`컴파일 완료: ${outDir}`);
+    expect(output).toContain(`Compiled: ${outDir}`);
     expect(output).toContain("PASSED");
 
-    // 실제로 디스크에 쓰였는지(SKILL.md·챕터 2개·manifest.json) — 진짜 readSkillDir로 재확인
+    // Confirm it really landed on disk (SKILL.md, 2 chapters, manifest.json) via the real readSkillDir
     const written = await readSkillDir(outDir);
     expect(written.map((f) => f.path).sort()).toEqual([
       "SKILL.md",
@@ -161,7 +162,7 @@ describe("T9 e2e-mock — SPEC §5 시나리오 1: 기술 매뉴얼 → 스킬 (
     const manifest = await readManifest(outDir);
     expect(manifest.gate).toMatchObject({ passed: true, passRate: 1 });
 
-    // validate: 방금 쓰인 디렉터리를 실제로 다시 읽어 구조 검증(LLM 0회)
+    // validate: re-read the directory just written and check its structure (zero LLM calls)
     const validateOut = lines();
     const validateCode = await runValidate(outDir, {
       out: validateOut.out,
@@ -171,13 +172,14 @@ describe("T9 e2e-mock — SPEC §5 시나리오 1: 기술 매뉴얼 → 스킬 (
     expect(validateCode).toBe(0);
     expect(validateOut.all.join("\n")).toContain("PASSED");
 
-    // report: 실제 manifest.json을 다시 읽어 사람용 게이트 리포트를 출력
+    // report: re-read the real manifest.json and print the human-readable gate report
     const reportOut = lines();
     const reportCode = await runReport(outDir, { out: reportOut.out, readManifest, readSkillDir });
     expect(reportCode).toBe(0);
     expect(reportOut.all.join("\n")).toContain("PASSED");
 
-    // E3(완료 기준): 컴파일 뒤 챕터를 손으로 고치면 report는 마지막 PASSED가 아니라 STALE로 실패한다.
+    // E3 (acceptance criterion): hand-editing a chapter after compile makes report fail with STALE
+    // instead of showing the last PASSED.
     const chapter = join(outDir, "chapters", "ch01-setup-operation.md");
     const original = await readFile(chapter, "utf-8");
     await writeFile(chapter, `${original}\nHand-edited after the gate ran.\n`);
@@ -187,7 +189,7 @@ describe("T9 e2e-mock — SPEC §5 시나리오 1: 기술 매뉴얼 → 스킬 (
     expect(stale.all.join("\n")).toContain("chapters/ch01-setup-operation.md");
     expect(stale.all.join("\n")).not.toContain("PASSED");
 
-    // eval 재사용 경로도 같은 대조로 LLM 호출 전에 멈춘다.
+    // The eval reuse path stops before any LLM call on the same comparison.
     const evalOut = lines();
     const evalLlm = script().build();
     expect(
@@ -208,7 +210,7 @@ describe("T9 e2e-mock — SPEC §5 시나리오 1: 기술 매뉴얼 → 스킬 (
     expect(evalOut.all.join("\n")).toContain("STALE");
     evalLlm.assertExhausted();
 
-    // 되돌리면 다시 PASSED; manifest가 모르는 파일이 끼어들면 TAMPERED.
+    // Restoring the file brings back PASSED; a file the manifest does not know about means TAMPERED.
     await writeFile(chapter, original);
     const restored = lines();
     expect(await runReport(outDir, { out: restored.out, readManifest, readSkillDir })).toBe(0);
@@ -221,8 +223,8 @@ describe("T9 e2e-mock — SPEC §5 시나리오 1: 기술 매뉴얼 → 스킬 (
   });
 });
 
-describe("T9 e2e-mock — SPEC §5 시나리오 2: SOP 폴더 → 팀 스킬 (약한 챕터 리포트)", () => {
-  it("문서 2개짜리 폴더를 컴파일 → 한 챕터만 오답 처리 → 게이트 미달·임시 디렉터리 보존·리포트가 정확히 그 챕터를 지목한다", async () => {
+describe("T9 e2e-mock — SPEC §5 scenario 2: SOP folder → team skill (weak chapter report)", () => {
+  it("compiles a two-document folder, marks one chapter wrong, and the gate fails, keeps the temp dir, and the report names exactly that chapter", async () => {
     const plan: SkillPlan = {
       slug: "team-sops",
       title: "Team SOPs",
@@ -274,7 +276,7 @@ describe("T9 e2e-mock — SPEC §5 시나리오 2: SOP 폴더 → 팀 스킬 (�
       .answer("Within five business days of the project end date.")
       .grade("correct")
       .selectChapter("chapters/ch02-leave-request.md")
-      .answer("Immediately, with no advance notice required.") // 의도적 오답 — 약한 챕터 재현
+      .answer("Immediately, with no advance notice required.") // deliberately wrong: reproduces a weak chapter
       .grade("wrong")
       .build();
 
@@ -292,15 +294,15 @@ describe("T9 e2e-mock — SPEC §5 시나리오 2: SOP 폴더 → 팀 스킬 (�
     expect(code).toBe(1);
     llm.assertExhausted();
     const output = captured.all.join("\n");
-    expect(output).toContain("임시 디렉터리");
+    expect(output).toContain("temporary directory");
     expect(output).toContain("FAILED");
 
-    const match = /임시 디렉터리에 남겼습니다: (.+)/u.exec(output);
+    const match = /kept in a temporary directory: (.+)/u.exec(output);
     const tempDir = match?.[1];
     if (tempDir === undefined) throw new Error("temp dir path not found in CLI output");
     cleanupDirs.push(tempDir);
 
-    // 실제 임시 디렉터리에서 진짜로 다시 읽어, 약한 챕터가 정확히 지목됐는지 확인
+    // Re-read the real temp directory to confirm the weak chapter was named precisely
     const manifest = await readManifest(tempDir);
     if (!("passed" in manifest.gate)) throw new Error("gate was skipped unexpectedly");
     expect(manifest.gate.passed).toBe(false);
@@ -312,7 +314,7 @@ describe("T9 e2e-mock — SPEC §5 시나리오 2: SOP 폴더 → 팀 스킬 (�
       { qaId: "e2e-scenario2-sop-b/leave-request-sop-q1", reason: "wrong" },
     ]);
 
-    // report로도 같은 결론이 실제로 재현되는지(report는 진단 명령이라 pass/fail과 무관하게 종료코드는 0)
+    // report reproduces the same conclusion (report is diagnostic, so its exit code is 0 regardless of pass/fail)
     const reportOut = lines();
     const reportCode = await runReport(tempDir, { out: reportOut.out, readManifest, readSkillDir });
     expect(reportCode).toBe(0);

@@ -1,4 +1,5 @@
-// T3 완료 기준: 목 fetch 요청 형태 테스트. 패턴 출처: ../msg-agent/tests/providers.test.ts.
+// T3 acceptance criteria: request-shape tests through a mock fetch. Pattern from
+// ../msg-agent/tests/providers.test.ts.
 import { describe, expect, it } from "vitest";
 import { ClaudeLlmProvider } from "../src/adapters/llmProvider.js";
 import { LlmProviderError } from "../src/core/index.js";
@@ -10,7 +11,7 @@ interface Captured {
   body: unknown;
 }
 
-/** 요청을 기록하고 정해진 응답을 순서대로 재생하는 fetch 대역. */
+/** A fetch stand-in that records requests and replays canned responses in order. */
 function mockFetch(responses: { status: number; body: unknown }[]): {
   fetch: typeof fetch;
   calls: Captured[];
@@ -55,7 +56,7 @@ const claudeMessage = (text: string, stop = "end_turn"): unknown => ({
   usage: { input_tokens: 1, output_tokens: 1 },
 });
 
-describe("ClaudeLlmProvider (SDK + injected fetch, 네트워크 0회)", () => {
+describe("ClaudeLlmProvider (SDK + injected fetch, zero network calls)", () => {
   it("sends one Messages request with the expected URL, headers, and body shape", async () => {
     const m = mockFetch([{ status: 200, body: claudeMessage("hello") }]);
     const provider = new ClaudeLlmProvider({ apiKey: "sk-test", fetch: m.fetch, maxRetries: 0 });
@@ -92,7 +93,8 @@ describe("ClaudeLlmProvider (SDK + injected fetch, 네트워크 0회)", () => {
     const m = mockFetch([
       { status: 529, body: { type: "error", error: { type: "overloaded_error", message: "x" } } },
     ]);
-    const provider = new ClaudeLlmProvider({ apiKey: "k", fetch: m.fetch }); // maxRetries 미지정 -> 기본 0
+    // maxRetries not given: defaults to 0.
+    const provider = new ClaudeLlmProvider({ apiKey: "k", fetch: m.fetch });
     await expect(
       provider.complete({ system: "s", prompt: "p", maxTokens: 10 }),
     ).rejects.toMatchObject({

@@ -1,4 +1,5 @@
-// validate 명령 — 구조 검증만, LLM 0회(DESIGN §6). 로직은 core/validator.ts에 있다, 여긴 조립만.
+// validate command: structural validation only, zero LLM calls (DESIGN §6). The logic lives in
+// core/validator.ts; this is assembly only.
 import { formatValidationReport, validateSkill, type Budgets } from "../core/index.js";
 import type { SkillFile } from "../core/validator.js";
 
@@ -14,7 +15,7 @@ export async function runValidate(skillDir: string, deps: ValidateDeps): Promise
     files = await deps.readSkillDir(skillDir);
   } catch (e) {
     const detail = e instanceof Error ? e.message : "unknown error";
-    deps.out(`"${skillDir}"를 읽을 수 없습니다. 수정 방법: 경로가 맞는지 확인하세요. (${detail})`);
+    deps.out(`Cannot read "${skillDir}". Fix: check that the path is correct. (${detail})`);
     return 1;
   }
   const report = validateSkill(files, deps.budgets);

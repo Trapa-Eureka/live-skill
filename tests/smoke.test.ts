@@ -1,7 +1,8 @@
-// T10 완료 기준: "dry 구조(대본)로 스크립트 자체 테스트" — scripts/smoke.ts 자체는 실행하지 않는다(실
-// ANTHROPIC_API_KEY를 요구하고 실 네트워크를 부른다). 대신 그 로직이 담긴 src/cli/smoke.ts의
-// runSmoke()를 ScriptedLlm 대본으로 돌려, 실 samples/manual.pdf를 실 추출기로 읽되 LLM만 대신한다
-// (가드레일 3: 실 네트워크·실 LLM 호출 0건).
+// T10 acceptance criterion: "test the script itself with a dry (scripted) structure". scripts/smoke.ts
+// is not executed here (it requires a real ANTHROPIC_API_KEY and calls the real network). Instead
+// runSmoke() from src/cli/smoke.ts, which holds the logic, is driven with a ScriptedLlm script: the
+// real samples/manual.pdf is read by the real extractor and only the LLM is replaced (guardrail 3:
+// zero real network and real LLM calls).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -30,8 +31,9 @@ function baseDeps(overrides: Partial<SmokeDeps> & Pick<SmokeDeps, "llm">): Smoke
   };
 }
 
-// samples/manual.pdf의 실제 추출 결과(본문 있는 섹션 4개)를 전부 덮는 계획 — B1 이후 outline은 모집단을 정확히
-// 한 번씩 덮어야 하므로 일부만 넣은 계획은 게이트 이전에 outline_invalid로 끝난다.
+// A plan covering the full real extraction of samples/manual.pdf (4 sections with body text). Since
+// B1 the outline must cover the population exactly once, so a partial plan ends in outline_invalid
+// before the gate.
 const manualPlan: SkillPlan = {
   slug: "skillsync-x200",
   title: "SkillSync X200 User Manual (Fixture)",
@@ -51,7 +53,7 @@ const manualPlan: SkillPlan = {
   ],
 };
 
-/** 4문항 대본 — 마지막 문항의 채점만 바꿔 통과/미달을 만든다. */
+/** A 4-question script; only the last question's verdict changes to produce a pass or a fail. */
 function manualScript(lastVerdict: "correct" | "wrong") {
   return script()
     .outline(manualPlan)
@@ -117,8 +119,8 @@ function manualScript(lastVerdict: "correct" | "wrong") {
     .build();
 }
 
-describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
-  it("게이트 통과: 리포트와 비용 요약을 찍고 0을 반환한다", async () => {
+describe("runSmoke — dry run (real samples/manual.pdf + ScriptedLlm)", () => {
+  it("gate passes: prints the report and the cost summary, returns 0", async () => {
     const llm = manualScript("correct");
     const captured = lines();
     const code = await runSmoke({ path: samplePath }, baseDeps({ out: captured.out, llm }));
@@ -127,10 +129,10 @@ describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
     llm.assertExhausted();
     const output = captured.all.join("\n");
     expect(output).toContain("PASSED");
-    expect(output).toContain("비용 요약: LLM 호출 19회");
+    expect(output).toContain("Cost summary: 19 LLM calls");
   });
 
-  it("게이트 미달(3/4 = 75% < 90%): 리포트와 비용 요약을 찍고 1을 반환한다", async () => {
+  it("gate fails (3/4 = 75% < 90%): prints the report and the cost summary, returns 1", async () => {
     const llm = manualScript("wrong");
     const captured = lines();
     const code = await runSmoke({ path: samplePath }, baseDeps({ out: captured.out, llm }));
@@ -139,12 +141,12 @@ describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
     llm.assertExhausted();
     const output = captured.all.join("\n");
     expect(output).toContain("FAILED");
-    expect(output).toContain("비용 요약: LLM 호출 19회");
+    expect(output).toContain("Cost summary: 19 LLM calls");
   });
 
-  it("경로를 읽을 수 없으면 수정 방법 담긴 메시지와 함께 1을 반환하고, LLM은 한 번도 부르지 않는다", async () => {
+  it("returns 1 with a fix-it message when the path cannot be read, and never calls the LLM", async () => {
     const captured = lines();
-    const llm = script().build(); // 대본 0개 — 실제로 호출되면 즉시 실패한다
+    const llm = script().build(); // empty script: any real call fails immediately
     const code = await runSmoke(
       { path: "/nonexistent/path/manual.pdf" },
       baseDeps({
@@ -158,7 +160,7 @@ describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
     expect(captured.all.join("\n")).toContain("nonexistent/path/manual.pdf");
   });
 
-  it("컴파일 자체가 실패하면(미지원 형식) 실패 메시지 + 비용 요약(호출 0회)을 찍고 1을 반환한다", async () => {
+  it("when compile itself fails (unsupported format), prints the failure message and a cost summary (0 calls), returns 1", async () => {
     const captured = lines();
     const llm = script().build();
     const code = await runSmoke(
@@ -172,11 +174,11 @@ describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
     expect(code).toBe(1);
     llm.assertExhausted();
     const output = captured.all.join("\n");
-    expect(output).toContain("컴파일 실패");
-    expect(output).toContain("비용 요약: LLM 호출 0회");
+    expect(output).toContain("Compile failed");
+    expect(output).toContain("Cost summary: 0 LLM calls");
   });
 
-  it("provider 실패(rate_limit)가 중간에 나면 단계·종류·수정 방법과 비용 요약(그때까지 호출 수)을 찍고 1을 반환한다 (G1)", async () => {
+  it("a provider failure (rate_limit) mid-run prints the stage, kind, fix, and a cost summary (calls so far), returns 1 (G1)", async () => {
     const captured = lines();
     const llm = script()
       .outline(manualPlan)
@@ -191,13 +193,13 @@ describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
     llm.assertExhausted();
     const output = captured.all.join("\n");
     expect(output).toContain(
-      "컴파일 실패 — 증류 중 LLM 호출 실패: 요청 한도 초과(rate limit)(rate_limit, 재시도 가능)",
+      "Compile failed. LLM call failed during distillation: rate limit exceeded (rate_limit, retryable)",
     );
-    expect(output).toContain("수정 방법");
-    expect(output).toContain("비용 요약: LLM 호출 3회"); // outline 1 + distill 1 + 실패한 distill 1
+    expect(output).toContain("Fix:");
+    expect(output).toContain("Cost summary: 3 LLM calls"); // outline 1 + distill 1 + failed distill 1
   });
 
-  it("구조 검증에 걸리면(챕터 예산 초과) 게이트를 부르지 않고 검증 리포트 + 비용 요약(호출 3회)을 찍고 1을 반환한다 (E1)", async () => {
+  it("a structural validation failure (chapter budget exceeded) skips the gate and prints the validation report plus a cost summary (3 calls), returns 1 (E1)", async () => {
     const captured = lines();
     const llm = script()
       .outline(manualPlan)
@@ -206,7 +208,7 @@ describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
         "The X200 is a fictional controller. [§skillsync-x200-user-manual-fixture] [§overview]",
       )
       .distill("ch02", "Mount it on a flat surface. [§installation] [§troubleshooting]")
-      .build(); // 게이트 대본 없음
+      .build(); // no gate script
     const base = loadConfig({ QA_PER_SECTION: "1" });
     const code = await runSmoke(
       { path: samplePath },
@@ -219,8 +221,8 @@ describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
     expect(code).toBe(1);
     llm.assertExhausted();
     const output = captured.all.join("\n");
-    expect(output).toContain("검증: FAILED");
+    expect(output).toContain("Validation: FAILED");
     expect(output).toContain("[ERROR] chapters/ch01-overview.md (budget_exceeded)");
-    expect(output).toContain("비용 요약: LLM 호출 3회");
+    expect(output).toContain("Cost summary: 3 LLM calls");
   });
 });

@@ -1,8 +1,10 @@
-// 도메인 타입 — DESIGN.md §2가 진실의 원천. 코드와 문서가 어긋나면 문서를 먼저 고친다(CLAUDE.md 컨벤션).
-// 이 파일은 순수 타입 선언만 담는다 — 외부 IO 없음(CLAUDE.md 컨벤션: core/는 순수 계산과 계획만).
+// Domain types. DESIGN.md §2 is the source of truth: when code and document disagree, fix the
+// document first (CLAUDE.md convention). This file holds pure type declarations only, no external
+// IO (CLAUDE.md convention: core/ is pure computation and planning).
 import type { Result } from "./result.js";
 
-/** 추출된 문서의 한 섹션. id는 헤딩 경로 기반 슬러그(core/sectionId.ts)로, 안정적이어야 한다(DESIGN §5). */
+/** One section of an extracted document. id is a heading-path slug (core/sectionId.ts) and must be
+ * stable (DESIGN §5). */
 export interface Section {
   id: string;
   heading: string;
@@ -10,34 +12,38 @@ export interface Section {
   text: string;
 }
 
-/** 추출기 산출물. message 레포와 동일 규약(섹션 구조화). */
+/** Extractor output. Same convention (section structuring) as the message repo. */
 export interface ExtractedDoc {
   sections: Section[];
 }
 
-/** 추출 실패 사유 — CLI/파이프라인이 원인+수정 방법을 담은 메시지로 번역한다(CLAUDE.md 컨벤션). */
+/** Why extraction failed. The CLI/pipeline turns it into a cause + fix message (CLAUDE.md
+ * convention). */
 export type ExtractError =
   | { kind: "empty_text" }
   | { kind: "corrupt"; detail: string }
   | { kind: "unsupported"; mime: string; name: string };
 
-/** 형식별 추출기(T2에서 구현). extract()는 예외 대신 Result를 반환한다(DESIGN §2 T1 결정). */
+/** Per-format extractor (implemented in T2). extract() returns a Result instead of throwing
+ * (DESIGN §2 T1 decision). */
 export interface DocumentExtractor {
   supports(mime: string, name: string): boolean;
   extract(bytes: Uint8Array): Promise<Result<ExtractedDoc, ExtractError>>;
 }
 
-/** LLM 어댑터 경계(T3에서 구현). outline·distill·qaGen·answerer·grader 5역할이 이 인터페이스만 쓴다. */
+/** LLM adapter boundary (implemented in T3). All five roles (outline, distill, qaGen, answerer,
+ * grader) use only this interface. */
 export interface LlmProvider {
   complete(req: { system: string; prompt: string; maxTokens: number }): Promise<string>;
 }
 
-/** manifest 타임스탬프 등에 쓰는 시계 경계 — 테스트에서는 FixedClock으로 대체(mocks/). */
+/** Clock boundary for manifest timestamps and the like; tests substitute FixedClock (mocks/). */
 export interface Clock {
   now(): Date;
 }
 
-/** 아웃라인 단계가 원문 섹션들을 하나의 챕터로 묶은 계획 (배포 전, 증류 이전). */
+/** The outline stage's plan grouping source sections into one chapter (pre-deployment, before
+ * distillation). */
 export interface ChapterPlan {
   id: string;
   file: string;
@@ -45,14 +51,16 @@ export interface ChapterPlan {
   sectionIds: string[];
 }
 
-/** outline 단계 결과 — LLM 응답이므로 경계에서 zod 파싱(core/schemas.ts skillPlanSchema). */
+/** Outline stage result. It is an LLM response, so it is zod-parsed at the boundary
+ * (core/schemas.ts skillPlanSchema). */
 export interface SkillPlan {
   slug: string;
   title: string;
   chapters: ChapterPlan[];
 }
 
-/** distill 단계 결과 — 챕터 하나의 증류 본문. anchors는 body 안 `[§sectionId]` 각주에서 결정론적으로 추출. */
+/** Distill stage result: the distilled body of one chapter. anchors are extracted
+ * deterministically from the `[§sectionId]` footnotes in body. */
 export interface DistilledChapter {
   id: string;
   file: string;
@@ -60,7 +68,8 @@ export interface DistilledChapter {
   anchors: string[];
 }
 
-/** qaGen 단계가 만드는 골든 Q&A 한 항목 — LLM 응답이므로 경계에서 zod 파싱(core/schemas.ts goldenQaSchema). */
+/** One golden Q&A item produced by the qaGen stage. It is an LLM response, so it is zod-parsed
+ * at the boundary (core/schemas.ts goldenQaSchema). */
 export interface GoldenQA {
   id: string;
   sectionId: string;
@@ -69,35 +78,42 @@ export interface GoldenQA {
   anchorQuote: string;
 }
 
-/** 게이트 판정 사유 — GateReport.failures[].reason. */
-/** qa_generation_failed(B2)는 문항이 아니라 섹션의 실패 — qaId는 `<sectionId>-q0`. */
+/** Gate verdict reason, GateReport.failures[].reason. */
+/** qa_generation_failed (B2) is a section failure, not a question failure: qaId is
+ * `<sectionId>-q0`. */
 export type GateFailureReason = "wrong" | "not_found" | "anchor_missing" | "qa_generation_failed";
 
-/** 품질 게이트 최종 리포트 (core/gate.ts, T7). manifest에 내장되므로 경계에서 zod 파싱. */
+/** Final quality-gate report (core/gate.ts, T7). Embedded in the manifest, so zod-parsed at the
+ * boundary. */
 export interface GateReport {
   passRate: number;
   threshold: number;
   passed: boolean;
   perChapter: { file: string; asked: number; correct: number }[];
   failures: { qaId: string; reason: GateFailureReason }[];
-  /** answerer 격리 감사 로그(DESIGN §2 T7 결정) — selectedFile은 LLM이 실제로 답한 원시 문자열(무효한
-   * 경로여도 그대로), loadedFiles는 실제로 읽어 들인 파일(선택이 무효하면 빈 배열). */
+  /** Answerer-isolation audit log (DESIGN §2 T7 decision). selectedFile is the raw string the LLM
+   * actually answered with (kept verbatim even when it is not a valid path); loadedFiles are the
+   * files actually read (empty when the selection was invalid). */
   loadHistory: { qaId: string; selectedFile: string; loadedFiles: string[] }[];
-  /** B2: 모집단 섹션마다 요청한 문항 수와 실제 유효 문항 수. generated 0인 섹션이 하나라도 있으면 passed는
-   * false(미검증 섹션) — passRate와 별개의 필요조건. */
+  /** B2: for every population section, the number of questions requested and the number actually
+   * generated and valid. If any section has generated 0, passed is false (unverified section);
+   * this is a necessary condition independent of passRate. */
   coverage: { sectionId: string; requested: number; generated: number }[];
 }
 
-/** 컴파일 산출 manifest — 스킬 디렉터리에 기록, v0.2 증분 재컴파일의 키(DESIGN §5). 파일 IO 경계이므로 zod 파싱. */
+/** Compile output manifest. Written into the skill directory; the key for v0.2 incremental
+ * recompiles (DESIGN §5). It crosses the file-IO boundary, so it is zod-parsed. */
 export interface Manifest {
   version: 1;
   createdAt: string;
   sourceFiles: { path: string; sha256: string }[];
   sections: { id: string; sha256: string; chapterFile: string }[];
   outputs: string[];
-  /** outputs 각 파일 내용(UTF-8)의 sha256 — report/eval이 현재 파일과 대조해 드리프트를 잡는다(E3). 집합은 outputs와 같다. */
+  /** sha256 of each output file's content (UTF-8). report/eval compare it against the current
+   * files to catch drift (E3). The set of paths equals outputs. */
   outputHashes: { path: string; sha256: string }[];
   gate: GateReport | { skipped: true };
-  /** eval이 원문 없이 재사용할 골든 QA 원본(DESIGN §6 T8 결정). 게이트 스킵 시 빈 배열. */
+  /** The golden QA set eval reuses without the source (DESIGN §6 T8 decision). Empty when the gate
+   * was skipped. */
   goldenQa: GoldenQA[];
 }

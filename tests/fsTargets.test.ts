@@ -1,4 +1,5 @@
-// T6 완료 기준: --force 없이 기존 스킬 디렉터리 덮어쓰기 거부 / --out 밖 쓰기 시도 없음 (실제 fs 사용).
+// T6 acceptance criteria: overwriting an existing skill directory without --force is refused, and no
+// write is ever attempted outside --out (uses the real fs).
 import {
   chmod,
   lstat,
@@ -42,7 +43,7 @@ const manifest: Manifest = {
   goldenQa: [],
 };
 const files: AssembledFile[] = [{ path: "SKILL.md", content: "# Skill\n", estimatedTokens: 3 }];
-/** E3: outputs와 outputHashes를 같은 파일 집합으로 채운 manifest. */
+/** E3: a manifest whose outputs and outputHashes cover the same set of files. */
 const manifestFor = (gen: readonly AssembledFile[]): Manifest => ({
   ...manifest,
   outputs: gen.map((f) => f.path),
@@ -52,8 +53,8 @@ const manifestFor = (gen: readonly AssembledFile[]): Manifest => ({
 let dir: string;
 
 beforeEach(async () => {
-  // A2: collectInputFiles는 실제 경로를 돌려주므로(macOS의 /var → /private/var 같은 루트 링크 해소) 기대값도
-  // 실제 경로로 만든다.
+  // A2: collectInputFiles returns real paths (resolving root links such as macOS /var → /private/var),
+  // so the expected values are built from the real path too.
   dir = await realpath(await mkdtemp(join(tmpdir(), "live-skill-fstargets-")));
 });
 
@@ -81,10 +82,10 @@ describe("writeSkill — happy path", () => {
   });
 });
 
-describe("writeSkill — --force boundary (가드레일 5, 완료 기준)", () => {
+describe("writeSkill — --force boundary (guardrail 5, acceptance criteria)", () => {
   it("refuses to write into a non-empty directory without force", async () => {
     const outDir = join(dir, "skill");
-    await writeSkill(outDir, files, manifest); // 첫 컴파일
+    await writeSkill(outDir, files, manifest); // first compile
     await expect(writeSkill(outDir, files, manifest)).rejects.toThrow(FsTargetError);
     await expect(writeSkill(outDir, files, manifest)).rejects.toMatchObject({
       kind: "already_exists",
@@ -109,7 +110,7 @@ describe("writeSkill — --force boundary (가드레일 5, 완료 기준)", () =
   });
 });
 
-describe("writeSkill — out-dir escape (가드레일 5, 완료 기준)", () => {
+describe("writeSkill — out-dir escape (guardrail 5, acceptance criteria)", () => {
   it("refuses a file path that would resolve outside outDir, before writing anything", async () => {
     const outDir = join(dir, "skill");
     const escaping: AssembledFile[] = [
@@ -119,7 +120,7 @@ describe("writeSkill — out-dir escape (가드레일 5, 완료 기준)", () => 
     await expect(writeSkill(outDir, escaping, manifest)).rejects.toMatchObject({
       kind: "escapes_out_dir",
     });
-    // 거부는 첫 파일에서 일어나므로 outDir 자체가 아예 만들어지지 않는다.
+    // The refusal happens on the first file, so outDir itself is never created.
     await expect(readdir(outDir)).rejects.toThrow();
   });
 });
@@ -138,11 +139,11 @@ describe("readSourceFile", () => {
     await writeFile(path, "hello");
     const src = await readSourceFile(path);
     expect(src.bytes.byteOffset).toBe(0);
-    expect(src.bytes.buffer.byteLength).toBe(src.bytes.byteLength); // 풀 공유 슬라이스가 아니다
+    expect(src.bytes.buffer.byteLength).toBe(src.bytes.byteLength); // not a slice of a shared pool
   });
 });
 
-describe("input size limits (D3, 완료 기준) — 읽기 전 거부 + 수정 방법", () => {
+describe("input size limits (D3, acceptance criteria): refusal before reading, with a fix", () => {
   const tiny: InputLimits = { maxFiles: 2, maxFileBytes: 5, maxTotalBytes: 8 };
 
   it("ships with the DESIGN §6 D3 constants", () => {
@@ -183,7 +184,7 @@ describe("input size limits (D3, 완료 기준) — 읽기 전 거부 + 수정 �
   });
 
   it("the pre-read check is stat-only: an unreadable oversized file is refused as too large, not with EACCES", async () => {
-    if (process.getuid?.() === 0) return; // root는 권한 비트를 무시한다
+    if (process.getuid?.() === 0) return; // root ignores permission bits
     const big = join(dir, "big.md");
     await writeFile(big, "123456", { mode: 0o000 });
     try {
@@ -201,7 +202,7 @@ describe("input size limits (D3, 완료 기준) — 읽기 전 거부 + 수정 �
     await expect(readSourceFile(path, tiny)).rejects.toMatchObject({ kind: "file_too_large" });
     expect(new TextDecoder().decode((await readSourceFile(join(dir, "big.md"))).bytes)).toBe(
       "123456",
-    ); // 기본 상한으로는 물론 읽힌다
+    ); // under the default cap it reads fine, of course
   });
 
   it("readSourceFiles enforces the running total while reading, keeps input order, and bounds concurrency", async () => {
@@ -224,13 +225,13 @@ describe("input size limits (D3, 완료 기준) — 읽기 전 거부 + 수정 �
 
   it("readSkillDir goes through the same limits", async () => {
     await writeFile(join(dir, "SKILL.md"), "123456");
-    await expect(readSkillDir(dir)).resolves.toHaveLength(1); // 기본 상한 안
+    await expect(readSkillDir(dir)).resolves.toHaveLength(1); // within the default cap
     for (const name of ["a.md", "b.md", "c.md"]) await writeFile(join(dir, name), "x");
-    expect((await readSkillDir(dir)).length).toBe(4); // 기본 상한(500개)은 충분히 넓다
+    expect((await readSkillDir(dir)).length).toBe(4); // the default cap (500 files) is plenty
   });
 });
 
-describe("collectInputFiles (DESIGN §6 T8 — 폴더 재귀 확장)", () => {
+describe("collectInputFiles (DESIGN §6 T8: recursive folder expansion)", () => {
   it("returns a file path as-is", async () => {
     const path = join(dir, "a.md");
     await writeFile(path, "x");
@@ -249,7 +250,7 @@ describe("collectInputFiles (DESIGN §6 T8 — 폴더 재귀 확장)", () => {
   });
 });
 
-describe("collectInputFiles — symlink boundary (A2, 완료 기준)", () => {
+describe("collectInputFiles — symlink boundary (A2, acceptance criteria)", () => {
   it("refuses a symlink inside the input root that points at a file outside it", async () => {
     await mkdir(join(dir, "in"));
     await mkdir(join(dir, "outside"));
@@ -262,10 +263,10 @@ describe("collectInputFiles — symlink boundary (A2, 완료 기준)", () => {
     await expect(collectInputFiles([join(dir, "in")])).rejects.toThrow(/link\.md/u);
   });
 
-  it("terminates on a symlink cycle instead of recursing (완료 기준)", async () => {
+  it("terminates on a symlink cycle instead of recursing (acceptance criteria)", async () => {
     await mkdir(join(dir, "in"));
     await writeFile(join(dir, "in", "a.md"), "a");
-    await symlink("..", join(dir, "in", "loop")); // in/loop → dir → dir/in → … 옛 코드는 ELOOP까지 돌았다
+    await symlink("..", join(dir, "in", "loop")); // in/loop → dir → dir/in → …; the old code spun until ELOOP
 
     await expect(collectInputFiles([join(dir, "in")])).rejects.toMatchObject({
       kind: "symlink_refused",
@@ -289,9 +290,10 @@ describe("collectInputFiles — symlink boundary (A2, 완료 기준)", () => {
   });
 });
 
-describe("writeSkill — symlink boundary (A2, 완료 기준; A3 이후 의미)", () => {
-  // A3 이후 --force는 기존 트리 안에 쓰는 게 아니라 통째로 교체한다. 따라서 안에 놓인 링크는 "거부"가 아니라
-  // 이전 세대와 함께 치워지고, 링크 대상은 어떤 경우에도 건드리지 않는다.
+describe("writeSkill — symlink boundary (A2, acceptance criteria; semantics after A3)", () => {
+  // Since A3, --force replaces the tree as a whole rather than writing inside it. A link placed inside
+  // is therefore not "refused": it is cleared away together with the previous generation, and the
+  // link target is never touched in any case.
   it("never writes through a symlinked subdirectory: with --force the link is replaced, its target untouched", async () => {
     const outDir = join(dir, "skill");
     const elsewhere = join(dir, "elsewhere");
@@ -304,8 +306,9 @@ describe("writeSkill — symlink boundary (A2, 완료 기준; A3 이후 의미)"
     ];
 
     await writeSkill(outDir, withChapter, manifest, { force: true });
-    expect(await readdir(elsewhere)).toEqual([]); // 링크 대상엔 아무것도 안 갔다
-    expect((await lstat(join(outDir, "chapters"))).isSymbolicLink()).toBe(false); // 링크는 사라지고 진짜 디렉터리
+    expect(await readdir(elsewhere)).toEqual([]); // nothing reached the link target
+    // The link is gone, replaced by a real directory.
+    expect((await lstat(join(outDir, "chapters"))).isSymbolicLink()).toBe(false);
     expect(await readFile(join(outDir, "chapters", "ch01-a.md"), "utf-8")).toBe("body\n");
   });
 
@@ -342,7 +345,7 @@ describe("writeSkill — symlink boundary (A2, 완료 기준; A3 이후 의미)"
   });
 });
 
-describe("writeSkill — atomic staging swap (A3, 완료 기준)", () => {
+describe("writeSkill — atomic staging swap (A3, acceptance criteria)", () => {
   const gen1: AssembledFile[] = [
     { path: "SKILL.md", content: "# v1\n", estimatedTokens: 2 },
     { path: "chapters/ch01-a.md", content: "v1 a\n", estimatedTokens: 2 },
@@ -358,7 +361,8 @@ describe("writeSkill — atomic staging swap (A3, 완료 기준)", () => {
     const outDir = join(dir, "skill");
     await writeSkill(outDir, gen1, gen1Manifest);
 
-    // 3번째 파일이 실패하게 만든다: 이미 디렉터리로 만들어진 "chapters"를 파일로 열면 EISDIR.
+    // Make the third file fail: opening "chapters", already created as a directory, as a file
+    // gives EISDIR.
     const gen2Broken: AssembledFile[] = [
       { path: "SKILL.md", content: "# v2\n", estimatedTokens: 2 },
       { path: "chapters/ch01-a.md", content: "v2 a\n", estimatedTokens: 2 },
@@ -370,7 +374,7 @@ describe("writeSkill — atomic staging swap (A3, 완료 기준)", () => {
     expect(await readFile(join(outDir, "chapters", "ch01-a.md"), "utf-8")).toBe("v1 a\n");
     expect(await readFile(join(outDir, "chapters", "ch02-b.md"), "utf-8")).toBe("v1 b\n");
     expect(await readManifest(outDir)).toEqual(gen1Manifest);
-    expect(await debris(dir)).toEqual([]); // staging도 old도 남지 않는다
+    expect(await debris(dir)).toEqual([]); // neither staging nor old is left behind
   });
 
   it("--force recompile drops files from the previous generation (no stale chapters)", async () => {
@@ -430,7 +434,7 @@ describe("readSkillDir / readManifest — symlink boundary (A2)", () => {
   });
 });
 
-describe("readSkillDir / readManifest (validate/eval/report용)", () => {
+describe("readSkillDir / readManifest (for validate/eval/report)", () => {
   it("reads every file back with a forward-slash relative path", async () => {
     const outDir = join(dir, "skill");
     const nested: AssembledFile[] = [
@@ -475,7 +479,7 @@ describe("resolveTargetDir / tempSkillDir (DESIGN §6 T8)", () => {
     try {
       expect(a).toContain("live-skill-my-skill-");
       expect(a).not.toBe(b);
-      expect(await readdir(a)).toEqual([]); // 비어 있으니 force 없이 바로 쓸 수 있다
+      expect(await readdir(a)).toEqual([]); // empty, so it can be written to without force
       expect(join(a, "..")).toBe(join(tmpdir(), "."));
     } finally {
       await rm(a, { recursive: true, force: true });
@@ -484,7 +488,7 @@ describe("resolveTargetDir / tempSkillDir (DESIGN §6 T8)", () => {
   });
 });
 
-describe("resolveTargetDir / tempSkillDir — slug 경로 탈출 차단 (A1, 완료 기준)", () => {
+describe("resolveTargetDir / tempSkillDir — slug path-escape blocking (A1, acceptance criteria)", () => {
   const unsafe = ["../../outside", "a/b", "..", ".", "/abs", "Manual", "a b", "a".repeat(65)];
 
   it.each(unsafe)("resolveTargetDir refuses unsafe slug %j without touching the fs", (slug) => {
@@ -493,8 +497,9 @@ describe("resolveTargetDir / tempSkillDir — slug 경로 탈출 차단 (A1, 완
   });
 
   it.each(unsafe)("tempSkillDir refuses unsafe slug %j and creates nothing", async (slug) => {
-    // 공용 os.tmpdir()은 병렬 워커(e2e·smoke)도 `live-skill-…` 디렉터리를 만들었다 지우므로 전체 개수는 경쟁한다 —
-    // 이 slug로 만들어질 수 있는 이름(`live-skill-<slug>-*`)만 센다.
+    // The shared os.tmpdir() is also used by parallel workers (e2e, smoke) that create and delete
+    // `live-skill-…` directories, so the total count races. Count only the names this slug could
+    // produce (`live-skill-<slug>-*`).
     const mine = async (): Promise<number> =>
       (await readdir(tmpdir())).filter((n) => n.startsWith(`live-skill-${slug}-`)).length;
     const before = await mine();

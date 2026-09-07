@@ -1,7 +1,8 @@
-// Assembler — 결정론 템플릿 조립(DESIGN §3). LLM 의존 0: LlmProvider/ScriptedLlm/어댑터를 임포트하지
-// 않는다(완료 기준, tests/assembler.test.ts의 "LLM 의존 0" 검사가 이 파일 자체를 스캔해 강제한다).
-// 같은 입력(plan + distilled)은 항상 같은 산출을 낸다 — 파일명도 outline 제안을 신뢰하지 않고 여기서
-// 다시 계산한다(§2 T4 결정).
+// Assembler: deterministic template assembly (DESIGN §3). Zero LLM dependency: it imports neither
+// LlmProvider, ScriptedLlm nor any adapter (a completion criterion; the "zero LLM dependency" test
+// in tests/assembler.test.ts scans this file itself to enforce it).
+// The same input (plan + distilled) always yields the same output. File names are recomputed here
+// rather than trusting the outline's suggestion (§2 T4 decision).
 import { serializeFrontmatter } from "./frontmatter.js";
 import { slugifyHeading } from "./sectionId.js";
 import { estimateTokens } from "./tokenEstimate.js";
@@ -14,12 +15,13 @@ export interface AssembledFile {
 }
 
 export interface AssembleOptions {
-  /** false면 SKILL.md에 unverified 표시를 남긴다(게이트 스킵/미달, DESIGN §3). */
+  /** When false, SKILL.md carries the unverified marker (gate skipped or failed, DESIGN §3). */
   verified: boolean;
 }
 
-/** chapters/chNN-slug.md 경로를 결정론으로 계산한다 — pipeline.ts가 manifest의 chapterFile을 같은
- * 방식으로 다시 구할 때도 이 함수를 그대로 쓴다(DESIGN §5.1), 로직 중복 없이. */
+/** Computes the chapters/chNN-slug.md path deterministically. pipeline.ts reuses this very
+ * function when it derives the manifest's chapterFile the same way (DESIGN §5.1), so the logic is
+ * not duplicated. */
 export function chapterFilePath(index: number, title: string): string {
   const n = String(index + 1).padStart(2, "0");
   return `chapters/ch${n}-${slugifyHeading(title)}.md`;
@@ -50,14 +52,14 @@ function resolveChapters(
     if (d === undefined) {
       throw new Error(
         `assembleSkill: no distilled chapter for id "${chapterPlan.id}" — ` +
-          "fix: rerun distill for this chapter, or check that outline and distill agree on chapter ids.",
+          "Fix: rerun distill for this chapter, or check that outline and distill agree on chapter ids.",
       );
     }
     return { plan: chapterPlan, distilled: d, path: chapterFilePath(i, chapterPlan.title) };
   });
 }
 
-// --- 챕터 본문의 인라인 표기 추출 (DESIGN §3 T4 결정) ---
+// --- Extraction of inline markers from chapter bodies (DESIGN §3 T4 decision) ---
 
 const GLOSSARY_LINE = /^\*\*(.+?)\*\*\s*—\s*(.+)$/u;
 const PATTERN_LINE = /^-\s*\[(PATTERN|ANTI-PATTERN|PROCEDURE)\]\s*(.+)$/iu;
@@ -127,7 +129,7 @@ function extractRules(chapters: readonly ResolvedChapter[]): RuleEntry[] {
   return entries;
 }
 
-// --- 파일 템플릿 ---
+// --- File templates ---
 
 function buildSkillMd(
   plan: SkillPlan,
@@ -135,7 +137,8 @@ function buildSkillMd(
   verified: boolean,
 ): string {
   const lines: string[] = [
-    // E2: 값을 이어 붙이지 않고 YAML로 직렬화한다 — "Guide: Setup" 같은 제목도 소비자가 그대로 읽는다.
+    // E2: serialize as YAML instead of concatenating values, so a title like "Guide: Setup" is
+    // read back verbatim by consumers.
     serializeFrontmatter({ name: plan.slug, description: plan.title }),
     "",
     `# ${plan.title}`,
@@ -143,27 +146,29 @@ function buildSkillMd(
   ];
   if (!verified) {
     lines.push(
-      "> ⚠️ **unverified** — 이 스킬은 품질 게이트를 거치지 않았다(`--no-gate` 또는 게이트 미달). 정확성이 검증되지 않았다.",
+      "> ⚠️ **unverified** — this skill did not go through the quality gate (`--no-gate`, or the gate did not pass). Its accuracy has not been verified.",
       "",
     );
   }
-  lines.push("## 챕터 인덱스", "");
+  lines.push("## Chapter index", "");
   for (const ch of chapters) {
-    lines.push(`- \`${ch.path}\` — ${ch.plan.title} (원문 섹션: ${ch.plan.sectionIds.join(", ")})`);
+    lines.push(
+      `- \`${ch.path}\` — ${ch.plan.title} (source sections: ${ch.plan.sectionIds.join(", ")})`,
+    );
   }
   lines.push(
     "",
-    "## 참고 파일",
+    "## Reference files",
     "",
-    "- `glossary.md` — 핵심 용어",
-    "- `patterns.md` — 기법·절차·안티패턴",
-    "- `cheatsheet.md` — 결정 표·즉답 규칙",
+    "- `glossary.md` — key terms",
+    "- `patterns.md` — techniques, procedures, anti-patterns",
+    "- `cheatsheet.md` — decision tables and quick rules",
   );
   return lines.join("\n");
 }
 
 function buildGlossaryMd(entries: readonly GlossaryEntry[]): string {
-  if (entries.length === 0) return "# Glossary\n\n(추출된 용어가 없습니다.)";
+  if (entries.length === 0) return "# Glossary\n\n(no terms extracted.)";
   const lines = ["# Glossary", ""];
   for (const e of entries) {
     lines.push(
@@ -175,13 +180,13 @@ function buildGlossaryMd(entries: readonly GlossaryEntry[]): string {
 }
 
 const PATTERN_KIND_LABEL: Record<PatternKind, string> = {
-  PATTERN: "패턴",
-  "ANTI-PATTERN": "안티패턴",
-  PROCEDURE: "절차",
+  PATTERN: "Patterns",
+  "ANTI-PATTERN": "Anti-patterns",
+  PROCEDURE: "Procedures",
 };
 
 function buildPatternsMd(entries: readonly PatternEntry[]): string {
-  if (entries.length === 0) return "# Patterns\n\n(추출된 패턴이 없습니다.)";
+  if (entries.length === 0) return "# Patterns\n\n(no patterns extracted.)";
   const lines = ["# Patterns", ""];
   for (const kind of ["PATTERN", "PROCEDURE", "ANTI-PATTERN"] as const) {
     const group = entries.filter((e) => e.kind === kind);
@@ -194,13 +199,14 @@ function buildPatternsMd(entries: readonly PatternEntry[]): string {
 }
 
 function buildCheatsheetMd(entries: readonly RuleEntry[]): string {
-  if (entries.length === 0) return "# Cheatsheet\n\n(추출된 규칙이 없습니다.)";
+  if (entries.length === 0) return "# Cheatsheet\n\n(no rules extracted.)";
   const lines = ["# Cheatsheet", ""];
   for (const e of entries) lines.push(`- ${e.text} (\`${e.chapterFile}\`)`);
   return lines.join("\n");
 }
 
-/** DESIGN §3의 5파일을 결정론으로 조립한다. 입력이 같으면 항상 같은 출력(SPEC §6 재현성). */
+/** Deterministically assembles the 5 files of DESIGN §3. Same input, same output, always
+ * (SPEC §6 reproducibility). */
 export function assembleSkill(
   plan: SkillPlan,
   distilled: readonly DistilledChapter[],

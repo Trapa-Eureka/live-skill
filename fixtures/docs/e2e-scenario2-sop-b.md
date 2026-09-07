@@ -1,6 +1,7 @@
-<!-- 자체 제작 문서 (CLAUDE.md 가드레일 4) — 가상의 사내 절차 "휴가 신청"을 위해 T9(e2e-mock)용으로 이
-     프로젝트가 직접 작성. SPEC §5 시나리오 2(SOP 폴더 → 팀 스킬, 약한 챕터 리포트)의 픽스처 중 하나 — 이
-     챕터의 답변은 의도적으로 오답 처리되어 "약한 챕터" 사례를 재현한다. -->
+<!-- Self-authored document (CLAUDE.md guardrail 4), written by this project for T9 (e2e-mock) about the
+     fictional internal procedure "leave request". One of the fixtures for SPEC §5 scenario 2
+     (SOP folder → team skill, weak-chapter report): the answers for this chapter are deliberately
+     graded wrong to reproduce the "weak chapter" case. Not related to any real organization. -->
 
 # Leave Request SOP
 

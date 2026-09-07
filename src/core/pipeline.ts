@@ -1,5 +1,6 @@
-// 컴파일 파이프라인 — extract → outline → distill → assemble → validate → gate (DESIGN §1, §5.1).
-// 순수 오케스트레이션: 실제 파일 읽기/쓰기는 호출자(어댑터)가 SourceFile[]로 넘기고 반환값을 받아간다.
+// Compile pipeline: extract → outline → distill → assemble → validate → gate (DESIGN §1, §5.1).
+// Pure orchestration: the caller (an adapter) does the actual file reading/writing, passing
+// SourceFile[] in and taking the return value out.
 import { extractAnchors } from "./anchors.js";
 import { assembleSkill, chapterFilePath, type AssembledFile } from "./assembler.js";
 import type { Config } from "./config.js";
@@ -38,26 +39,30 @@ export type PipelineError =
   | { kind: "outline_invalid"; detail: string; message: string }
   | {
       kind: "call_cap_exceeded";
-      /** preflight: 사전 추정이 상한을 넘음(호출 전). runtime: 실행 중 실제 호출 수가 상한에 닿음(D1). */
+      /** preflight: the upfront estimate exceeds the cap (before any call). runtime: the actual
+       * call count hit the cap mid-run (D1). */
       stage: "preflight" | "runtime";
-      /** preflight면 추정 상한선, runtime이면 상한에 닿기까지 실제로 일어난 호출 수. */
+      /** For preflight, the estimated upper bound; for runtime, the calls actually made before the
+       * cap was hit. */
       estimated: number;
       limit: number;
       message: string;
     }
   | { kind: "assemble_failed"; detail: string; message: string }
   | {
-      /** LLM 호출이 실패했다(G1) — 어느 단계에서, 어떤 종류로, 재시도 가능한지, 그때까지 몇 번 불렀는지. */
+      /** An LLM call failed (G1): at which stage, of what kind, whether it is retryable, and how
+       * many calls had been made by then. */
       kind: "llm_failed";
       stage: LlmStage;
       error: { kind: LlmErrorKind; retryable: boolean; detail: string };
-      /** 실패한 호출을 포함해 그때까지 시도한 LLM 호출 수. */
+      /** LLM calls attempted so far, including the one that failed. */
       calls: number;
       message: string;
     }
   | {
       kind: "validation_failed";
-      /** pre_gate: 첫 조립본이 구조 검증에 걸림(게이트 호출 0회). final: 게이트 뒤 최종 조립본이 걸림(E1). */
+      /** pre_gate: the first assembly failed structural validation (zero gate calls). final: the
+       * final assembly after the gate failed it (E1). */
       stage: "pre_gate" | "final";
       report: ValidationReport;
       message: string;
@@ -68,11 +73,13 @@ export type LlmStage = "outline" | "distill" | "gate";
 export interface CompileResult {
   manifest: Manifest;
   files: AssembledFile[];
-  /** 최종 조립본의 구조 검증 리포트 — 항상 passed(error면 compile이 validation_failed로 끝난다, E1). warning은 남는다. */
+  /** Structural validation report of the final assembly. Always passed (an error ends compile with
+   * validation_failed, E1); warnings are kept. */
   validation: ValidationReport;
-  /** outline이 만든 슬러그 — --out 없이 --target만 줬을 때 CLI가 타깃 경로를 계산하는 데 쓴다(DESIGN §5.1 T8 결정). */
+  /** The slug produced by outline. The CLI uses it to compute the target path when only --target
+   * is given without --out (DESIGN §5.1 T8 decision). */
   slug: string;
-  /** 이번 컴파일이 실제로 한 LLM 호출 수(D1) — 사전 추정이 아니라 실측. */
+  /** LLM calls this compile actually made (D1): a measurement, not the upfront estimate. */
   llmCalls: number;
 }
 
@@ -81,11 +88,12 @@ export interface PipelineDeps {
   llm: LlmProvider;
   clock: Clock;
   config: Config;
-  /** 기본 "run". "skip"은 `--no-gate`에 대응 — manifest.gate = {skipped:true}, SKILL.md에 unverified 표시. */
+  /** Defaults to "run". "skip" corresponds to `--no-gate`: manifest.gate = {skipped:true} and
+   * SKILL.md carries the unverified marker. */
   gate?: "run" | "skip";
 }
 
-/** DESIGN §5.1의 전체 파이프라인: extract→outline→distill→assemble→validate→gate. */
+/** The full pipeline of DESIGN §5.1: extract→outline→distill→assemble→validate→gate. */
 export async function compile(
   sources: readonly SourceFile[],
   deps: PipelineDeps,
@@ -100,8 +108,9 @@ export async function compile(
   const extracted = await extractSources(sources, deps.extractors);
   if (!extracted.ok) return extracted;
 
-  // 검증 모집단(B1): 본문 있는 섹션 전부. 본문 없는 헤딩은 outline에 보여주지도, 배정을 요구하지도 않는다.
-  // F3: eval --source도 같은 buildPopulation을 쓴다 — 접두어·필터 규칙이 두 군데로 갈라지지 않게.
+  // Verification population (B1): every section that has body text. Body-less headings are
+  // neither shown to outline nor required to be assigned.
+  // F3: eval --source uses the same buildPopulation, so the prefix and filter rules never diverge.
   const sections = buildPopulation(extracted.value);
   if (sections.length === 0) {
     return err({
@@ -121,11 +130,13 @@ export async function compile(
     });
   }
 
-  // D1(가드레일 6): 사전 추정과 별개로 실제 호출 수를 세고, 상한을 넘기는 호출은 일어나기 전에 막는다.
+  // D1 (guardrail 6): independently of the upfront estimate, count the actual calls and block any
+  // call that would exceed the cap before it happens.
   const tracked = trackCost(deps.llm, { maxCalls: deps.config.maxLlmCalls });
   const llm = tracked.llm;
-  // G1: 상한 초과와 provider 실패(인증·rate limit·네트워크·응답 이상)를 단계·종류·재시도 가능 여부·호출 수와 함께
-  // PipelineError로 바꾼다 — 스택 트레이스가 아니라 사람 메시지가 되게. 그 밖의 예외(버그)는 그대로 던진다.
+  // G1: turn cap overruns and provider failures (auth, rate limit, network, malformed response)
+  // into a PipelineError carrying stage, kind, retryability and call count, so the user sees a
+  // human message rather than a stack trace. Any other exception (a bug) is rethrown as is.
   async function guarded<T>(
     stage: LlmStage,
     work: () => Promise<T>,
@@ -172,7 +183,8 @@ export async function compile(
     });
   }
 
-  // B1: 계획이 모집단을 정확히 한 번씩 덮는지 — 빠진 섹션은 증류·manifest·게이트에서 조용히 사라졌었다.
+  // B1: does the plan cover the population exactly once? A dropped section used to vanish silently
+  // from distill, the manifest and the gate.
   const coverage = checkOutlineCoverage(plan, sections);
   if (coverage !== undefined) {
     const detail = formatOutlineCoverageIssues(coverage);
@@ -206,7 +218,8 @@ export async function compile(
         .map((id) => byId.get(id))
         .filter((s): s is NamedSection => s !== undefined);
       const req = distillPrompt(chapter, chapterSections, deps.config.budgets.chapter);
-      // C1: 증류 본문은 파일에 그대로 쓰이는 모델 출력 — 개행·탭 외 제어문자는 여기서 지운다.
+      // C1: the distilled body is model output written to a file verbatim, so control characters
+      // other than newline/tab are stripped here.
       const body = stripControlChars(await llm.complete(req));
       distilled.push({ id: chapter.id, file: "", body, anchors: extractAnchors(body) });
     }
@@ -222,10 +235,11 @@ export async function compile(
     }
   }
 
-  const firstAssembly = assemble(false); // 게이트가 읽을 조립본 — verified 값은 게이트 판정에 영향 없음
+  const firstAssembly = assemble(false); // the assembly the gate reads; verified does not affect the verdict
   if (!firstAssembly.ok) return firstAssembly;
 
-  // E1: 구조 검증은 배포 차단이다 — 게이트(LLM 비용) 전에, 그리고 --no-gate여도 똑같이.
+  // E1: structural validation blocks deployment, before the gate (LLM cost) and just the same
+  // under --no-gate.
   function validated(
     assembled: AssembledFile[],
     stage: "pre_gate" | "final",
@@ -264,12 +278,13 @@ export async function compile(
     const outcome = outcomeRes.value;
     gate = outcome.report;
     goldenQa = outcome.goldenQa;
-    // 순수 함수라 verified 값이 확정된 뒤 한 번 더 조립해도 비용이 없다 — SKILL.md의 unverified 표시를
-    // 실제 게이트 결과와 맞춘다(DESIGN §5.1).
+    // Assembly is a pure function, so re-assembling once verified is known costs nothing. This
+    // aligns the unverified marker in SKILL.md with the actual gate result (DESIGN §5.1).
     const finalAssembly = assemble(outcome.report.passed);
     if (!finalAssembly.ok) return finalAssembly;
     files = finalAssembly.value;
-    // E1: 쓰이는 파일은 검사를 통과한 파일이어야 한다 — verified로 다시 조립한 최종본도 재검사.
+    // E1: only files that passed validation may be written, so the final assembly (re-built with
+    // verified) is validated again.
     const final = validated(files, "final");
     if (!final.ok) return final;
     validation = final.value;

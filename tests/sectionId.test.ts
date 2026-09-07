@@ -13,7 +13,7 @@ describe("slugifyHeading", () => {
   });
 
   it("keeps non-Latin letters (Korean, Tagalog use Latin/Hangul scripts directly)", () => {
-    expect(slugifyHeading("설치 방법")).toBe("설치-방법");
+    expect(slugifyHeading("설치 방법")).toBe("설치-방법"); // deliberately Korean: Hangul letters must be kept
     expect(slugifyHeading("Paunang Salita")).toBe("paunang-salita");
   });
 
@@ -39,9 +39,9 @@ describe("assignSectionIds", () => {
     ]);
   });
 
-  it("is stable across repeated extraction of the same document (T1 완료 기준)", () => {
+  it("is stable across repeated extraction of the same document (T1 completion criterion)", () => {
     expect(assignSectionIds(doc)).toEqual(assignSectionIds(doc));
-    // 참조가 다른 배열이어도(재추출을 흉내) 값은 동일해야 한다.
+    // A different array instance (simulating re-extraction) must still yield the same values.
     const reExtracted: HeadingRef[] = doc.map((h) => ({ ...h }));
     expect(assignSectionIds(reExtracted)).toEqual(assignSectionIds(doc));
   });
@@ -73,7 +73,8 @@ describe("assignSectionIds", () => {
     expect(assignSectionIds(siblings)).toEqual(["a", "a/shared", "b", "b/shared"]);
   });
 
-  // F2 (001-006, 완료 기준): 접미사는 등장 횟수가 아니라 최종 집합과 대조해 고른다.
+  // F2 (001-006, completion criterion): the suffix is chosen against the final set, not by
+  // occurrence count.
   it("never produces two equal ids even when a heading literally reads like a suffixed one (A, A, A-2)", () => {
     const tricky: HeadingRef[] = [
       { level: 1, heading: "A" },
@@ -130,7 +131,7 @@ describe("disambiguate", () => {
   });
 });
 
-describe("namespacePrefixes (F2 — 다중 소스 접두어, 완료 기준)", () => {
+describe("namespacePrefixes (F2 — multi-source prefixes, completion criterion)", () => {
   it("returns no prefix for a single source", () => {
     expect(namespacePrefixes(["/root/docs/readme.md"])).toEqual([]);
     expect(namespacePrefixes([])).toEqual([]);

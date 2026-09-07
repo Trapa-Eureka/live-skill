@@ -1,4 +1,5 @@
-// UTF-8 TXT/MD 추출기 — 이미 마크다운에 가까운 형식이라 structureText가 직접 헤딩을 인식한다.
+// UTF-8 TXT/MD extractor. The format is already close to Markdown, so structureText recognizes the
+// headings directly.
 import type { DocumentExtractor, ExtractError, ExtractedDoc, Result } from "../../core/index.js";
 import { err, ok, structureText, toExtractedDoc } from "../../core/index.js";
 import { hasExtension } from "./route.js";

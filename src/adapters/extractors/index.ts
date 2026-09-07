@@ -7,7 +7,7 @@ import { TextExtractor } from "./text.js";
 export { DocxExtractor, HtmlExtractor, PdfExtractor, TextExtractor };
 export { findExtractor, hasExtension } from "./route.js";
 
-/** v0.1 추출기 세트: 텍스트형 PDF, DOCX, UTF-8 TXT/MD, HTML (SPEC §3.1). */
+/** The v0.1 extractor set: text-based PDF, DOCX, UTF-8 TXT/MD, HTML (SPEC §3.1). */
 export function createExtractors(): DocumentExtractor[] {
   return [new PdfExtractor(), new DocxExtractor(), new TextExtractor(), new HtmlExtractor()];
 }

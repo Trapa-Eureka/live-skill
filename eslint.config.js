@@ -16,11 +16,11 @@ export default tseslint.config(
       },
     },
     rules: {
-      // 가드레일: `any` 금지 (CLAUDE.md 컨벤션)
+      // Guardrail: no `any` (CLAUDE.md convention)
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/explicit-module-boundary-types": "error",
       "@typescript-eslint/consistent-type-imports": "error",
-      // console은 cli/와 scripts/ 안에서만 허용 (CLI 출력·스크립트 로그 용도)
+      // console is allowed only inside cli/ and scripts/ (CLI output and script logging)
       "no-console": "error",
     },
   },

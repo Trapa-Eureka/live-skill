@@ -1,4 +1,5 @@
-<!-- 자체 제작 문서 (CLAUDE.md 가드레일 4) — 가상의 장비 "SkillSync X200"를 위해 이 프로젝트가 직접 작성. -->
+<!-- Self-authored document (CLAUDE.md guardrail 4), written by this project for the fictional device
+     "SkillSync X200". Not related to any real product. -->
 
 # SkillSync X200 User Manual
 

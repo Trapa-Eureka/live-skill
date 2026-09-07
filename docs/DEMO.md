@@ -11,7 +11,7 @@
 | 0:00–0:08 | 빈 터미널, `samples/manual.pdf` 뷰어로 4쪽짜리 매뉴얼을 스치듯 보여준다 | "이 문서 한 장으로 검증된 에이전트 스킬을 만듭니다." |
 | 0:08–0:10 | 터미널로 전환 | `npm run cli -- compile samples/manual.pdf --out ./demo-skill` 입력 |
 | 0:10–0:30 | 실행 중(실 LLM 호출 — 추출→개요→증류→**품질 게이트**) | "컴파일만 하는 게 아니라, 만든 스킬이 원문 질문에 실제로 맞게 답하는지 자동으로 채점합니다." |
-| 0:30–0:38 | 출력: `컴파일 완료: ./demo-skill` + 게이트 리포트(`PASSED`, passRate, 챕터별 정답 수) | "이게 이 프로젝트의 핵심입니다 — 통과율이 낮으면 애초에 배포되지 않아요." |
+| 0:30–0:38 | 출력: `Compiled: ./demo-skill` + 게이트 리포트(`PASSED`, passRate, 챕터별 정답 수) | "이게 이 프로젝트의 핵심입니다 — 통과율이 낮으면 애초에 배포되지 않아요." |
 | 0:38–0:46 | `ls demo-skill` → `SKILL.md`·`chapters/`·`glossary.md`·`patterns.md`·`cheatsheet.md`·`manifest.json` | "산출물은 Agent Skills 표준 그대로라 Claude Code가 바로 읽습니다." |
 | 0:46–0:54 | `npm run cli -- report ./demo-skill` (같은 리포트를 다시 사람이 읽을 형태로) | "`manifest.json`에 게이트 결과가 남아서 나중에 언제든 다시 볼 수 있어요." |
 | 0:54–1:00 | 로고/GitHub 링크 카드 | "live-skill — 생성이 아니라 검증된 생성." |

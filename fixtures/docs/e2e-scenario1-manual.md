@@ -1,5 +1,6 @@
-<!-- 자체 제작 문서 (CLAUDE.md 가드레일 4) — 가상의 통신 장비 "LinkBox R7"을 위해 T9(e2e-mock)용으로
-     이 프로젝트가 직접 작성. SPEC §5 시나리오 1(기술 매뉴얼 → 스킬, 게이트 통과)의 CLI 레벨 e2e-mock 픽스처. -->
+<!-- Self-authored document (CLAUDE.md guardrail 4), written by this project for T9 (e2e-mock) about the
+     fictional network device "LinkBox R7". CLI-level e2e-mock fixture for SPEC §5 scenario 1
+     (technical manual → skill, gate passes). Not related to any real product. -->
 
 # LinkBox R7 Field Manual
 

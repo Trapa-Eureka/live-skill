@@ -1,5 +1,6 @@
-// I1(001-018): `--target`은 claude|agents만 — 오탈자는 실행 전에 거부된다(예전엔 조용히 claude로 갔다).
-// commander의 exitOverride로 프로세스를 띄우지 않고 파싱만 검증한다(LLM·fs 0건).
+// I1 (001-018): `--target` accepts only claude|agents; a typo is rejected before anything runs (it
+// used to fall through silently to claude). commander's exitOverride lets us verify parsing alone,
+// without spawning a process (zero LLM/fs).
 import { CommanderError } from "commander";
 import { describe, expect, it } from "vitest";
 import { SKILL_TARGETS, buildProgram } from "../src/cli/program.js";

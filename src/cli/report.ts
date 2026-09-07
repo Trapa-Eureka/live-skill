@@ -1,5 +1,7 @@
-// report 명령 — 마지막 GateReport 출력(DESIGN §6). skillDir을 생략하면 현재 디렉터리("."). 조립만.
-// E3: manifest만 믿지 않는다 — 현재 파일을 읽어 해시를 대조하고, 어긋나면 판정을 보여주지 않고 STALE/TAMPERED로 끝난다.
+// report command: prints the last GateReport (DESIGN §6). When skillDir is omitted, the current
+// directory (".") is used. Assembly only.
+// E3: the manifest alone is not trusted. The current files are read and their hashes compared; on a
+// mismatch the verdict is withheld and the command ends with STALE/TAMPERED.
 import {
   checkOutputs,
   formatGateReport,
@@ -25,7 +27,7 @@ export async function runReport(skillDir: string | undefined, deps: ReportDeps):
   } catch (e) {
     const detail = e instanceof Error ? e.message : "unknown error";
     deps.out(
-      `"${dir}"에서 manifest.json을 읽을 수 없습니다. 수정 방법: 먼저 compile을 실행하거나 경로를 확인하세요. (${detail})`,
+      `Cannot read manifest.json in "${dir}". Fix: run compile first, or check the path. (${detail})`,
     );
     return 1;
   }

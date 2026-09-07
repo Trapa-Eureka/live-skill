@@ -45,6 +45,7 @@ describe("syntheticDoc", () => {
   });
 
   it("supports Korean synthetic content", () => {
+    // Deliberate Korean: the "ko" variant exists to produce CJK content, so its heading is Korean.
     const doc = syntheticDoc(500, 2, "ko");
     expect(doc.sections[0]?.heading).toBe("조항 1");
   });

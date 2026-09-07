@@ -1,6 +1,7 @@
-// fixtures/docs/*와 samples/manual.pdf의 바이너리(PDF/DOCX) 픽스처를 결정론으로 재생성한다.
-// 실행: npm run fixtures — 산출물은 커밋된다, 이 스크립트는 내용을 바꿀 때만 다시 돌리면 된다.
-// `npm run check`에는 포함되지 않는다. 전부 이 프로젝트가 직접 지은 가상의 내용이다(가드레일 4).
+// Deterministically regenerates the binary (PDF/DOCX) fixtures under fixtures/docs/* and
+// samples/manual.pdf. Run: npm run fixtures. The outputs are committed; this script only needs to be
+// re-run when the content changes. It is not part of `npm run check`. Everything here is fictional
+// content authored by this project (guardrail 4).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
@@ -44,10 +45,11 @@ function para(doc: PDFKit.PDFDocument, text: string): void {
   doc.moveDown(0.8);
 }
 
-// 규정풍 조항(가상의 "내부 데이터 보관 정책") — CLAUDE.md 가드레일 4: 자체 제작.
-// pdfPagesToText 휴리스틱(core/sections.ts)은 "줄바꿈된 문단의 마지막 줄이 페이지 최장 줄보다 뚜렷이
-// 짧다"는 신호로 문단 끝을 찾는다. 문서가 짧으면 한 줄짜리 문단이 우연히 최장 줄의 70%를 넘어 이 신호가
-// 흔들릴 수 있어, 모든 문단을 두 줄 이상으로 줄바꿈되게 충분히 길게 쓴다.
+// Regulation-style articles (a fictional "internal data retention policy"); CLAUDE.md guardrail 4:
+// self-authored. The pdfPagesToText heuristic (core/sections.ts) finds paragraph ends by the signal
+// "the last line of a wrapped paragraph is clearly shorter than the page's longest line". In a short
+// document a single-line paragraph can accidentally exceed 70% of the longest line and blur that
+// signal, so every paragraph is written long enough to wrap onto at least two lines.
 const ARTICLES: [string, string][] = [
   [
     "Article 1. Purpose",
@@ -89,7 +91,8 @@ async function buildRegulationPdf(): Promise<void> {
   });
 }
 
-// 매뉴얼풍 — fixtures/docs/manual.md와 같은 가상의 "SkillSync X200"을 짧게 옮긴 PDF 버전.
+// Manual-style: a short PDF rendition of the same fictional "SkillSync X200" that
+// fixtures/docs/manual.md describes.
 async function buildManualPdf(): Promise<void> {
   await pdf(SAMPLES_OUT, "manual.pdf", (doc) => {
     heading(doc, "SkillSync X200 User Manual (Fixture)");
@@ -148,7 +151,8 @@ async function buildSampleDocx(): Promise<void> {
   writeFileSync(join(DOCS_OUT, "sample.docx"), await Packer.toBuffer(doc));
 }
 
-// 예산 초과 테스트용 거대 문서 — 반복되지만 매번 조항 번호가 바뀌는, 완전히 지어낸 문장.
+// Oversized document for the budget-overflow test: repetitive sentences with a changing clause
+// number, entirely made up.
 function buildOversizedMd(): void {
   const clause = (i: number): string =>
     `Clause ${String(i)}. The parties acknowledge that this fixture clause exists only to make ` +

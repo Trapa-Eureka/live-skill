@@ -6,7 +6,7 @@ import type { ChapterPlan, DistilledChapter, SkillPlan } from "../src/core/index
 
 const installation: ChapterPlan = {
   id: "installation",
-  file: "ignored-by-assembler.md", // T4 결정: outline이 제안한 file은 신뢰하지 않는다
+  file: "ignored-by-assembler.md", // T4 decision: the file outline suggests is not trusted
   title: "Installation",
   sectionIds: ["installation", "installation/prerequisites"],
 };
@@ -52,16 +52,16 @@ const distilled: DistilledChapter[] = [
   },
 ];
 
-describe("assembleSkill — fixed-input snapshot (완료 기준)", () => {
+describe("assembleSkill — fixed-input snapshot (completion criterion)", () => {
   it("produces the same 5 files for the same input, every time", () => {
     const files = assembleSkill(plan, distilled, { verified: true });
     expect(files).toMatchSnapshot();
-    // 결정론: 두 번째 호출도 완전히 동일해야 한다(SPEC §6 재현성).
+    // Determinism: a second call must be identical (SPEC §6 reproducibility).
     expect(assembleSkill(plan, distilled, { verified: true })).toEqual(files);
   });
 });
 
-describe("assembleSkill — file naming (T4 결정: outline의 file 제안을 신뢰하지 않는다)", () => {
+describe("assembleSkill — file naming (T4 decision: outline's file suggestion is not trusted)", () => {
   it("recomputes chapters/chNN-slug.md from chapter order and title, ignoring ChapterPlan.file", () => {
     const files = assembleSkill(plan, distilled, { verified: true });
     const paths = files.map((f) => f.path);
@@ -71,7 +71,7 @@ describe("assembleSkill — file naming (T4 결정: outline의 file 제안을 �
   });
 });
 
-describe("assembleSkill — token budget calculation (완료 기준)", () => {
+describe("assembleSkill — token budget calculation (completion criterion)", () => {
   it("attaches estimateTokens(content) as estimatedTokens for every file", () => {
     for (const f of assembleSkill(plan, distilled, { verified: true })) {
       expect(f.estimatedTokens).toBe(estimateTokens(f.content));
@@ -95,7 +95,7 @@ describe("assembleSkill — unverified marker (DESIGN §3)", () => {
   });
 });
 
-describe("assembleSkill — glossary/patterns/cheatsheet extraction (DESIGN §3 T4 결정)", () => {
+describe("assembleSkill — glossary/patterns/cheatsheet extraction (DESIGN §3 T4 decision)", () => {
   const files = assembleSkill(plan, distilled, { verified: true });
   const byPath = (p: string): string => files.find((f) => f.path === p)?.content ?? "";
 
@@ -111,7 +111,7 @@ describe("assembleSkill — glossary/patterns/cheatsheet extraction (DESIGN §3 
     const patterns = byPath("patterns.md");
     expect(patterns).toContain("Assign a static address before powering on.");
     expect(patterns).toContain("Do not substitute a higher-rated fuse.");
-    expect(patterns.indexOf("## 절차")).toBeLessThan(patterns.indexOf("## 안티패턴"));
+    expect(patterns.indexOf("## Procedures")).toBeLessThan(patterns.indexOf("## Anti-patterns"));
   });
 
   it("lists every rule for the cheatsheet", () => {
@@ -144,14 +144,12 @@ describe("assembleSkill — sparse input", () => {
       },
     ];
     const files = assembleSkill(plan, plain, { verified: true });
-    expect(files.find((f) => f.path === "glossary.md")?.content).toContain(
-      "추출된 용어가 없습니다",
-    );
+    expect(files.find((f) => f.path === "glossary.md")?.content).toContain("(no terms extracted.)");
     expect(files.find((f) => f.path === "patterns.md")?.content).toContain(
-      "추출된 패턴이 없습니다",
+      "(no patterns extracted.)",
     );
     expect(files.find((f) => f.path === "cheatsheet.md")?.content).toContain(
-      "추출된 규칙이 없습니다",
+      "(no rules extracted.)",
     );
   });
 
@@ -163,7 +161,7 @@ describe("assembleSkill — sparse input", () => {
   });
 });
 
-describe("assembler.ts — LLM 의존 0 (완료 기준, import 검사)", () => {
+describe("assembler.ts — zero LLM dependency (completion criterion, import check)", () => {
   it("never imports an LLM provider, ScriptedLlm, or the Anthropic SDK", () => {
     const source = readFileSync(join(process.cwd(), "src/core/assembler.ts"), "utf-8");
     const importLines = source

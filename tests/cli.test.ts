@@ -1,5 +1,5 @@
-// T8 완료 기준: TESTING §4 CLI 관련 항목(eval 재사용·report·종료코드) + "cli는 조립만"(fake deps 주입,
-// 실제 fs/네트워크 없음). 패턴 출처: ../msg-agent/tests/cli.test.ts.
+// T8 acceptance criteria: the CLI items of TESTING §4 (eval reuse, report, exit codes) plus "cli is
+// assembly only" (fake deps injected, no real fs/network). Pattern source: ../msg-agent/tests/cli.test.ts.
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/core/config.js";
 import { sha256Hex } from "../src/core/hash.js";
@@ -129,7 +129,7 @@ describe("runReport", () => {
     });
     const text = captured.all.join("\n");
     expect(text).toContain("FAILED");
-    expect(text).toContain("미검증 섹션");
+    expect(text).toContain("Unverified sections");
     expect(text).toContain("  - b");
     expect(text).toContain("a: 1/3");
     expect(text).toContain("b-q0: qa_generation_failed");
@@ -182,7 +182,7 @@ describe("runReport", () => {
   });
 });
 
-describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사용)", () => {
+describe("runEval — reuse path (acceptance criterion: eval reuses the manifest's QA)", () => {
   const chapterFile: AssembledFile = {
     path: "chapters/ch01-a.md",
     content: "Mount the unit. [§a]",
@@ -241,7 +241,7 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     const code = await runEval({ skillDir: "dir" }, baseDeps({ out: captured.out, llm }));
     expect(code).toBe(0);
     expect(captured.all.join("\n")).toContain("PASSED");
-    llm.assertExhausted(); // qaGen 큐를 아예 안 건드렸다는 증거 — 대본에도 안 줬다
+    llm.assertExhausted(); // proof the qaGen queue was never touched: the script never had one
   });
 
   it("a provider failure while re-grading ends with a human message and the calls made so far (G1)", async () => {
@@ -254,10 +254,10 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     expect(code).toBe(1);
     const text = captured.all.join("\n");
     expect(text).toContain(
-      "재채점 중단 — 재채점 중 LLM 호출 실패: 네트워크 오류(network, 재시도 가능)",
+      "Re-grading aborted. LLM call failed during re-grading: network error (network, retryable)",
     );
-    expect(text).toContain("LLM 호출 2회"); // 선택 1 + 실패한 답변 1
-    expect(text).toContain("제공자 메시지: ECONNRESET");
+    expect(text).toContain("2 LLM calls"); // 1 chapter selection + 1 failed answer
+    expect(text).toContain("Provider message: ECONNRESET");
     llm.assertExhausted();
   });
 
@@ -299,13 +299,13 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
 
   it("refuses before any LLM call when the reuse path would exceed MAX_LLM_CALLS (D2 preflight)", async () => {
     const captured = lines();
-    const llm = script().build(); // 대본 0개
+    const llm = script().build(); // empty script
     const code = await runEval(
       { skillDir: "dir" },
-      baseDeps({ out: captured.out, llm, config: loadConfig({ MAX_LLM_CALLS: "2" }) }), // 문항 1개 × 3 = 3 > 2
+      baseDeps({ out: captured.out, llm, config: loadConfig({ MAX_LLM_CALLS: "2" }) }), // 1 question × 3 = 3 > 2
     );
     expect(code).toBe(1);
-    expect(captured.all.join("\n")).toContain("MAX_LLM_CALLS 상한 2");
+    expect(captured.all.join("\n")).toContain("MAX_LLM_CALLS limit of 2");
     llm.assertExhausted();
   });
 
@@ -313,16 +313,17 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     const captured = lines();
     const inner = script()
       .selectChapter(chapterFile.path)
-      .answer("on the unit") // 3번째(grade)는 대본 없음 — 상한이 막아야 한다
+      .answer("on the unit") // no script for the 3rd call (grade); the cap must stop it
       .build();
-    // config 상한(300)은 통과하지만 주입한 provider 자체가 2회에서 막힌다 — 실행 중 상한 처리 경로를 밟는다.
+    // The config cap (300) passes, but the injected provider itself blocks at 2 calls, so the
+    // runtime cap-handling path is exercised.
     const capped = trackCost(inner, { maxCalls: 2 });
     const code = await runEval(
       { skillDir: "dir" },
       baseDeps({ out: captured.out, llm: capped.llm }),
     );
     expect(code).toBe(1);
-    expect(captured.all.join("\n")).toContain("재채점 중단");
+    expect(captured.all.join("\n")).toContain("Re-grading aborted");
     expect(inner.calls).toHaveLength(2);
     inner.assertExhausted();
   });
@@ -335,10 +336,11 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
       .grade("correct")
       .build();
     await runEval({ skillDir: "dir" }, baseDeps({ out: captured.out, llm }));
-    expect(captured.all.join("\n")).toContain("LLM 호출 3회");
+    expect(captured.all.join("\n")).toContain("LLM calls: 3");
   });
 
-  // F3 (001-008, 완료 기준): 다중 소스 스킬 — compile이 붙인 접두어(`a-readme/overview`)를 eval도 붙여야 문항이 생긴다.
+  // F3 (001-008, acceptance criterion): multi-source skill. eval must apply the same prefix compile
+  // did (`a-readme/overview`) or no questions are generated.
   it("with --source, a skill compiled from two same-named files in different folders generates QA and passes", async () => {
     const text = "Overview text.";
     const chapters: AssembledFile[] = [
@@ -388,7 +390,7 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     );
     expect(code).toBe(0);
     expect(captured.all.join("\n")).toContain("PASSED");
-    llm.assertExhausted(); // qaGen 2 + (선택+답변+채점) × 2 — 두 섹션 모두 문항이 생겼다
+    llm.assertExhausted(); // qaGen 2 + (select + answer + grade) × 2: both sections got questions
   });
 
   it("with --source, sources that do not match the manifest's sections fail explicitly before any LLM call (F3)", async () => {
@@ -413,17 +415,17 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     );
     expect(code).toBe(1);
     const text = captured.all.join("\n");
-    expect(text).toContain("맞지 않습니다");
-    expect(text).toContain("manifest에는 있는데 원문에서 안 나온 섹션 1개: a");
-    expect(text).toContain("원문에는 있는데 manifest에 없는 섹션 1개: other");
-    expect(text).toContain("수정 방법");
+    expect(text).toContain("do not match");
+    expect(text).toContain("1 section(s) in manifest but not in source: a");
+    expect(text).toContain("1 section(s) in source but not in manifest: other");
+    expect(text).toContain("Fix:");
     llm.assertExhausted();
   });
 
   it("with --source, a section whose body changed since compile is reported but still re-graded (F3)", async () => {
     const captured = lines();
     const doc: ExtractedDoc = {
-      sections: [{ id: "a", heading: "A", level: 1, text: "Mount the unit." }], // manifest 해시("x"×64)와 다르다
+      sections: [{ id: "a", heading: "A", level: 1, text: "Mount the unit." }], // differs from the manifest hash ("x"×64)
     };
     const llm = script()
       .qa([{ question: "Where?", refAnswer: "on the unit", anchorQuote: "Mount the unit" }])
@@ -444,7 +446,7 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
       }),
     );
     expect(code).toBe(0);
-    expect(captured.all.join("\n")).toContain("본문이 바뀐 섹션 1개(a)");
+    expect(captured.all.join("\n")).toContain("1 section(s) changed since compile (a)");
     llm.assertExhausted();
   });
 
@@ -463,11 +465,11 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
         collectInputFiles: () => Promise.resolve(["a.md"]),
         readSourceFiles: (paths) =>
           Promise.resolve(paths.map((p) => ({ path: p, bytes: new TextEncoder().encode("a.md") }))),
-        config: loadConfig({ QA_PER_SECTION: "1", MAX_LLM_CALLS: "4" }), // 섹션 1개: 2 + 3 = 5 > 4
+        config: loadConfig({ QA_PER_SECTION: "1", MAX_LLM_CALLS: "4" }), // 1 section: 2 + 3 = 5 > 4
       }),
     );
     expect(code).toBe(1);
-    expect(captured.all.join("\n")).toContain("MAX_LLM_CALLS 상한 4");
+    expect(captured.all.join("\n")).toContain("MAX_LLM_CALLS limit of 4");
     llm.assertExhausted();
   });
 
@@ -496,27 +498,27 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     expect(code).toBe(1);
     expect(reads).toEqual([]);
     const text = captured.all.join("\n");
-    expect(text).toContain("--source: 입력을 거부했습니다");
+    expect(text).toContain("--source: Input rejected");
     expect(text).toContain("25 MiB");
     llm.assertExhausted();
   });
 
   it("returns 1 before any LLM call when the manifest names a chapter that is not on disk (B3 → E3 STALE)", async () => {
     const captured = lines();
-    const llm = script().build(); // 대본 0개 — 호출되면 즉시 실패
+    const llm = script().build(); // empty script: any call fails immediately
     const code = await runEval(
       { skillDir: "dir" },
       baseDeps({
         out: captured.out,
         llm,
-        readSkillDir: () => Promise.resolve([]), // 챕터 파일이 없다
+        readSkillDir: () => Promise.resolve([]), // the chapter file is absent
       }),
     );
     expect(code).toBe(1);
     const text = captured.all.join("\n");
     expect(text).toContain("STALE");
     expect(text).toContain("chapters/ch01-a.md");
-    expect(text).toContain("LLM은 부르지 않았습니다");
+    expect(text).toContain("The LLM was not called");
     llm.assertExhausted();
   });
 
@@ -535,13 +537,13 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     expect(code).toBe(1);
     const text = captured.all.join("\n");
     expect(text).toContain("STALE");
-    expect(text).toContain("수정된 파일");
+    expect(text).toContain("Modified files");
     expect(text).toContain("compile --force");
     llm.assertExhausted();
   });
 });
 
-describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () => {
+describe("runCompile — exit codes + gate-fail temp dir (acceptance criteria)", () => {
   const doc: ExtractedDoc = {
     sections: [{ id: "a", heading: "A", level: 1, text: "Mount the unit on a flat surface." }],
   };
@@ -595,10 +597,10 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     );
     expect(code).toBe(0);
     expect(writes).toEqual([{ dir: "/target/claude/manual", force: false }]);
-    expect(captured.all.join("\n")).toContain("컴파일 완료");
+    expect(captured.all.join("\n")).toContain("Compiled:");
   });
 
-  it("gate fails: writes to a fresh temp dir with the user's --force only, exit 1 (완료 기준: 임시 디렉터리 보존)", async () => {
+  it("gate fails: writes to a fresh temp dir with the user's --force only, exit 1 (acceptance criterion: temp dir is kept)", async () => {
     const captured = lines();
     const writes: { dir: string; force: boolean | undefined }[] = [];
     const llm = script()
@@ -621,9 +623,10 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
       }),
     );
     expect(code).toBe(1);
-    // A1: 임시 디렉터리는 mkdtemp가 새로 만든 빈 디렉터리라 force 특례가 사라졌다 — 사용자가 준 값(false)만 전달.
+    // A1: the temp dir is a fresh empty mkdtemp directory, so the force special case is gone; only
+    // the user's value (false) is passed through.
     expect(writes).toEqual([{ dir: "/tmp/live-skill-manual-abc123", force: false }]);
-    expect(captured.all.join("\n")).toContain("임시 디렉터리");
+    expect(captured.all.join("\n")).toContain("temporary directory");
   });
 
   it("returns 1 with the adapter's message when target-dir resolution rejects the slug (A1)", async () => {
@@ -648,7 +651,7 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
       }),
     );
     expect(code).toBe(1);
-    expect(writes).toEqual([]); // 경로를 못 정하면 아무것도 쓰지 않는다
+    expect(writes).toEqual([]); // nothing is written when the path cannot be resolved
     expect(captured.all.join("\n")).toContain("unsafe");
   });
 
@@ -670,7 +673,7 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     );
     expect(code).toBe(0);
     expect(writes).toEqual([{ dir: "/target/claude/manual", force: true }]);
-    llm.assertExhausted(); // qaGen/answerer/grader 대본을 아예 안 줬는데도 안 부름 — 진짜로 스킵됐다는 증거
+    llm.assertExhausted(); // no qaGen/answerer/grader script was given and none was called: proof it was really skipped
   });
 
   it("--out overrides target-dir resolution", async () => {
@@ -717,7 +720,7 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     const llm = script()
       .outline(plan)
       .distill("a", "Mount the unit on a flat surface. [§a]")
-      .build(); // 게이트 대본 없음 — 불리면 실패
+      .build(); // no gate script: any gate call fails
     const code = await runCompile(
       { paths: ["manual.md"], target: "claude", noGate: false, force: false },
       baseDeps({
@@ -736,8 +739,8 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     expect(code).toBe(1);
     expect(writes).toEqual([]);
     const text = captured.all.join("\n");
-    expect(text).toContain("컴파일 실패");
-    expect(text).toContain("검증: FAILED");
+    expect(text).toContain("Compile failed");
+    expect(text).toContain("Validation: FAILED");
     expect(text).toContain("[ERROR] chapters/ch01-a.md (budget_exceeded)");
     llm.assertExhausted();
   });
@@ -745,7 +748,7 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
   it("prints validation warnings after a successful compile, without blocking it (E1)", async () => {
     const captured = lines();
     const writes: string[] = [];
-    const llm = script().outline(plan).distill("a", "Mount the unit on a flat surface.").build(); // 앵커 없음
+    const llm = script().outline(plan).distill("a", "Mount the unit on a flat surface.").build(); // no anchor
     const code = await runCompile(
       { paths: ["manual.md"], target: "claude", noGate: true, force: false },
       baseDeps({
@@ -760,11 +763,12 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     expect(code).toBe(0);
     expect(writes).toEqual(["/target/claude/manual"]);
     const text = captured.all.join("\n");
-    expect(text).toContain("검증: PASSED");
+    expect(text).toContain("Validation: PASSED");
     expect(text).toContain("[WARNING] chapters/ch01-a.md (low_anchor_ratio)");
   });
 
-  // G1 (001-017·AUD-015, 완료 기준): provider 실패는 스택이 아니라 단계·종류·재시도 가능 여부·호출 수·수정 방법.
+  // G1 (001-017·AUD-015, acceptance criterion): a provider failure shows the stage, kind,
+  // retryability, call count, and fix, not a stack trace.
   it("a rate_limit thrown mid-run ends with a human message, the calls made so far, exit 1 and no write (G1)", async () => {
     const captured = lines();
     const writes: string[] = [];
@@ -775,7 +779,7 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
         new LlmProviderError(
           "rate_limit",
           true,
-          "429 Too Many Requests sk-ant-api03-SECRETSECRETSECRET",
+          "429 Too Many Requests\u0007 sk-ant-api03-SECRETSECRETSECRET",
         ),
       )
       .build();
@@ -794,20 +798,20 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     expect(writes).toEqual([]);
     const text = captured.all.join("\n");
     expect(text).toContain(
-      "컴파일 실패 — 증류 중 LLM 호출 실패: 요청 한도 초과(rate limit)(rate_limit, 재시도 가능)",
+      "Compile failed. LLM call failed during distillation: rate limit exceeded (rate_limit, retryable)",
     );
-    expect(text).toContain("LLM 호출 2회");
-    expect(text).toContain("수정 방법: 잠시 뒤 같은 명령을 다시 실행하세요.");
-    expect(text).toContain("제공자 메시지: 429 Too Many Requests sk-***");
+    expect(text).toContain("2 LLM calls");
+    expect(text).toContain("Fix: retry the same command in a moment.");
+    expect(text).toContain("Provider message: 429 Too Many Requests sk-***");
     expect(text).not.toContain("SECRET");
-    expect(text.replace(/\n/gu, "")).not.toMatch(/\p{Cc}/u); // 줄바꿈 말고는 제어문자 없음
+    expect(text.replace(/\n/gu, "")).not.toMatch(/\p{Cc}/u); // no control characters other than newlines
     llm.assertExhausted();
   });
 
   it("refuses oversized input before reading a single file, with the adapter's fix message (D3)", async () => {
     const captured = lines();
     const reads: string[] = [];
-    const llm = script().build(); // 대본 0개 — LLM에 닿으면 실패
+    const llm = script().build(); // empty script: reaching the LLM fails
     const code = await runCompile(
       { paths: ["huge-folder"], target: "claude", noGate: false, force: false },
       baseDeps({
@@ -827,9 +831,9 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
       }),
     );
     expect(code).toBe(1);
-    expect(reads).toEqual([]); // 읽기 전 거부
+    expect(reads).toEqual([]); // rejected before reading
     const text = captured.all.join("\n");
-    expect(text).toContain("입력을 거부했습니다");
+    expect(text).toContain("Input rejected");
     expect(text).toContain("more than 500 files");
     expect(text).toContain("Fix:");
     llm.assertExhausted();
@@ -846,7 +850,7 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
       }),
     );
     expect(code).toBe(1);
-    expect(captured.all.join("\n")).toContain("경로를 확인하세요");
+    expect(captured.all.join("\n")).toContain("check the path");
     expect(captured.all.join("\n")).toContain("ENOENT");
   });
 
@@ -857,7 +861,7 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
       { paths: ["sheet.xlsx"], target: "claude", noGate: true, force: false },
       baseDeps({
         out: captured.out,
-        extractors: createExtractors(), // 진짜 라우팅 — .xlsx는 지원하지 않는다
+        extractors: createExtractors(), // real routing: .xlsx is not supported
         readSourceFiles: (paths) =>
           Promise.resolve(paths.map((p) => ({ path: p, bytes: new Uint8Array() }))),
         writeSkill: (dir) => {
@@ -868,10 +872,10 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     );
     expect(code).toBe(1);
     expect(writes).toEqual([]);
-    expect(captured.all.join("\n")).toContain("컴파일 실패");
+    expect(captured.all.join("\n")).toContain("Compile failed");
   });
 
-  it("returns 1 with the adapter's message when writeSkill itself rejects (예: --force 없이 기존 디렉터리)", async () => {
+  it("returns 1 with the adapter's message when writeSkill itself rejects (e.g. an existing directory without --force)", async () => {
     const captured = lines();
     const llm = script()
       .outline(plan)
