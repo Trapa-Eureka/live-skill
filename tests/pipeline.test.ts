@@ -586,6 +586,45 @@ describe("compile — outline schema violation", () => {
       config,
     });
     expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toMatch(/not valid JSON/u); // the reason is part of the message
+  });
+
+  it("accepts an outline wrapped in a ```json fence (L2: envelope tolerated, schema still strict)", async () => {
+    const extractor = new FixtureExtractor({ md: twoSectionDoc });
+    const llm = script()
+      .outlineRaw("```json\n" + JSON.stringify(twoChapterPlan) + "\n```")
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .distill("b", "Check the fault LED. [§b]")
+      .build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config,
+      gate: "skip",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.slug).toBe("manual");
+    llm.assertExhausted(); // outline 1 + distill 2
+  });
+
+  it("names the violated schema rule when the JSON is fine but the plan is not", async () => {
+    const extractor = new FixtureExtractor({ md: twoSectionDoc });
+    const llm = script()
+      .outlineRaw(JSON.stringify({ ...twoChapterPlan, slug: "Not A Slug" }))
+      .build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config,
+    });
+    expect(result).toMatchObject({ ok: false, error: { kind: "outline_invalid" } });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toMatch(/schema: slug: /u);
+    expect(result.error.message).not.toContain("Not A Slug"); // rule, not value
   });
 
   it("rejects with outline_invalid when the slug would escape the output root (A1, completion criterion)", async () => {

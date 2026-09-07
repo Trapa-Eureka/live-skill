@@ -9,6 +9,7 @@ import { LlmProviderError, llmErrorAdvice, type LlmErrorKind } from "./llmError.
 import { sanitizeExternalText } from "./modelText.js";
 import { estimateGateCalls, runGate, type GateChapter } from "./gate.js";
 import { sha256Hex } from "./hash.js";
+import { describeParseFailure, parseJsonResponse } from "./jsonResponse.js";
 import { checkOutlineCoverage, formatOutlineCoverageIssues } from "./outlineCoverage.js";
 import { stripControlChars } from "./modelText.js";
 import { distillPrompt, outlinePrompt } from "./prompts.js";
@@ -173,13 +174,14 @@ export async function compile(
   const outlineRaw = outlineRes.value;
   let plan: SkillPlan;
   try {
-    plan = skillPlanSchema.parse(JSON.parse(outlineRaw) as unknown);
+    // L2: tolerate a fence/prose envelope; the schema itself stays strict.
+    plan = skillPlanSchema.parse(parseJsonResponse(outlineRaw));
   } catch (e) {
+    const detail = sanitizeExternalText(describeParseFailure(e));
     return err({
       kind: "outline_invalid",
-      detail: e instanceof Error ? e.message : "unknown",
-      message:
-        "the outline step returned a response that doesn't match the expected schema. Fix: retry, or check the outline prompt/model.",
+      detail,
+      message: `the outline step returned a response that doesn't match the expected schema (${detail}). Fix: retry, or check the outline prompt/model.`,
     });
   }
 

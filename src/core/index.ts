@@ -9,6 +9,7 @@ export * from "./promptRole.js";
 export * from "./modelText.js";
 export * from "./frontmatter.js";
 export * from "./prompts.js";
+export * from "./jsonResponse.js";
 export * from "./llmError.js";
 export * from "./tokenEstimate.js";
 export * from "./assembler.js";

@@ -245,6 +245,17 @@ describe("generateGoldenQa — item hygiene (C1)", () => {
 });
 
 describe("generateGoldenQa — malformed qaGen response", () => {
+  it("accepts a qaGen response wrapped in a ```json fence (L2 envelope tolerance)", async () => {
+    const items = [{ question: "Q1", refAnswer: "A1", anchorQuote: "500 mA of current" }];
+    const llm = script()
+      .qaRaw("```json\n" + JSON.stringify({ items }) + "\n```")
+      .build();
+    const qas = await generateGoldenQa(sectionA, 1, llm);
+    expect(qas).toHaveLength(1);
+    expect(qas[0]?.question).toBe("Q1");
+    llm.assertExhausted(); // no retry was needed
+  });
+
   it("treats invalid JSON as zero items and retries once before giving up", async () => {
     const llm = script()
       .qaRaw("this is not valid JSON at all")
