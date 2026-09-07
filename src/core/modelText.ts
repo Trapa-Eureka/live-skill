@@ -15,7 +15,8 @@ export function stripControlChars(text: string): string {
  * 길이를 제한한다 — API가 돌려준 문장이 터미널 제어 시퀀스나 키를 실어 나르지 못하게. */
 export const MAX_EXTERNAL_TEXT_CHARS = 200;
 const KEY_LIKE = /\bsk-[A-Za-z0-9_-]{8,}/gu;
-const CREDENTIAL_FIELD = /\b(api[_-]?key|authorization|bearer|token)\b(\s*[:=]\s*)(?:bearer\s+)?\S+/giu;
+const CREDENTIAL_FIELD =
+  /\b(api[_-]?key|authorization|bearer|token)\b(\s*[:=]\s*)(?:bearer\s+)?\S+/giu;
 export function sanitizeExternalText(text: string, maxChars = MAX_EXTERNAL_TEXT_CHARS): string {
   const cleaned = stripControlChars(text)
     .replace(/[\n\r\t]+/gu, " ")
