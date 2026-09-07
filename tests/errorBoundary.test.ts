@@ -5,7 +5,7 @@ import { describeTopLevelError } from "../src/cli/errorBoundary.js";
 
 describe("sanitizeExternalText (G1 — keys, control characters, length)", () => {
   it("drops control characters, folds newlines, redacts key-like tokens and credential fields", () => {
-    const raw = `429 Too Many Requests[31m\nkey sk-ant-api03-SECRETSECRETSECRET-x\tapi_key: abc123 Authorization=Bearer zzz`;
+    const raw = `429 Too Many Requests\u0007\u001b[31m\nkey sk-ant-api03-SECRETSECRETSECRET-x\tapi_key: abc123 Authorization=Bearer zzz`;
     const out = sanitizeExternalText(raw);
     expect(out).not.toMatch(/\p{Cc}/u);
     expect(out).not.toContain("SECRET");
@@ -42,7 +42,7 @@ describe("describeTopLevelError (G1 — configuration error 1, internal error 2)
   });
 
   it("reports anything else as an internal error with exit code 2 and an issue hint, sanitized", () => {
-    const failure = describeTopLevelError(new TypeError("boom sk-ant-api03-LEAKLEAKLEAK"));
+    const failure = describeTopLevelError(new TypeError("boom\u0007 sk-ant-api03-LEAKLEAKLEAK"));
     expect(failure.exitCode).toBe(2);
     expect(failure.message).toContain("Internal error");
     expect(failure.message).toContain("TypeError: boom");

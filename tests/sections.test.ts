@@ -9,7 +9,7 @@ import {
 
 describe("normalizeText", () => {
   it("normalizes CRLF, strips BOM, and collapses 3+ blank lines to 1", () => {
-    expect(normalizeText("﻿a\r\nb\n\n\n\nc")).toBe("a\nb\n\nc");
+    expect(normalizeText("\uFEFFa\r\nb\n\n\n\nc")).toBe("a\nb\n\nc");
   });
 });
 

@@ -779,7 +779,7 @@ describe("runCompile — exit codes + gate-fail temp dir (acceptance criteria)",
         new LlmProviderError(
           "rate_limit",
           true,
-          "429 Too Many Requests sk-ant-api03-SECRETSECRETSECRET",
+          "429 Too Many Requests\u0007 sk-ant-api03-SECRETSECRETSECRET",
         ),
       )
       .build();

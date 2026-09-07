@@ -513,7 +513,7 @@ describe("compile — LLM provider failures become llm_failed (G1, completion cr
         new LlmProviderError(
           "rate_limit",
           true,
-          "429 Too Many Requests sk-ant-api03-SECRETSECRETSECRET",
+          "429 Too Many Requests\u0007 sk-ant-api03-SECRETSECRETSECRET",
         ),
       )
       .build();
