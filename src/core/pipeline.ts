@@ -15,6 +15,7 @@ import { stripControlChars } from "./modelText.js";
 import { distillPrompt, outlinePrompt } from "./prompts.js";
 import { err, ok, type Result } from "./result.js";
 import { skillPlanSchema } from "./schemas.js";
+import { normalizeSectionIdRef } from "./sectionId.js";
 import { MAX_INPUT_TOKENS, estimateTokens } from "./tokenEstimate.js";
 import type {
   Clock,
@@ -92,6 +93,16 @@ export interface PipelineDeps {
   /** Defaults to "run". "skip" corresponds to `--no-gate`: manifest.gate = {skipped:true} and
    * SKILL.md carries the unverified marker. */
   gate?: "run" | "skip";
+}
+
+function normalizeSectionRefs(plan: SkillPlan): SkillPlan {
+  return {
+    ...plan,
+    chapters: plan.chapters.map((c) => ({
+      ...c,
+      sectionIds: c.sectionIds.map(normalizeSectionIdRef),
+    })),
+  };
 }
 
 /** The full pipeline of DESIGN §5.1: extract→outline→distill→assemble→validate→gate. */
@@ -175,7 +186,8 @@ export async function compile(
   let plan: SkillPlan;
   try {
     // L2: tolerate a fence/prose envelope; the schema itself stays strict.
-    plan = skillPlanSchema.parse(parseJsonResponse(outlineRaw));
+    // L3: models copy the `[§id]` header marker into sectionIds; normalize it away before coverage.
+    plan = normalizeSectionRefs(skillPlanSchema.parse(parseJsonResponse(outlineRaw)));
   } catch (e) {
     const detail = sanitizeExternalText(describeParseFailure(e));
     return err({
