@@ -1,65 +1,65 @@
 # SPEC — live-skill v0.1
 
-작성: 2026-09-06 · 상태: 확정 (변경 시 이 문서를 먼저 수정)
+Written: 2026-09-06. Status: final (when anything changes, update this document first).
 
-## 1. 배경과 경쟁 구도
+## 1. Background and Competitive Landscape
 
-에이전트 스킬(Agent Skills 표준, Anthropic 2025-12-18 공개, agentskills.io 스펙)이 지식 전달 포맷으로 자리 잡으면서 "문서→스킬 컴파일" 카테고리가 열렸고, 대표 주자 book-to-skill(Python, MIT, GitHub 12,000+★)이 시장을 증명했다. 2026-09-06 재조사 결과 doc2skill·skill-compiler(AgentCompiler)·agent-compiler 등 동일 카테고리 도구가 이미 npm에 다수 등록되어 카테고리가 예상보다 붐볐다 — 그러나 조사한 도구 전부 **정적 소스의 1회 컴파일**이다: 소스가 바뀌면 사람이 fold-in으로 다시 넣어야 하고, 산출된 스킬이 원문 질문에 실제로 옳게 답하는지 의미 수준의 검증층이 없다. 상세 경쟁사 목록·활용 분야·규모 분석은 `docs/MARKET.md`.
+As Agent Skills (the Agent Skills standard, published by Anthropic on 2025-12-18, spec at agentskills.io) became established as a format for transferring knowledge, the "compile documents into skills" category opened up, and its leading representative, book-to-skill (Python, MIT, 12,000+ GitHub stars), proved the market. A re-survey on 2026-09-06 found that tools in the same category, such as doc2skill, skill-compiler (AgentCompiler), and agent-compiler, were already registered on npm in numbers, so the category was more crowded than expected. However, every tool surveyed is a **one-shot compile of a static source**: when the source changes, a person has to fold it back in by hand, and there is no semantic-level verification layer that checks whether the produced skill actually answers questions about the source correctly. The detailed competitor list, application areas, and scale analysis are in `docs/MARKET.md`.
 
-live-skill은 그 두 빈칸을 제품의 축으로 삼는 **별도 신규 제품**(참고는 하되 코드 무관, TS/npm)이다.
+live-skill is a **separate new product** (informed by those tools but sharing no code; TS/npm) that makes those two gaps the axes of the product.
 
-**방어력 순서 (합의 사항)**: 4(도메인 팩, 자매 레포) > 2(품질 게이트) > 1·3(워처·MCP — 기능이라 모방 가능, 선점 효과용). 따라서 v0.1은 2를 완성해 "신뢰할 수 있는 컴파일러"라는 정체성을 먼저 세운다. 조사한 경쟁 도구 중 의미 검증층을 갖춘 사례는 없어 이 순서의 근거가 시장 조사로 재확인됐다(`docs/MARKET.md` §2).
+**Defensibility order (agreed)**: 4 (domain packs, sibling repo) > 2 (quality gate) > 1 and 3 (watcher and MCP: these are features, hence imitable, and serve a first-mover effect). Therefore v0.1 completes layer 2 first, to establish the identity of "a compiler you can trust". None of the competing tools surveyed has a semantic verification layer, so the market research reconfirmed the basis for this order (`docs/MARKET.md` §2).
 
-## 2. 층 구조와 버전 매핑
+## 2. Layer Structure and Version Mapping
 
-| 층 | 내용 | 버전 |
+| Layer | Content | Version |
 |---|---|---|
-| 0 컴파일 | 문서·폴더 → SKILL.md + 챕터 + 용어집 + 패턴 + 치트시트 | v0.1 |
-| 2 품질 게이트 | 골든 Q&A 자동 추출 → 스킬만으로 답변 → 채점 → 임계치 통과 시에만 배포 | v0.1 |
-| 1 자동 재컴파일 | 소스 워처 + manifest 해시 기반 증분 갱신 ("구독") | v0.2 |
-| 3 이중 서빙 | 같은 산출물을 MCP 서버(`serve`)로도 노출 | v0.3 |
-| (4) PH 스킬 팩 | 이 엔진으로 찍는 첫 콘텐츠 상품 — **자매 레포**, 이 레포 범위 아님 | v0.2 병행 |
+| 0 Compile | Document/folder → SKILL.md + chapters + glossary + patterns + cheatsheet | v0.1 |
+| 2 Quality gate | Automatic golden Q&A extraction → answer using the skill alone → grade → deploy only when the threshold is met | v0.1 |
+| 1 Automatic recompile | Source watcher + manifest-hash-based incremental update ("subscription") | v0.2 |
+| 3 Dual serving | Expose the same output through an MCP server as well (`serve`) | v0.3 |
+| (4) PH skill pack | The first content product produced with this engine — **sibling repo**, out of scope for this repo | in parallel with v0.2 |
 
-## 3. v0.1 목표
+## 3. v0.1 Goals
 
-1. **컴파일**: `live-skill compile <파일|폴더|글롭>` → Agent Skills 표준 스킬 생성. 형식: 텍스트형 PDF, DOCX, MD/TXT, HTML. 타깃 디렉터리: `~/.claude/skills/`(기본)·`~/.agents/skills/`·임의 `--out`.
-2. **품질 게이트(기본 켜짐)**: 섹션별 골든 Q&A 생성(원문 앵커 인용 필수) → **산출 스킬 파일만 로드하는 answerer 시뮬레이터**(SKILL.md 인덱스 → 관련 챕터 점진 로딩 재현)로 답변 → 루브릭+앵커 일치 채점 → 통과율 ≥ 임계치(기본 90%)면 배포, 미달이면 약한 챕터를 지목한 리포트와 함께 미배포. `--no-gate`는 존재하되 산출물에 "unverified" 표시가 남는다.
-3. **manifest**: 소스 섹션별 콘텐츠 해시·산출 파일 매핑·게이트 결과를 `manifest.json`으로 기록 — v0.2 증분 재컴파일의 씨앗.
-4. **재현성**: 같은 입력 + 같은 증류 결과 → 같은 조립 산출(assembler 결정론). 비용 가드(호출 수·토큰 상한) 내장.
-5. 부속 명령: `validate`(구조 검증만), `eval`(기존 스킬 재채점), `report`(마지막 게이트 리포트 출력).
+1. **Compile**: `live-skill compile <file|folder|glob>` → produces a skill in the Agent Skills standard. Formats: text-based PDF, DOCX, MD/TXT, HTML. Target directories: `~/.claude/skills/` (default), `~/.agents/skills/`, or any `--out`.
+2. **Quality gate (on by default)**: generate golden Q&A per section (quoting a source anchor is mandatory) → answer with an **answerer simulator that loads only the produced skill files** (reproducing the SKILL.md index → progressive loading of the relevant chapters) → grade by rubric plus anchor match → deploy if pass rate ≥ threshold (default 90%); otherwise do not deploy, and return a report that names the weak chapters. `--no-gate` exists, but the output is left marked "unverified".
+3. **manifest**: record per-source-section content hashes, the mapping to output files, and the gate result in `manifest.json` — the seed for incremental recompilation in v0.2.
+4. **Reproducibility**: same input + same distillation result → same assembled output (assembler determinism). Built-in cost guard (caps on call count and tokens).
+5. Auxiliary commands: `validate` (structural validation only), `eval` (re-grade an existing skill), `report` (print the last gate report).
 
-## 4. v0.1 비목표
+## 4. v0.1 Non-Goals
 
-- 워처·증분 재컴파일·URL 구독 — v0.2 (manifest 설계로 준비만)
-- MCP 서빙 — v0.3 / EPUB·MOBI·스캔 OCR — v0.2 이후 / 용어집 다국어화 — 추후
-- PH 스킬 팩 콘텐츠 — 자매 레포 / 스킬 마켓 배포 자동화(npx skills add 호환 게시) — v0.4
-- book-to-skill 코드 재사용 — 하지 않는다 (산출 구조의 표준 호환만)
+- Watcher, incremental recompilation, URL subscription — v0.2 (prepared only through the manifest design)
+- MCP serving — v0.3 / EPUB, MOBI, scanned OCR — after v0.2 / multilingual glossary — later
+- PH skill pack content — sibling repo / skill-market publishing automation (npx skills add-compatible publishing) — v0.4
+- Reusing book-to-skill code — not done (standard compatibility of the output structure only)
 
-## 5. 대표 시나리오
+## 5. Representative Scenarios
 
-1. **기술 매뉴얼 → 스킬**: 200쪽 사내 장비 매뉴얼 PDF → 컴파일 → 게이트 94% 통과 → Claude Code에서 해당 장비 질문에 챕터 근거로 답변.
-2. **SOP 폴더 → 팀 스킬**: 마크다운 30개 폴더 → 단일 스킬 → 게이트 리포트에서 약한 챕터 2개 확인 → 원문 보강 후 재컴파일.
-3. **규정 문서 → 스킬 (팩의 전신)**: 공개 규정 PDF 묶음 → 스킬 → v0.2에서 개정 감지·자동 갱신으로 이어지는 흐름의 수동 버전.
+1. **Technical manual → skill**: a 200-page internal equipment manual PDF → compile → gate passes at 94% → Claude Code answers questions about that equipment with chapter evidence.
+2. **SOP folder → team skill**: a folder of 30 Markdown files → a single skill → the gate report identifies 2 weak chapters → the source is strengthened and recompiled.
+3. **Regulatory documents → skill (precursor of the pack)**: a bundle of public regulation PDFs → skill → the manual version of the flow that in v0.2 becomes revision detection and automatic update.
 
-## 6. 성공 기준 (v0.1 완료 판정)
+## 6. Success Criteria (v0.1 completion verdict)
 
-- 자체 제작 샘플 3종(매뉴얼풍·규정풍·혼합 유니코드) 컴파일 → 게이트 리포트 산출 e2e-mock 통과.
-- **게이트 유효성 증명**: 의도적으로 훼손한 증류(챕터 누락·오답 삽입)를 게이트가 임계치 미달로 잡아내는 테스트 통과 — 이 테스트가 제품 가설의 증거다.
-- 같은 입력 재컴파일 시 manifest 해시 동일(조립 결정론).
-- `npm run check` 통과, `src/core/` 커버리지 90% 이상. 실 LLM 스모크 1건(샘플 매뉴얼) 게이트 리포트 확인.
+- Compile 3 self-authored samples (manual-style, regulation-style, mixed Unicode) → the e2e-mock that produces gate reports passes.
+- **Proof of gate validity**: a test passes in which the gate catches deliberately corrupted distillation (missing chapter, injected wrong answer) as falling below the threshold — this test is the evidence for the product hypothesis.
+- Recompiling the same input yields identical manifest hashes (assembly determinism).
+- `npm run check` passes; `src/core/` coverage 90% or higher. One real-LLM smoke run (sample manual) with its gate report reviewed.
 
-## 7. 로드맵
+## 7. Roadmap
 
-| 버전 | 내용 | 전제 |
+| Version | Content | Prerequisite |
 |---|---|---|
-| v0.1 | 컴파일 + 품질 게이트 + manifest + CLI 4종 | — |
-| v0.2 | `watch`/`update`(증분 재컴파일), URL·드라이브 소스, ph-skill-pack 착수 | v0.1 검증 |
-| v0.3 | `serve`(MCP 이중 서빙), EPUB | — |
-| v0.4 | npm 퍼블리시, skills add 호환 게시, 영어 README·데모, GHA CI | 이름 확정 |
+| v0.1 | Compile + quality gate + manifest + 4 CLI commands | — |
+| v0.2 | `watch`/`update` (incremental recompile), URL and drive sources, start of ph-skill-pack | v0.1 verified |
+| v0.3 | `serve` (MCP dual serving), EPUB | — |
+| v0.4 | npm publish, skills add-compatible publishing, English README and demo, GHA CI | name finalized |
 
-## 8. 미결 사항
+## 8. Open Items
 
-- [x] npm 패키지명 가용성 조사 완료(2026-09-06, T11): `live-skill`·`live-skills` 재조회로 여전히 미등록 확인(2026-09-06 기준), 후보 2개째로 `skill-gate`(품질 게이트 차별점을 이름에 직접 반영, 미등록 확인)를 추가 조사 — SPEC이 요구한 "후보 2개" 충족. `skillgate`(하이픈 없음)는 이미 등록돼 있어 후보에서 제외. **최종 확정은 실제 `npm publish` 직전에 사람이 결정**(WORKFLOW §4, `docs/PUBLISHING.md` §3-1) — npm 이름은 선착순이라 그 시점에 재조회 필요. 상세: `docs/PUBLISHING.md` §0. **2026-09-07 확정: `live-skills`**(사람 결정; 배포 직전 재조회로 `live-skill`·`live-skills` 모두 미등록 확인). `package.json.name`·`bin`·CLI 표시명 모두 `live-skills`, GitHub 저장소명은 `live-skill` 유지.
-- [x] 게이트 기본 임계치 90%·섹션당 질문 수 k=3 — 2026-09-07 사람 결정: 실 LLM 스모크(비용 지출) 없이 현재 기본값 그대로 확정. 튜닝은 실사용 게이트 리포트가 쌓인 뒤 재검토(하한 0.5는 DESIGN §7 B4). 같은 날 사람이 실 스모크를 4회 실행(outline JSON 봉투·`§` 표식·문장 단위 앵커로 3회 실패 → DESIGN §4 L2·L3·L4 수정) 끝에 `samples/manual.pdf`가 기본값 그대로 11/12(91.7%)로 통과 — 기본값 유지의 실측 근거.
-- [ ] 채점기 이중화(루브릭 LLM + 앵커 문자열 일치)의 가중치
-- [ ] 타깃 디렉터리 우선순위(claude/agents/copilot)와 자동 감지 여부
+- [x] npm package name availability survey completed (2026-09-06, T11): re-checked `live-skill` and `live-skills`, both still unregistered (as of 2026-09-06); as the second candidate, additionally surveyed `skill-gate` (reflects the quality-gate differentiator directly in the name; confirmed unregistered) — this satisfies the "two candidates" the SPEC required. `skillgate` (no hyphen) is already registered and was excluded from the candidates. **The final decision is made by a human immediately before the actual `npm publish`** (WORKFLOW §4, `docs/PUBLISHING.md` §3-1) — npm names are first come, first served, so a re-check is needed at that point. Details: `docs/PUBLISHING.md` §0. **Finalized 2026-09-07: `live-skills`** (human decision; a re-check immediately before publishing confirmed both `live-skill` and `live-skills` unregistered). `package.json.name`, `bin`, and the CLI display name are all `live-skills`; the GitHub repository name stays `live-skill`.
+- [x] Gate default threshold 90% and questions per section k=3 — human decision on 2026-09-07: the current defaults are confirmed as they are, without a real-LLM smoke run (which costs money). Tuning will be revisited once gate reports from real use have accumulated (the lower bound of 0.5 is DESIGN §7 B4). The same day, a human ran the real smoke 4 times (3 failures caused by the outline JSON envelope, the `§` marker, and sentence-level anchors → DESIGN §4 L2, L3, L4 fixes), after which `samples/manual.pdf` passed at 11/12 (91.7%) with the defaults unchanged — the measured basis for keeping the defaults.
+- [ ] Weighting of the dual grader (rubric LLM + anchor string match)
+- [ ] Target directory priority (claude/agents/copilot) and whether to auto-detect

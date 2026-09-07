@@ -70,7 +70,7 @@ Everything else — `npm run check` (typecheck + lint + test) — runs entirely 
 
 ## Documentation
 
-The internal design/spec/task docs under `docs/` are written in Korean (this is a solo project developed with an AI pairing workflow documented there) — but the interfaces are all TypeScript with English identifiers, and the code itself is the more precise reference for how any of this works. Start with `docs/SPEC.md` (product spec) and `docs/DESIGN.md` (technical design) if you want the full picture.
+The design, spec, task, and review documents under `docs/` are the working records of a solo project developed with an AI pairing workflow (documented in `docs/WORKFLOW.md`). Start with `docs/SPEC.md` (product spec) and `docs/DESIGN.md` (technical design, including the dated decision records) for the full picture; the code itself is the most precise reference for how any of this works. A Korean-language README is available as [README.ko.md](README.ko.md).
 
 ## Status
 

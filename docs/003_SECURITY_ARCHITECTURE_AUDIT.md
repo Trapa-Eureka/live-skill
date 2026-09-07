@@ -1,236 +1,236 @@
 # 003 — Full Security and Architecture Audit
 
-검토일: 2026-09-06  
-대상 저장소: `/Volumes/DevWork/work/live-skill`  
-기준 커밋: `537a42ce4e3d8d0fc6a657a52f329c6368afdb32`
+Review date: 2026-09-06  
+Target repository: `/Volumes/DevWork/work/live-skill`  
+Baseline commit: `537a42ce4e3d8d0fc6a657a52f329c6368afdb32`
 
-## 1. 감사 범위와 판단 기준
+## 1. Audit scope and assessment criteria
 
-저장소 전체의 애플리케이션 보안, 아키텍처, 의존성 및 공급망, 비밀정보, 인증·인가, 설정, CI/CD, 데이터 저장, 외부 연동, LLM 신뢰 경계, 프롬프트 주입, 민감정보 유출, 로깅·모니터링 및 운영 배포 위험을 검토했다.
+The whole repository was reviewed for application security, architecture, dependencies and supply chain, secrets, authentication and authorization, configuration, CI/CD, data storage, external integrations, LLM trust boundaries, prompt injection, sensitive-data leakage, logging and monitoring, and operational deployment risk.
 
-이 프로젝트는 로컬 npm CLI다. 웹 서버, 사용자 계정, 세션, 데이터베이스, HTTP 업로드 endpoint가 없다. 따라서 서버형 인증 우회, SQL injection, CSRF와 같은 항목은 적용 대상이 아니다. 위험도는 공격자가 입력 문서, 외부에서 받은 스킬 디렉터리 또는 LLM 출력을 조작할 수 있고 사용자가 자신의 OS 권한과 Anthropic API 키로 CLI를 실행하는 상황을 기준으로 책정했다.
+This project is a local npm CLI. It has no web server, user accounts, sessions, database, or HTTP upload endpoint. Items such as server-side authentication bypass, SQL injection, and CSRF therefore do not apply. Risk was rated on the assumption that an attacker can manipulate input documents, an externally obtained skill directory, or LLM output, and that the user runs the CLI with their own OS privileges and Anthropic API key.
 
-이 보고서는 앞선 `001_CODE_REVIEW.md`와 `002_SECURITY_REVIEW.md`의 결과를 보존하면서 아키텍처 및 운영 배포 관점까지 통합한 감사 결과다.
+This report preserves the findings of the earlier `001_CODE_REVIEW.md` and `002_SECURITY_REVIEW.md` while extending the audit to the architecture and operational-deployment perspective.
 
-## 2. 요약
+## 2. Summary
 
-- Critical: 0건
-- High: 7건
-- Medium: 10건
-- Low: 3건
-- 합계: 20건
+- Critical: 0
+- High: 7
+- Medium: 10
+- Low: 3
+- Total: 20
 
-우선 조치가 필요한 위험은 다음 네 영역에 집중된다.
+The risks that need priority action are concentrated in four areas.
 
-1. 비신뢰 LLM 출력이 파일시스템 경로와 설치되는 스킬 콘텐츠를 결정한다.
-2. 검증 모집단과 기준 데이터도 LLM 또는 외부 manifest가 결정해 품질 게이트를 우회할 수 있다.
-3. answerer의 파일 허용 목록이 외부 manifest에서 유도돼 격리가 깨질 수 있다.
-4. 출력 쓰기, 무결성 확인, CI 강제 및 배포 검증이 원자적·강제적이지 않다.
+1. Untrusted LLM output determines filesystem paths and the skill content that gets installed.
+2. The verification population and reference data are also determined by the LLM or an external manifest, so the quality gate can be bypassed.
+3. The answerer's file allowlist is derived from an external manifest, so its isolation can be broken.
+4. Output writing, integrity checking, CI enforcement, and release verification are neither atomic nor mandatory.
 
 ## 3. Critical
 
-확인된 사항 없음. 원격 코드 실행, 관리자 권한 상승, 실제 API 키 탈취 또는 SQL/database 침해를 재현하지 않았다.
+None found. No remote code execution, administrator privilege escalation, actual API key theft, or SQL/database compromise was reproduced.
 
 ## 4. High
 
-### AUD-001 — LLM slug를 통해 스킬 출력 루트를 벗어날 수 있음
+### AUD-001 — The skill output root can be escaped through an LLM slug
 
-- 영향 파일: `src/core/schemas.ts` 15–19행, `src/adapters/fsTargets.ts` 121–129행, `src/cli/compile.ts` 71–79행.
-- 증거: `skillPlanSchema`는 slug를 비어 있지 않은 문자열로만 검사한다. 이전 재현에서 `../../outside`가 기본 스킬 루트 밖의 경로로 해석됐고 임시 경로도 탈출했다.
-- 공격/실패 시나리오: 악성 문서가 outline 모델을 유도해 상위 경로가 포함된 slug를 반환한다. CLI는 이를 기본 타깃 또는 게이트 실패 임시 경로에 결합해 실행 사용자 권한으로 루트 밖에 산출물을 쓴다.
-- 영향: 의도하지 않은 디렉터리에 `SKILL.md`, 챕터 및 manifest를 생성한다. 게이트 실패 시 `force: true`가 사용돼 기존 산출물 이름의 파일을 덮어쓸 가능성도 있다.
-- 권장 조치: slug를 단일 안전 경로 구성요소로 제한하고 경로 구분자, `.`, `..`, 절대 경로를 거부한다. 모델 출력과 무관하게 최종 경로가 고정 루트 내부인지 검사한다. 임시 디렉터리는 `mkdtemp`와 신뢰된 접두사로 생성한다.
-- 연관: 가드레일 5, `002_SECURITY_REVIEW.md` SEC-001.
+- Affected files: `src/core/schemas.ts` lines 15–19, `src/adapters/fsTargets.ts` lines 121–129, `src/cli/compile.ts` lines 71–79.
+- Evidence: `skillPlanSchema` checks the slug only as a non-empty string. In an earlier reproduction, `../../outside` resolved to a path outside the default skill root and also escaped the temporary path.
+- Attack/failure scenario: A malicious document steers the outline model into returning a slug containing parent-path components. The CLI joins it into the default target or the gate-failure temporary path and writes outputs outside the root with the executing user's privileges.
+- Impact: `SKILL.md`, chapters, and the manifest are created in an unintended directory. On gate failure `force: true` is used, so files with the same names as existing outputs may be overwritten as well.
+- Recommended action: Restrict the slug to a single safe path component and reject path separators, `.`, `..`, and absolute paths. Independently of model output, check that the final path lies inside the fixed root. Create temporary directories with `mkdtemp` and a trusted prefix.
+- Related: guardrail 5, `002_SECURITY_REVIEW.md` SEC-001.
 
-### AUD-002 — 심볼릭 링크와 검사-쓰기 경쟁으로 외부 파일을 읽거나 쓸 수 있음
+### AUD-002 — Symbolic links and check-then-write races allow reading or writing external files
 
-- 영향 파일: `src/adapters/fsTargets.ts` 22–43, 58–72, 82–110행.
-- 증거: 경계 검사는 문자열 `relative()` 결과만 사용하고, 순회는 `stat()`, 읽기와 쓰기는 링크를 따라가는 API를 사용한다. 존재 검사와 쓰기도 분리돼 있다.
-- 공격/실패 시나리오: 공격자가 입력/출력 디렉터리에 외부 경로를 가리키는 링크를 놓거나 검사 직후 경로를 바꾼다. 지원 확장자의 링크는 외부 텍스트를 읽어 LLM에 전송할 수 있고 출력 링크는 외부 파일 쓰기로 이어질 수 있다.
-- 영향: 로컬 기밀의 외부 API 전송, 출력 루트 밖 파일 변경, 순환 링크로 인한 가용성 저하.
-- 권장 조치: 기본적으로 링크와 일반 파일이 아닌 입력을 거부한다. 승인된 루트의 `realpath`와 대상의 실제 경로를 검증하고 방문 집합을 유지한다. 출력은 잠긴 staging 디렉터리에서 완성한 뒤 원자적으로 교체하며 링크를 따라가지 않는 파일 열기 방식을 사용한다.
-- 연관: 가드레일 2·5·7, `002_SECURITY_REVIEW.md` SEC-002.
+- Affected files: `src/adapters/fsTargets.ts` lines 22–43, 58–72, 82–110.
+- Evidence: The boundary check uses only the string result of `relative()`; traversal uses `stat()`, and reads and writes use link-following APIs. The existence check and the write are also separated.
+- Attack/failure scenario: An attacker places a link pointing to an external path in the input or output directory, or swaps the path right after the check. A link with a supported extension can read external text and send it to the LLM, and an output link can lead to an external file write.
+- Impact: Transmission of local secrets to an external API, modification of files outside the output root, and reduced availability due to cyclic links.
+- Recommended action: Reject links and non-regular-file inputs by default. Validate the `realpath` of the approved root against the real path of the target and maintain a visited set. Complete outputs in a locked staging directory and then swap atomically, using a file-open method that does not follow links.
+- Related: guardrails 2, 5, and 7, `002_SECURITY_REVIEW.md` SEC-002.
 
-### AUD-003 — 비신뢰 문서와 모델 출력이 LLM system 지시와 설치 스킬로 승격됨
+### AUD-003 — Untrusted documents and model output are promoted into LLM system instructions and installed skills
 
-- 영향 파일: `src/core/prompts.ts` 39–58, 68–76, 81–123행, `src/core/assembler.ts` 131–163, 204–221행, `src/core/schemas.ts` 7–19행.
-- 증거: 모델이 만든 `chapter.title`이 다음 distill 요청의 system 문자열에 직접 삽입된다. 합성한 개행 포함 marker가 system 필드에 들어가는 것을 재현했다. distill 본문은 검열 또는 명령 안전성 검사 없이 설치되는 스킬에 기록된다.
-- 공격/실패 시나리오: 문서의 프롬프트 주입이 outline 제목과 distill 콘텐츠를 조작한다. 정상 사실에 대한 QA는 통과시키면서 downstream 에이전트용 악성 지시를 스킬 본문에 포함시킨다.
-- 영향: 품질 게이트가 지식 정확성만 측정하므로 악성 명령을 포함한 스킬이 verified 상태로 설치될 수 있다. 실제 후속 피해는 스킬을 사용하는 에이전트의 권한에 달린다.
-- 권장 조치: system 프롬프트는 신뢰된 상수로 유지하고 모든 문서·제목·QA·후보 답변은 명시적인 데이터 영역으로 전달한다. 각 역할에 데이터 내 지시를 따르지 않는다는 경계를 추가하고 필드 길이와 제어문자를 제한한다. 지식 정확성 게이트와 별도로 명령 안전성 분석 및 사람 검토가 끝난 후 설치하는 흐름을 둔다.
-- 연관: 가드레일 1·2, `002_SECURITY_REVIEW.md` SEC-003.
+- Affected files: `src/core/prompts.ts` lines 39–58, 68–76, 81–123, `src/core/assembler.ts` lines 131–163, 204–221, `src/core/schemas.ts` lines 7–19.
+- Evidence: The model-generated `chapter.title` is inserted directly into the system string of the next distill request. Injection of a synthesized marker containing newlines into the system field was reproduced. The distill body is written into the installed skill with no screening or instruction-safety check.
+- Attack/failure scenario: Prompt injection in the document manipulates the outline titles and distill content. It passes QA on the legitimate facts while embedding malicious instructions for downstream agents in the skill body.
+- Impact: Because the quality gate measures only knowledge accuracy, a skill containing malicious instructions can be installed with verified status. The actual downstream damage depends on the privileges of the agent that uses the skill.
+- Recommended action: Keep the system prompt a trusted constant and pass every document, title, QA item, and candidate answer in an explicit data region. Add a boundary to each role stating that instructions inside data are not to be followed, and limit field length and control characters. Add a flow in which installation happens only after an instruction-safety analysis and human review that are separate from the knowledge-accuracy gate.
+- Related: guardrails 1 and 2, `002_SECURITY_REVIEW.md` SEC-003.
 
-### AUD-004 — 모델이 검증 모집단을 축소해 불완전한 스킬을 통과시킬 수 있음
+### AUD-004 — The model can shrink the verification population and pass an incomplete skill
 
-- 영향 파일: `src/core/pipeline.ts` 157–193, 235–241행, `src/core/gate.ts` 247–258행, `src/core/schemas.ts` 7–19행.
-- 증거: 아웃라인의 section ID를 입력 전체와 비교하지 않는다. 이전 재현에서 원문 두 섹션 중 하나만 계획에 넣어도 게이트가 통과하고 누락 섹션은 manifest에도 남지 않았다.
-- 공격/실패 시나리오: 주입된 문서나 불안정한 모델이 어려운 섹션, 금지사항 또는 안전 제약을 아웃라인에서 제외한다.
-- 영향: 평가하기 쉬운 일부 콘텐츠만으로 100% 통과해 전체 스킬이 verified로 표시된다.
-- 권장 조치: 원문 섹션 전체를 모델과 독립적인 평가 모집단으로 유지한다. 모든 섹션의 정확히 한 번 배정, 알 수 없는 ID 부재, chapter ID와 section ID의 유일성을 결정론적으로 강제한다.
-- 연관: 가드레일 1, `002_SECURITY_REVIEW.md` SEC-004.
+- Affected files: `src/core/pipeline.ts` lines 157–193, 235–241, `src/core/gate.ts` lines 247–258, `src/core/schemas.ts` lines 7–19.
+- Evidence: The outline's section IDs are not compared with the full input. In an earlier reproduction, putting only one of two source sections into the plan still passed the gate, and the omitted section was absent from the manifest as well.
+- Attack/failure scenario: An injected document or an unstable model excludes difficult sections, prohibitions, or safety constraints from the outline.
+- Impact: The skill passes at 100% on only the easily evaluated portion of the content and the whole skill is marked verified.
+- Recommended action: Keep the full set of source sections as an evaluation population that is independent of the model. Deterministically enforce that every section is assigned exactly once, that no unknown IDs are present, and that chapter IDs and section IDs are unique.
+- Related: guardrail 1, `002_SECURITY_REVIEW.md` SEC-004.
 
-### AUD-005 — QA 생성 실패를 제외해 미평가 챕터도 verified 처리됨
+### AUD-005 — Excluding QA generation failures marks unevaluated chapters as verified
 
-- 영향 파일: `src/core/gate.ts` 74–107, 223–237, 247–267행.
-- 영향 문서: `docs/DESIGN.md` 100행, `docs/TESTING.md` 25행, `CLAUDE.md` 47행.
-- 증거: 두 챕터 중 하나만 1문항 정답이고 다른 챕터의 QA 생성이 두 번 실패하도록 모의했을 때 `passRate=1`, `passed=true`, 실패 챕터는 `asked=0`이었다.
-- 공격/실패 시나리오: 특정 섹션의 주입 문구가 qaGen을 깨뜨리거나 모델이 잘못된 JSON/인용을 반복 반환한다.
-- 영향: 검증되지 않은 영역이 분모와 실패 목록에서 사라져 가드레일 1을 우회한다.
-- 권장 조치: 요구된 QA 수와 실제 유효 QA 수를 별도 기록하고, 섹션·챕터 최소 커버리지 미달을 검증 실패로 처리한다. 생성 실패를 `qa_generation_failed` 같은 명시적 원인으로 보고한다. 현재 DESIGN의 “문항 제외” 정책도 상위 가드레일과 맞게 수정한다.
-- 연관: 가드레일 1, `002_SECURITY_REVIEW.md` SEC-005.
+- Affected files: `src/core/gate.ts` lines 74–107, 223–237, 247–267.
+- Affected documents: `docs/DESIGN.md` line 100, `docs/TESTING.md` line 25, `CLAUDE.md` line 47.
+- Evidence: When one of two chapters had a single correct answer and QA generation for the other chapter was mocked to fail twice, the result was `passRate=1`, `passed=true`, and the failed chapter had `asked=0`.
+- Attack/failure scenario: Injected wording in a specific section breaks qaGen, or the model repeatedly returns invalid JSON or quotes.
+- Impact: Unverified areas vanish from the denominator and the failure list, bypassing guardrail 1.
+- Recommended action: Record the number of QA items required and the number actually valid separately, and treat a shortfall against the minimum per-section and per-chapter coverage as a verification failure. Report generation failures with an explicit cause such as `qa_generation_failed`. Also revise the current DESIGN "exclude the question" policy to match the overriding guardrail.
+- Related: guardrail 1, `002_SECURITY_REVIEW.md` SEC-005.
 
-### AUD-006 — 외부 manifest가 answerer의 파일 허용 목록과 정답 데이터를 동시에 통제함
+### AUD-006 — An external manifest controls both the answerer's file allowlist and the reference-answer data
 
-- 영향 파일: `src/core/schemas.ts` 59–74행, `src/core/gate.ts` 48–59, 120–161행, `src/cli/eval.ts` 32–54행, `src/adapters/fsTargets.ts` 103–118행.
-- 증거: `chapterFile: "manifest.json"`이 Zod 검증을 통과한다. 이 manifest로 eval을 수행하는 모의 재현에서 `goldenQa.refAnswer`에만 존재한 marker가 answerer 컨텍스트에 유입됐고 `manifest.json`이 loadedFiles에 기록됐다.
-- 공격/실패 시나리오: 외부에서 받은 스킬 디렉터리가 manifest의 chapterFile과 golden QA를 조작한다. answerer가 정답을 포함한 manifest 자체를 챕터로 읽는다.
-- 영향: answerer 격리와 평가 독립성이 무너지고 조작된 스킬이 통과할 수 있다. 디렉터리의 다른 텍스트 파일 또는 링크와 결합하면 민감정보도 모델에 전달될 수 있다.
-- 권장 조치: 허용 파일은 코드가 결정한 `chapters/*.md` 일반 파일로 제한한다. manifest, QA 저장소, 원문 및 임의 부속 파일을 평가 로더에서 제외한다. manifest의 상호 참조·outputs·실제 파일 목록을 검증하고, 외부 QA는 신뢰된 서명이나 제공된 원문으로 재생성하기 전에는 평가 기준으로 사용하지 않는다.
-- 연관: 가드레일 1·2, `002_SECURITY_REVIEW.md` SEC-006.
+- Affected files: `src/core/schemas.ts` lines 59–74, `src/core/gate.ts` lines 48–59, 120–161, `src/cli/eval.ts` lines 32–54, `src/adapters/fsTargets.ts` lines 103–118.
+- Evidence: `chapterFile: "manifest.json"` passes Zod validation. In a mock reproduction running eval with this manifest, a marker present only in `goldenQa.refAnswer` flowed into the answerer context and `manifest.json` was recorded in loadedFiles.
+- Attack/failure scenario: An externally obtained skill directory manipulates the manifest's chapterFile and golden QA. The answerer reads the manifest itself, reference answers included, as a chapter.
+- Impact: Answerer isolation and evaluation independence collapse and a manipulated skill can pass. Combined with other text files or links in the directory, sensitive information can also be sent to the model.
+- Recommended action: Restrict the allowed files to regular `chapters/*.md` files determined by code. Exclude the manifest, the QA store, the source text, and arbitrary auxiliary files from the evaluation loader. Validate the manifest's cross-references, outputs, and the actual file list, and do not use external QA as an evaluation baseline until it is either trusted-signed or regenerated from a provided source.
+- Related: guardrails 1 and 2, `002_SECURITY_REVIEW.md` SEC-006.
 
-### AUD-007 — 출력이 원자적이지 않아 통과한 스킬 디렉터리가 혼합·부분 상태로 남을 수 있음
+### AUD-007 — Non-atomic output can leave a passed skill directory in a mixed or partial state
 
-- 영향 파일: `src/adapters/fsTargets.ts` 51–73행, `src/cli/compile.ts` 71–92행, `src/cli/report.ts` 9–22행.
-- 증거: 파일을 순차적으로 최종 경로에 직접 쓴다. 모의 파일시스템에서 두 번째 파일 쓰기를 실패시켰을 때 첫 번째 파일은 이미 갱신됐고 manifest는 기록되지 않았다. `--force`는 이전 산출물 중 새 outputs에 없는 파일도 정리하지 않는다.
-- 공격/실패 시나리오: 디스크 부족, 프로세스 종료 또는 동시 컴파일로 일부 새 파일과 일부 이전 파일이 섞인다. 이전 manifest가 남아 있으면 `report`는 과거 PASSED를 그대로 출력할 수 있다.
-- 영향: 실제 스킬 콘텐츠와 표시된 검증 결과가 달라지고, 운영자는 손상된 결과를 검증 완료로 오인한다.
-- 권장 조치: 동일 파일시스템 staging 디렉터리에 전체 산출물을 쓰고 내용 해시와 구조를 확인한 뒤 원자적으로 교체한다. manifest는 산출 파일별 해시를 포함하고 최종 커밋 지표 역할을 하게 한다. 실패 시 이전 완전한 세대를 유지하며 동시 실행 잠금을 추가한다.
+- Affected files: `src/adapters/fsTargets.ts` lines 51–73, `src/cli/compile.ts` lines 71–92, `src/cli/report.ts` lines 9–22.
+- Evidence: Files are written sequentially and directly to their final paths. When the second file write was made to fail on a mock filesystem, the first file had already been updated and the manifest was not written. `--force` also does not clean up previous outputs that are absent from the new outputs.
+- Attack/failure scenario: Disk exhaustion, process termination, or a concurrent compile mixes some new files with some old files. If an old manifest remains, `report` can print the past PASSED unchanged.
+- Impact: The actual skill content diverges from the displayed verification result, and operators mistake a corrupted result for a verified one.
+- Recommended action: Write the complete output to a staging directory on the same filesystem, verify content hashes and structure, and then swap atomically. Have the manifest include a hash per output file and serve as the final commit marker. Keep the previous complete generation on failure and add a concurrent-execution lock.
 
 ## 5. Medium
 
-### AUD-008 — 환경변수 하나로 질문 0개를 정상 통과시킬 수 있음
+### AUD-008 — A single environment variable can pass a run with zero questions
 
-- 영향 파일: `src/core/config.ts` 23–29, 49–73행, `src/core/gate.ts` 223–234행, `src/cli/index.ts` 23–28행.
-- 증거: `GATE_THRESHOLD=0`을 설정하고 QA 0개를 평가하면 `passRate=0`, `passed=true`가 됐다.
-- 공격/실패 시나리오: 현재 디렉터리의 비신뢰 `.env` 또는 실행 환경 설정이 검증 기준을 0으로 낮춘다.
-- 영향: `--no-gate`와 달리 unverified 표시 없이 무검증 통과한다.
-- 권장 조치: 질문 0개는 threshold와 관계없이 실패시킨다. 제품 정책상 최소 threshold를 강제하고 실제 적용 설정을 manifest와 리포트에 기록한다. 공백 문자열은 0이 아닌 미설정 또는 오류로 처리한다.
-- 연관: 가드레일 1.
+- Affected files: `src/core/config.ts` lines 23–29, 49–73, `src/core/gate.ts` lines 223–234, `src/cli/index.ts` lines 23–28.
+- Evidence: With `GATE_THRESHOLD=0` set and 0 QA items evaluated, the result was `passRate=0`, `passed=true`.
+- Attack/failure scenario: An untrusted `.env` in the current directory or the execution environment's configuration lowers the verification threshold to 0.
+- Impact: Unlike `--no-gate`, the run passes with no verification and without the unverified marker.
+- Recommended action: Fail on zero questions regardless of the threshold. Enforce a minimum threshold as product policy and record the effective configuration in the manifest and the report. Treat an empty string as unset or as an error, not as 0.
+- Related: guardrail 1.
 
-### AUD-009 — 호출 수와 토큰 예산이 모든 경로에서 강제되지 않음
+### AUD-009 — Call-count and token budgets are not enforced on every path
 
-- 영향 파일: `src/core/gate.ts` 62–64, 86–107행, `src/core/pipeline.ts` 171–193행, `src/cli/eval.ts` 47–54, 85–87행, `src/core/costTracker.ts` 17–32행.
-- 증거: qaGen 재시도는 compile 추정식에 빠져 있다. 이전 재현에서 상한 6회 설정에 실제 7회 호출했다. eval에는 `maxLlmCalls` 검사가 없고 cost tracker는 smoke에서 측정만 하며 중단시키지 않는다.
-- 공격/실패 시나리오: 많은 QA가 들어 있는 외부 manifest 또는 반복 생성 실패로 API 호출과 입력 토큰이 예상보다 증가한다.
-- 영향: 비용 소진, rate limit, 긴 실행시간 및 운영 실패.
-- 권장 조치: compile/eval/smoke 공통 LLM 예산 래퍼에서 각 호출 직전에 실제 누적 호출, 요청·응답 토큰, 벽시계 시간을 검사한다. 재시도도 같은 예산에서 차감하고 manifest 배열·문자열 크기에 상한을 둔다.
-- 연관: 가드레일 6.
+- Affected files: `src/core/gate.ts` lines 62–64, 86–107, `src/core/pipeline.ts` lines 171–193, `src/cli/eval.ts` lines 47–54, 85–87, `src/core/costTracker.ts` lines 17–32.
+- Evidence: qaGen retries are missing from the compile estimation formula. In an earlier reproduction, a cap of 6 resulted in 7 actual calls. eval has no `maxLlmCalls` check, and the cost tracker in smoke only measures and does not abort.
+- Attack/failure scenario: An external manifest containing many QA items, or repeated generation failures, drives API calls and input tokens above expectations.
+- Impact: Cost exhaustion, rate limits, long run times, and operational failures.
+- Recommended action: In a common LLM budget wrapper shared by compile/eval/smoke, check the actual cumulative calls, request and response tokens, and wall-clock time immediately before each call. Deduct retries from the same budget and cap manifest array and string sizes.
+- Related: guardrail 6.
 
-### AUD-010 — 구조 validator가 배포 차단에 연결되지 않고 metadata를 실제로 파싱하지 않음
+### AUD-010 — The structural validator is not wired to block deployment and does not actually parse the metadata
 
-- 영향 파일: `src/core/pipeline.ts` 224–254행, `src/cli/compile.ts` 71–93행, `src/core/assembler.ts` 136–140행, `src/core/validator.ts` 57–95행.
-- 증거: 이전 재현에서 1,000토큰 제한에 1,501토큰인 챕터가 쓰기 단계에 전달되고 종료코드 0이 됐다. `Guide: Setup` 제목의 안전하지 않은 YAML도 키 존재 검사만 통과했다.
-- 공격/실패 시나리오: 모델이 예산 초과 콘텐츠나 YAML 문법을 깨는 제목을 반환하지만 CLI는 이를 설치한다.
-- 영향: 배포물 소비 실패, 자원 정책 무시, 결정론 검증 경계 약화.
-- 권장 조치: 의미 게이트 전에 구조 오류를 차단하고 최종 산출물을 다시 검증한다. YAML serializer와 실제 parser를 사용해 필수 필드 타입, 값 및 허용 키를 검사한다.
+- Affected files: `src/core/pipeline.ts` lines 224–254, `src/cli/compile.ts` lines 71–93, `src/core/assembler.ts` lines 136–140, `src/core/validator.ts` lines 57–95.
+- Evidence: In an earlier reproduction, a 1,501-token chapter under a 1,000-token limit was passed to the write stage with exit code 0. Unsafe YAML from a `Guide: Setup` title also passed the key-presence check alone.
+- Attack/failure scenario: The model returns over-budget content or a title that breaks YAML syntax, and the CLI installs it anyway.
+- Impact: Consumer failures on the deployed output, ignored resource policy, and a weakened deterministic validation boundary.
+- Recommended action: Block structural errors before the semantic gate and re-validate the final output. Use a YAML serializer and a real parser to check the required fields' types, values, and permitted keys.
 
-### AUD-011 — manifest와 GateReport의 의미적 무결성을 검증하지 않음
+### AUD-011 — The semantic integrity of the manifest and GateReport is not validated
 
-- 영향 파일: `src/core/schemas.ts` 32–74행, `src/core/types.ts` 75–96행, `src/cli/report.ts` 9–22행.
-- 증거: `passed=true`, `passRate=0`, `asked=1`, `correct=50`처럼 상호 모순된 보고서가 Zod 스키마를 통과했다. `createdAt`도 임의 문자열이며 해시는 길이만 검사한다.
-- 공격/실패 시나리오: 외부 스킬 디렉터리의 manifest를 조작해 report와 eval에 거짓 상태를 주입한다.
-- 영향: 운영자가 신뢰할 수 없는 PASSED 결과를 공식 결과로 오인하고, 잘못된 QA 및 파일 매핑으로 평가한다.
-- 권장 조치: `superRefine` 등으로 `correct <= asked`, 전체 집계 일치, passRate 계산, passed/threshold 일치, failures/loadHistory/QA ID 대응, ISO timestamp, 16진수 SHA-256 및 outputs/file mapping을 검증한다. 진위가 필요한 경우 manifest 서명 또는 신뢰 저장소를 사용한다.
+- Affected files: `src/core/schemas.ts` lines 32–74, `src/core/types.ts` lines 75–96, `src/cli/report.ts` lines 9–22.
+- Evidence: Mutually contradictory reports such as `passed=true`, `passRate=0`, `asked=1`, `correct=50` passed the Zod schema. `createdAt` is also an arbitrary string and the hash is checked only for length.
+- Attack/failure scenario: The manifest of an external skill directory is manipulated to inject a false status into report and eval.
+- Impact: Operators mistake an untrustworthy PASSED result for the official one and evaluate against incorrect QA and file mappings.
+- Recommended action: Validate with `superRefine` or similar that `correct <= asked`, that the overall aggregates agree, the passRate computation, the passed/threshold agreement, the correspondence of failures/loadHistory/QA IDs, ISO timestamps, hexadecimal SHA-256, and the outputs/file mapping. Where authenticity is required, use manifest signing or a trusted store.
 
-### AUD-012 — report는 현재 산출물의 변경·손상을 탐지하지 않고 과거 결과만 표시함
+### AUD-012 — report shows only past results and does not detect changes to or corruption of the current output
 
-- 영향 파일: `src/cli/report.ts` 9–22행, `src/core/types.ts` 87–96행, `src/core/pipeline.ts` 244–252행.
-- 증거: report는 manifest만 읽고 현재 파일을 로드하거나 해시를 대조하지 않는다. manifest의 outputs에는 콘텐츠 해시가 없다.
-- 공격/실패 시나리오: 컴파일 이후 챕터 파일이 수정·삭제되거나 부분 쓰기 후 이전 manifest가 남는다.
-- 영향: 실제 산출물이 더 이상 검증한 콘텐츠가 아닌데도 마지막 PASSED를 출력한다.
-- 권장 조치: manifest에 모든 산출물의 SHA-256과 컴파일 세대 ID를 저장한다. report 실행 시 파일 존재, 경로, 해시 및 manifest 자체의 신뢰성을 검사하고 불일치하면 STALE/TAMPERED로 실패한다.
+- Affected files: `src/cli/report.ts` lines 9–22, `src/core/types.ts` lines 87–96, `src/core/pipeline.ts` lines 244–252.
+- Evidence: report reads only the manifest and neither loads the current files nor compares hashes. The manifest's outputs carry no content hash.
+- Attack/failure scenario: Chapter files are modified or deleted after compilation, or an old manifest remains after a partial write.
+- Impact: The last PASSED is printed even though the actual output is no longer the verified content.
+- Recommended action: Store the SHA-256 of every output and a compile generation ID in the manifest. When report runs, check file existence, paths, hashes, and the trustworthiness of the manifest itself, and fail as STALE/TAMPERED on any mismatch.
 
-### AUD-013 — grader의 비정상 출력이 CORRECT 접두사만으로 정답 처리됨
+### AUD-013 — Abnormal grader output is counted as correct on the CORRECT prefix alone
 
-- 영향 파일: `src/core/prompts.ts` 105–129행, `src/core/gate.ts` 159–169행.
-- 증거: `CORRECT? No, WRONG.`이 `correct`로 파싱됐다.
-- 공격/실패 시나리오: 후보 답변의 주입 문구 또는 모델 불안정성으로 설명·모순이 포함된 판정이 반환된다.
-- 영향: 불확실한 결과가 정답으로 집계돼 보수 채점 원칙을 약화한다.
-- 권장 조치: 전체 응답을 엄격한 enum 또는 구조화 출력 스키마로 검증하고 정확히 허용된 값 이외는 실패 또는 미판정으로 처리한다.
-- 연관: 가드레일 1.
+- Affected files: `src/core/prompts.ts` lines 105–129, `src/core/gate.ts` lines 159–169.
+- Evidence: `CORRECT? No, WRONG.` was parsed as `correct`.
+- Attack/failure scenario: Injected wording in the candidate answer or model instability returns a verdict that contains explanation or contradiction.
+- Impact: Uncertain results are counted as correct, weakening the conservative-grading principle.
+- Recommended action: Validate the entire response against a strict enum or structured-output schema and treat anything other than an exactly permitted value as a failure or as undetermined.
+- Related: guardrail 1.
 
-### AUD-014 — 비신뢰 문서 파싱의 자원 격리가 부족함
+### AUD-014 — Resource isolation for untrusted document parsing is insufficient
 
-- 영향 파일: `src/cli/compile.ts` 43–52행, `src/adapters/fsTargets.ts` 76–100행, `src/adapters/extractors/limits.ts` 8–23행, `src/adapters/extractors/docx.ts` 91–105, 126–145행.
-- 증거: 파일 수·전체 바이트 제한 없이 모든 입력을 `Promise.all`로 읽는다. `Promise.race` 타임아웃은 파서를 취소하지 않으며 동기 CPU 점유도 멈추지 않는다. DOCX 검사는 ZIP을 로드한 후 비공개 `_data.uncompressedSize`에 의존한다.
-- 공격/실패 시나리오: 매우 큰 폴더, 압축 폭탄, 순환 링크 또는 병리적 PDF/DOCX를 처리한다.
-- 영향: 메모리 고갈, CPU 점유, 장시간 백그라운드 파싱 및 프로세스 종료.
-- 권장 조치: 읽기 전 파일 수·개별/총 바이트·확장자를 제한하고 제한된 동시성을 사용한다. 파서는 종료 가능한 worker/subprocess에서 메모리·시간 제한과 함께 실행한다. 실제 압축 해제 누적 바이트를 측정한다.
+- Affected files: `src/cli/compile.ts` lines 43–52, `src/adapters/fsTargets.ts` lines 76–100, `src/adapters/extractors/limits.ts` lines 8–23, `src/adapters/extractors/docx.ts` lines 91–105, 126–145.
+- Evidence: All inputs are read with `Promise.all` with no limit on file count or total bytes. The `Promise.race` timeout does not cancel the parser and does not stop synchronous CPU usage. The DOCX check loads the ZIP first and then relies on the private `_data.uncompressedSize`.
+- Attack/failure scenario: A very large folder, a compression bomb, cyclic links, or a pathological PDF/DOCX is processed.
+- Impact: Memory exhaustion, CPU monopolization, long-running background parsing, and process termination.
+- Recommended action: Limit file count, individual/total bytes, and extensions before reading, and use bounded concurrency. Run parsers in a killable worker/subprocess with memory and time limits. Measure the actual cumulative decompressed bytes.
 
-### AUD-015 — LLM 실패 시 오류 처리와 비용 관측이 끊김
+### AUD-015 — Error handling and cost observability break off on LLM failure
 
-- 영향 파일: `src/cli/compile.ts` 58–64행, `src/cli/eval.ts` 47–54, 85–90행, `src/cli/smoke.ts` 40–62행, `src/cli/index.ts` 124행, `src/core/llmError.ts` 1–15행.
-- 증거: 합성 `rate_limit` 오류를 smoke에 주입했을 때 예외가 밖으로 전파됐고 출력과 비용 요약은 0줄이었다.
-- 공격/실패 시나리오: 인증 실패, rate limit, timeout 또는 외부 API 장애가 중간 단계에서 발생한다.
-- 영향: 실패 단계, 재시도 가능성, 누적 비용을 알 수 없고 자동화가 비일관적인 오류 출력을 받는다.
-- 권장 조치: CLI 공통 오류 경계를 두고 단계, 분류, retryable 여부, 호출·토큰 요약 및 안전한 correlation ID를 기록한다. API 원문 오류는 redaction과 제어문자 정규화를 거쳐 제한된 길이만 출력한다. 키와 원문은 로그에 남기지 않는다.
+- Affected files: `src/cli/compile.ts` lines 58–64, `src/cli/eval.ts` lines 47–54, 85–90, `src/cli/smoke.ts` lines 40–62, `src/cli/index.ts` line 124, `src/core/llmError.ts` lines 1–15.
+- Evidence: When a synthetic `rate_limit` error was injected into smoke, the exception propagated outward and the output and cost summary were 0 lines.
+- Attack/failure scenario: Authentication failure, a rate limit, a timeout, or an external API outage occurs at an intermediate stage.
+- Impact: The failed stage, retryability, and cumulative cost are unknown, and automation receives inconsistent error output.
+- Recommended action: Add a common CLI error boundary that records the stage, classification, retryability, call and token summary, and a safe correlation ID. Print raw API errors only at a bounded length after redaction and control-character normalization. Never log keys or source text.
 
-### AUD-016 — CI 성공이 main에 강제되지 않음
+### AUD-016 — CI success is not enforced on main
 
-- 영향 파일: `.github/workflows/ci.yml` 9–45행, 저장소 GitHub branch 설정.
-- 증거: GitHub API에서 저장소는 private, default branch는 main, `main.protected=false`였다. rulesets 조회는 현재 private 플랜 제한으로 403이었다. 현재 커밋의 push CI는 Node 20·22 모두 `npm ci`, check, build, tarball 검사에 성공했다.
-- 공격/실패 시나리오: push 권한이 있는 사용자가 PR 또는 성공한 CI 없이 main에 직접 변경을 반영한다.
-- 영향: 테스트·빌드·보안 검사가 존재해도 실제 릴리스 기준으로 강제되지 않는다.
-- 권장 조치: 가능한 플랜/공개 전환 후 main 보호 또는 ruleset을 활성화해 PR, 필수 CI, stale review 해제, force push 및 삭제 금지를 강제한다. 그 전에는 릴리스 워크플로에서 정확한 커밋의 성공한 CI를 검증하는 수동 통제를 문서화한다.
+- Affected files: `.github/workflows/ci.yml` lines 9–45, the repository's GitHub branch settings.
+- Evidence: Per the GitHub API, the repository was private, the default branch was main, and `main.protected=false`. The rulesets query returned 403 due to the current private-plan restriction. Push CI for the current commit succeeded on both Node 20 and 22 through `npm ci`, check, build, and the tarball check.
+- Attack/failure scenario: A user with push permission lands changes directly on main without a PR or a successful CI run.
+- Impact: Even though tests, builds, and security checks exist, they are not enforced as the actual release criterion.
+- Recommended action: Once the plan allows it or the repository goes public, enable main protection or a ruleset that requires PRs and mandatory CI, dismisses stale reviews, and forbids force pushes and deletion. Until then, document a manual control in the release workflow that verifies a successful CI run for the exact commit.
 
-### AUD-017 — 릴리스 산출물의 설치·실행 및 provenance가 자동 검증되지 않음
+### AUD-017 — Installation, execution, and provenance of release artifacts are not verified automatically
 
-- 영향 파일: `package.json` 10–29행, `scripts/check-tarball.sh` 1–15행, `.github/workflows/ci.yml` 42–45행, `docs/PUBLISHING.md` 3절.
-- 증거: CI는 dry-run tarball 목록 검사까지만 수행한다. 생성된 tarball을 깨끗한 디렉터리에 `--omit=dev`로 설치해 `--help`를 실행하거나 package contents를 기계적으로 검증하지 않는다. provenance/release workflow는 문서상 권장 사항이다.
-- 공격/실패 시나리오: source 테스트는 통과하지만 배포된 dist가 누락·오염되거나 런타임 의존성/실행 권한 문제로 npx가 실패한다.
-- 영향: 배포 후에야 장애를 발견하며 패키지 출처·빌드 연결성을 검증하기 어렵다.
-- 권장 조치: `npm pack --json`으로 허용 파일 목록을 검증하고, tarball fresh install + CLI smoke를 CI와 prepublish에 추가한다. 배포는 태그·보호된 environment·OIDC provenance를 사용하고 장기 NPM_TOKEN을 최소화한다.
+- Affected files: `package.json` lines 10–29, `scripts/check-tarball.sh` lines 1–15, `.github/workflows/ci.yml` lines 42–45, `docs/PUBLISHING.md` section 3.
+- Evidence: CI goes only as far as the dry-run tarball listing check. It neither installs the generated tarball into a clean directory with `--omit=dev` and runs `--help`, nor verifies the package contents mechanically. The provenance/release workflow is a documented recommendation only.
+- Attack/failure scenario: The source tests pass, but the published dist is missing or corrupted, or npx fails because of runtime dependency or execute-permission problems.
+- Impact: Failures are discovered only after publishing, and package origin and build linkage are hard to verify.
+- Recommended action: Validate the allowed file list with `npm pack --json`, and add a tarball fresh install plus CLI smoke to CI and prepublish. Publish using tags, a protected environment, and OIDC provenance, and minimize long-lived NPM_TOKEN use.
 
 ## 6. Low
 
-### AUD-018 — 비밀 파일 및 tarball 검사가 일부 경로와 오류를 놓칠 수 있음
+### AUD-018 — Secret-file and tarball checks can miss some paths and errors
 
-- 영향 파일: `.gitignore` 9–11행, `scripts/check-tarball.sh` 5–14행.
-- 증거: `.env.production`과 `.env.staging`은 git ignore 대상이 아니었다. 합성한 `npm notice 100B .env.production` 행은 현재 정규식에 매칭되지 않았다. Git 이력 22개 커밋의 텍스트 blob 144개를 제한된 키 패턴으로 검사한 결과 일치 항목은 없었다.
-- 공격/실패 시나리오: 개발자가 환경별 env 파일을 추가하거나 npm 출력 형식이 바뀌어 사람이 읽는 목록 검사가 파일을 놓친다.
-- 영향: 비밀의 우발적 커밋 또는 배포 가능성. 현재 `files: ["dist"]`가 루트 env 파일 배포를 제한하므로 실제 유출이 확인된 것은 아니다.
-- 권장 조치: `.env*`를 제외하고 `.env.example`만 예외 처리한다. `npm pack --json`의 구조화된 경로를 검사하고 실제 tarball의 모든 텍스트 파일에 비밀 탐지를 수행한다. 과거 이력과 CI용 전용 비밀 탐지를 추가한다.
+- Affected files: `.gitignore` lines 9–11, `scripts/check-tarball.sh` lines 5–14.
+- Evidence: `.env.production` and `.env.staging` were not git-ignored. A synthesized `npm notice 100B .env.production` line did not match the current regex. A check of 144 text blobs across 22 commits of Git history against a limited set of key patterns found no matches.
+- Attack/failure scenario: A developer adds a per-environment env file, or the npm output format changes and the human-readable listing check misses a file.
+- Impact: Possible accidental commit or publication of secrets. Since `files: ["dist"]` currently restricts root env files from being published, no actual leak was confirmed.
+- Recommended action: Exclude `.env*` and make an exception only for `.env.example`. Inspect the structured paths from `npm pack --json` and run secret detection on every text file in the actual tarball. Add dedicated secret detection for past history and CI.
 
-### AUD-019 — 선언된 Node 지원 범위와 의존성 요구사항이 어긋남
+### AUD-019 — The declared Node support range diverges from the dependency requirements
 
-- 영향 파일: `package.json` 7–8행, `package-lock.json`의 commander·vitest·eslint·pdf-parse 항목, `.github/workflows/ci.yml` 30–32행.
-- 증거: package는 Node `>=20`을 선언하지만 Commander 15는 `>=22.12.0`, Vitest 5는 `^22.12.0 || ^24.0.0 || >=26.0.0`을 선언한다. 현재 GitHub의 Node 20 CI는 성공했지만 이는 의존성이 공식 지원하는 범위를 확장하지 않는다.
-- 공격/실패 시나리오: 사용자가 지원된다고 표시된 낮은 Node 20 버전에서 설치·실행한다.
-- 영향: 경고, 예측하지 못한 런타임 실패 및 지원 책임 불명확.
-- 권장 조치: 모든 런타임 의존성이 지원하는 최소 Node 버전으로 engines·문서·CI를 맞추거나 Node 20 호환 버전을 고정한다. 개발 도구와 배포 런타임의 지원 범위를 구분한다.
+- Affected files: `package.json` lines 7–8, the commander, vitest, eslint, and pdf-parse entries in `package-lock.json`, `.github/workflows/ci.yml` lines 30–32.
+- Evidence: The package declares Node `>=20`, but Commander 15 declares `>=22.12.0` and Vitest 5 declares `^22.12.0 || ^24.0.0 || >=26.0.0`. The current Node 20 CI on GitHub succeeded, but that does not extend the range the dependencies officially support.
+- Attack/failure scenario: A user installs and runs on a lower Node 20 version that is listed as supported.
+- Impact: Warnings, unforeseen runtime failures, and unclear support responsibility.
+- Recommended action: Align engines, documentation, and CI to the minimum Node version supported by all runtime dependencies, or pin Node 20-compatible versions. Distinguish the support range of the development tooling from that of the deployed runtime.
 
-### AUD-020 — 아키텍처 및 운영 문서의 상태가 현재 구현과 다름
+### AUD-020 — The state of the architecture and operations documents differs from the current implementation
 
-- 영향 파일: `docs/TASKS.md` 20–52행, `docs/PUBLISHING.md` 0·2절, `README.ko.md` 51–57행.
-- 증거: T1–T8과 publishing 문서 일부는 코드 미착수/TODO로 표시하지만 구현과 테스트가 존재하고 T11도 완료로 기록돼 있다.
-- 공격/실패 시나리오: 신규 유지보수자 또는 자동화 에이전트가 오래된 문서를 진실의 원천으로 사용해 이미 완료된 작업을 반복하거나 필요한 릴리스 통제를 잘못 판단한다.
-- 영향: 운영 오류와 통제 누락 가능성.
-- 권장 조치: 현재 상태의 단일 진실의 원천을 정하고 과거 기록은 changelog로 이동한다. 보안 가드레일과 릴리스 체크리스트에는 소유자, 시행 위치와 검증 방법을 명시한다.
+- Affected files: `docs/TASKS.md` lines 20–52, `docs/PUBLISHING.md` sections 0 and 2, `README.ko.md` lines 51–57.
+- Evidence: T1–T8 and parts of the publishing document are marked as not started/TODO, yet the implementation and tests exist and T11 is also recorded as done.
+- Attack/failure scenario: A new maintainer or an automated agent uses the outdated documents as the source of truth, repeats work that is already complete, or misjudges the required release controls.
+- Impact: Possible operational errors and missing controls.
+- Recommended action: Designate a single source of truth for the current state and move historical records into a changelog. In the security guardrails and the release checklist, state the owner, the enforcement point, and the verification method.
 
-## 7. 요청 영역별 감사 결과
+## 7. Audit results by requested area
 
-| 영역 | 결과 |
+| Area | Result |
 | --- | --- |
-| 애플리케이션 보안 | 파일 경로, 링크, 비신뢰 문서 파싱, 모델 출력 경계에서 High/Medium 위험을 확인했다. 모델 출력을 shell/eval/child_process에 직접 실행하는 경로는 발견하지 못했다. |
-| 의존성·공급망 | 2026-09-06 `npm audit --package-lock-only --ignore-scripts --json` 결과 알려진 취약점 0건이었다. lockfile의 resolved는 npm registry 경로였고 resolved 항목의 integrity 누락은 없었다. 설치 스크립트 보유 패키지는 esbuild와 선택적 fsevents였다. audit은 미공개 취약점이나 악성 패키지 부재를 보장하지 않는다. |
-| 비밀정보 | 소스가 API 키를 프롬프트에 직접 넣는 경로는 발견하지 못했다. SDK는 고정 HTTPS base URL과 `logLevel: off`를 사용한다. 제한된 현재/이력 패턴 검사에서 키 일치는 없었다. AUD-002·018의 유출 경계는 남는다. |
-| 인증·인가 | 앱 사용자·세션·역할 시스템은 없다. Anthropic 호출은 API 키 인증을 사용한다. CLI는 실행 사용자의 OS 권한을 상속하므로 로컬 파일 접근 통제가 실질적 권한 경계다. |
-| 인프라·설정 | 서버/컨테이너/IaC는 없다. 환경변수가 품질 정책을 변경하고 출력은 홈 디렉터리 아래에 설치된다. AUD-001·007·008·019 참조. |
-| CI/CD | workflow 권한은 `contents: read`, Actions는 전체 SHA로 고정, `pull_request_target`은 없다. 최근 push CI는 Node 20·22 모두 성공했다. main 미보호와 배포물 smoke/provenance 부재는 AUD-016·017. |
-| 데이터베이스 | DB 드라이버, SQL, ORM, migration, 자격증명 또는 persistence 서비스가 없다. SQL injection 및 DB 권한 문제는 적용되지 않는다. |
-| 제3자 연동 | 애플리케이션의 명시적 외부 호출은 고정된 Anthropic API다. URL fetch·unsafe redirect·SSRF 경로는 발견하지 못했다. 입력 문서 콘텐츠가 API에 전송된다는 제품 특성은 사용자에게 명확히 고지해야 한다. |
-| LLM/AI·프롬프트 주입 | AUD-003–006·008·009·013이 핵심이다. 정확성 평가와 명령 안전성, 평가 데이터 독립성을 별도 통제로 설계해야 한다. |
-| 민감정보 유출 | 원문은 outline/distill/qaGen 프롬프트로 외부 API에 전송된다. 링크 및 manifest 조작은 의도한 범위 밖 파일까지 확대할 수 있다. manifest에는 원문 인용과 정답이 평문 저장된다. |
-| 로깅·모니터링 | 정상 출력은 원문 전체를 로그로 남기지 않지만 구조화된 감사 로그, 단계별 오류·비용 관측, redaction 정책이 없다. AUD-015 참조. |
-| 운영 배포 | 원자적 산출물 교체, 변경 탐지, clean-install smoke, provenance, 보호된 릴리스 승인이 부족하다. AUD-007·012·016·017 참조. |
-| XSS/CSRF/SSRF | 웹 렌더링·쿠키 세션·사용자 제공 URL 요청이 없어 직접 적용되는 경로를 발견하지 못했다. 생성 Markdown을 다른 웹 서비스가 렌더링할 경우 해당 렌더러가 별도 신뢰 경계다. |
-| 파일 업로드 | HTTP 업로드는 없다. 대응되는 로컬 파일 ingestion 위험은 AUD-002·014다. |
-| rate limiting | 공개 요청 endpoint가 없어 IP별 제한은 적용되지 않는다. 사용자 API 키 비용 상한 문제는 AUD-009에 기록했다. |
-| 권한 상승 | OS 관리자 권한 획득은 확인하지 못했다. 데이터가 system 지시로 승격되는 문제는 AUD-003이다. |
+| Application security | High/Medium risks were found at the file path, link, untrusted document parsing, and model-output boundaries. No path that executes model output directly through shell/eval/child_process was found. |
+| Dependencies and supply chain | `npm audit --package-lock-only --ignore-scripts --json` on 2026-09-06 reported 0 known vulnerabilities. Every resolved entry in the lockfile pointed at the npm registry and no resolved entry was missing an integrity value. The packages with install scripts were esbuild and the optional fsevents. An audit does not guarantee the absence of undisclosed vulnerabilities or malicious packages. |
+| Secrets | No path in the source puts the API key directly into a prompt. The SDK uses a fixed HTTPS base URL and `logLevel: off`. A limited scan of current files and history for key patterns found no matches. The leak boundaries of AUD-002 and AUD-018 remain. |
+| Authentication and authorization | There is no application user, session, or role system. Anthropic calls use API key authentication. The CLI inherits the executing user's OS privileges, so local file access control is the effective privilege boundary. |
+| Infrastructure and configuration | There is no server, container, or IaC. Environment variables change the quality policy and outputs are installed under the home directory. See AUD-001, 007, 008, and 019. |
+| CI/CD | Workflow permissions are `contents: read`, Actions are pinned to full SHAs, and there is no `pull_request_target`. The most recent push CI succeeded on both Node 20 and 22. The unprotected main and the missing release-artifact smoke/provenance are AUD-016 and 017. |
+| Database | There is no DB driver, SQL, ORM, migration, credential, or persistence service. SQL injection and DB privilege issues do not apply. |
+| Third-party integrations | The application's only explicit external call is the fixed Anthropic API. No URL fetch, unsafe redirect, or SSRF path was found. The product characteristic that input document content is sent to the API must be clearly disclosed to users. |
+| LLM/AI and prompt injection | AUD-003 through 006, 008, 009, and 013 are the core. Accuracy evaluation, instruction safety, and evaluation-data independence must be designed as separate controls. |
+| Sensitive-data leakage | Source text is sent to the external API in the outline/distill/qaGen prompts. Link and manifest manipulation can extend this to files outside the intended scope. The manifest stores source quotes and reference answers in plain text. |
+| Logging and monitoring | Normal output does not log the entire source text, but there is no structured audit log, per-stage error and cost observability, or redaction policy. See AUD-015. |
+| Operational deployment | Atomic output replacement, change detection, clean-install smoke, provenance, and protected release approval are lacking. See AUD-007, 012, 016, and 017. |
+| XSS/CSRF/SSRF | With no web rendering, cookie sessions, or user-supplied URL requests, no directly applicable path was found. If another web service renders the generated Markdown, that renderer is a separate trust boundary. |
+| File upload | There is no HTTP upload. The corresponding local file ingestion risks are AUD-002 and 014. |
+| Rate limiting | With no public request endpoint, per-IP limits do not apply. The cost-cap problem for the user's API key is recorded in AUD-009. |
+| Privilege escalation | No acquisition of OS administrator privileges was confirmed. The promotion of data into system instructions is AUD-003. |
 
-## 8. 아키텍처 평가
+## 8. Architecture assessment
 
-현재 계층 분리는 명확하다.
+The current layer separation is clear.
 
 ```text
 CLI → core pipeline/gate → adapters
@@ -238,17 +238,17 @@ CLI → core pipeline/gate → adapters
           assembled skill + manifest
 ```
 
-`core`가 파일 IO와 SDK에 직접 의존하지 않고 `DocumentExtractor`, `LlmProvider`, `Clock` 인터페이스를 사용하는 점은 테스트 가능성과 유지보수성에 유리하다. Claude SDK의 base URL 고정, 디버그 로깅 비활성화, SDK 재시도 기본 0, answerer의 정상 compile 경로에서 한 챕터만 로드하는 구현도 긍정적이다.
+That `core` does not depend directly on file IO or the SDK but uses the `DocumentExtractor`, `LlmProvider`, and `Clock` interfaces benefits testability and maintainability. The fixed base URL of the Claude SDK, disabled debug logging, the SDK retry default of 0, and the implementation that loads only one chapter into the answerer on the normal compile path are also positives.
 
-그러나 현재 신뢰 경계는 타입 계층과 일치하지 않는다. 다음 값들은 모두 비신뢰 데이터지만 타입상 검증된 도메인 객체가 된 후 권한 있는 결정에 사용된다.
+The current trust boundary, however, does not coincide with the type layers. The following values are all untrusted data, yet after becoming type-level validated domain objects they are used in privileged decisions.
 
 ```text
-원문 → LLM plan → 파일 경로 / 검증 모집단
-원문 → LLM distill → 설치되는 스킬 지시
-외부 manifest → 허용 챕터 / 정답 / 과거 PASS
+source text → LLM plan → file paths / verification population
+source text → LLM distill → installed skill instructions
+external manifest → allowed chapters / reference answers / past PASS
 ```
 
-권장 목표 구조는 비신뢰 모델 출력, 검증된 계획, 검증 기준, 설치 산출물의 타입과 단계가 구분되는 형태다.
+The recommended target structure separates the types and stages of untrusted model output, validated plan, verification baseline, and installed output.
 
 ```text
 Untrusted input
@@ -261,22 +261,22 @@ Untrusted input
   → explicit install
 ```
 
-## 9. 우선순위별 개선 순서
+## 9. Improvement order by priority
 
-1. AUD-001·002를 처리해 파일시스템 경계를 닫는다.
-2. AUD-004·005·006·008·011로 평가 모집단, 최소 커버리지, manifest 및 비용 상한을 결정론적으로 강제한다.
-3. AUD-003·013으로 프롬프트 역할과 명령 안전성 경계를 분리한다.
-4. AUD-007·010·012로 산출물 세대, 원자적 쓰기, 구조 검증과 변경 탐지를 연결한다.
-5. AUD-015·016·017·018로 운영 관측, CI 강제, 배포물 검증과 비밀 탐지를 강화한다.
-6. AUD-019·020으로 지원 범위와 문서 상태를 맞춘다.
+1. Address AUD-001 and 002 to close the filesystem boundary.
+2. Use AUD-004, 005, 006, 008, and 011 to deterministically enforce the evaluation population, minimum coverage, the manifest, and cost caps.
+3. Use AUD-003 and 013 to separate prompt roles and the instruction-safety boundary.
+4. Use AUD-007, 010, and 012 to connect output generations, atomic writes, structural validation, and change detection.
+5. Use AUD-015, 016, 017, and 018 to strengthen operational observability, CI enforcement, release-artifact verification, and secret detection.
+6. Use AUD-019 and 020 to align the support range and the document state.
 
-## 10. 검증 기록과 제한
+## 10. Verification record and limitations
 
-- 저장소의 `src/`, `tests/`, `scripts/`, `docs/`, 설정, CI workflow, package metadata와 lockfile을 검토했다.
-- 이전 감사와 이번 감사에서 메모리 내 모의 LLM·가상 파일시스템으로 경로 탈출, 섹션/QA 누락 통과, threshold 0 통과, manifest의 정답 유입, 비정상 grader 판정, 부분 쓰기 및 오류 관측 중단을 재현했다.
-- 실제 개인 파일 접근, 파괴적 링크 공격, zip bomb, 실 LLM 프롬프트 공격, 실제 npm 배포는 수행하지 않았다.
-- GitHub API 읽기 결과 저장소는 private, default branch는 main, main 보호는 false였다. rulesets 조회는 현재 private 저장소 플랜 제한으로 403이어서 별도 ruleset 존재 여부를 확인하지 못했다. Actions 기본 workflow 권한은 read였고 PR 승인 권한은 false였다.
-- 최근 현재 커밋의 push CI에서 Node 20·22 작업이 모두 성공했고 각 작업은 `npm ci`, `npm run check`, build, tarball 검사를 완료했다.
-- npm 보안 레지스트리 감사 결과는 알려진 취약점 0건이었다.
-- 현재 추적 파일 95개와 Git 이력 22개 커밋의 텍스트 blob 144개를 제한된 API 키/private-key 패턴으로 검사했고 일치 항목은 없었다. 모든 비밀 형식과 삭제된 reflog, 로컬 미추적 파일까지 포괄하는 검사는 아니다.
-- 코드와 기존 문서는 변경하지 않았다. 요청된 이 감사 보고서만 `docs/003_SECURITY_ARCHITECTURE_AUDIT.md`로 추가한다.
+- The repository's `src/`, `tests/`, `scripts/`, `docs/`, configuration, CI workflow, package metadata, and lockfile were reviewed.
+- Across the previous audit and this one, path escape, passing with omitted sections/QA, passing with threshold 0, reference-answer leakage from the manifest, abnormal grader verdicts, partial writes, and the loss of error observability were reproduced with an in-memory mock LLM and virtual filesystem.
+- No actual access to personal files, destructive link attacks, zip bombs, real-LLM prompt attacks, or actual npm publishing were performed.
+- Per a GitHub API read, the repository was private, the default branch was main, and main protection was false. The rulesets query returned 403 due to the current private-repository plan restriction, so the existence of a separate ruleset could not be confirmed. The default Actions workflow permission was read and the PR approval permission was false.
+- In the most recent push CI for the current commit, both the Node 20 and Node 22 jobs succeeded, and each job completed `npm ci`, `npm run check`, build, and the tarball check.
+- The npm security registry audit reported 0 known vulnerabilities.
+- The 95 currently tracked files and 144 text blobs across 22 commits of Git history were scanned with a limited set of API-key/private-key patterns and no matches were found. This is not a scan that covers every secret format, deleted reflogs, or local untracked files.
+- No code or existing documents were changed. Only this requested audit report was added as `docs/003_SECURITY_ARCHITECTURE_AUDIT.md`.
