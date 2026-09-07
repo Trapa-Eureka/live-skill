@@ -202,9 +202,10 @@
 
 ### G. 오류 처리·관측성 — Medium
 
-#### G1 — CLI 공통 오류 경계 · 상태: TODO · 원본: 001-017, AUD-015
+#### G1 — CLI 공통 오류 경계 · 상태: DONE(2026-09-07) · 원본: 001-017, AUD-015
 - 목표: compile/eval/smoke 공통 오류 경계 — `LlmProviderError.kind`·retryable·실패 단계를 사용자 메시지+종료코드로, 그 시점까지의 비용 요약 유지. 외부 오류 문구는 길이 제한·제어문자 정규화, 키·원문 미출력.
-- 완료 기준: [ ] `rate_limit` 주입 시 메시지+비용 요약 출력 테스트(3경로) [ ] check 통과
+- 완료(2026-09-07, PR #39): 파이프라인 `guarded(stage, …)`가 `LlmProviderError`를 `llm_failed`(단계·종류·retryable·다듬은 문구·그때까지 호출 수)로 변환, `formatCompileFailure`/`formatLlmProviderError`가 종류별 한국어 안내(auth/rate_limit/network/server/bad_response/refusal/unknown)로 출력 — compile·smoke·eval 3경로. `sanitizeExternalText`(제어문자 제거·개행 접기·`sk-…`/credential 필드 가리기·200자)로 바깥 문구 위생. `cli/index.ts` 최상위 경계 `describeTopLevelError`: `ConfigError`(신설, `loadConfig`) → 설정 오류 종료 1, 그 밖 → 내부 오류 종료 2. `ScriptBuilder.fail(role, error)`로 실패 주입. DESIGN §6 기록(종료코드 규약 0/1/2).
+- 완료 기준: [x] `rate_limit` 주입 시 메시지+비용 요약 출력 테스트(3경로: compile 종료 1·미배포·"LLM 호출 2회"·키 가림·제어문자 없음, eval 재사용 "LLM 호출 2회", smoke "비용 요약: LLM 호출 3회"; 파이프라인 `llm_failed` 형태·refusal 비재시도·비provider 예외는 통과; sanitizer·최상위 경계 단위) [x] check 통과(28 files·476 tests)
 
 ### H. CI·배포 파이프라인 — Medium/Low
 

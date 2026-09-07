@@ -6,6 +6,7 @@ import { sha256Hex } from "../src/core/hash.js";
 import { trackCost } from "../src/core/costTracker.js";
 import { createExtractors } from "../src/adapters/extractors/index.js";
 import { FsTargetError } from "../src/adapters/fsTargets.js";
+import { LlmProviderError } from "../src/core/llmError.js";
 import { FixtureExtractor } from "../src/mocks/fixtureExtractor.js";
 import { script } from "../src/mocks/scriptedLlm.js";
 import { runCompile, type CompileDeps } from "../src/cli/compile.js";
@@ -241,6 +242,23 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     expect(code).toBe(0);
     expect(captured.all.join("\n")).toContain("PASSED");
     llm.assertExhausted(); // qaGen 큐를 아예 안 건드렸다는 증거 — 대본에도 안 줬다
+  });
+
+  it("a provider failure while re-grading ends with a human message and the calls made so far (G1)", async () => {
+    const captured = lines();
+    const llm = script()
+      .selectChapter(chapterFile.path)
+      .fail("answerer", new LlmProviderError("network", true, "ECONNRESET"))
+      .build();
+    const code = await runEval({ skillDir: "dir" }, baseDeps({ out: captured.out, llm }));
+    expect(code).toBe(1);
+    const text = captured.all.join("\n");
+    expect(text).toContain(
+      "재채점 중단 — 재채점 중 LLM 호출 실패: 네트워크 오류(network, 재시도 가능)",
+    );
+    expect(text).toContain("LLM 호출 2회"); // 선택 1 + 실패한 답변 1
+    expect(text).toContain("제공자 메시지: ECONNRESET");
+    llm.assertExhausted();
   });
 
   it("with --source, re-extracts and runs qaGen fresh", async () => {
@@ -744,6 +762,46 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     const text = captured.all.join("\n");
     expect(text).toContain("검증: PASSED");
     expect(text).toContain("[WARNING] chapters/ch01-a.md (low_anchor_ratio)");
+  });
+
+  // G1 (001-017·AUD-015, 완료 기준): provider 실패는 스택이 아니라 단계·종류·재시도 가능 여부·호출 수·수정 방법.
+  it("a rate_limit thrown mid-run ends with a human message, the calls made so far, exit 1 and no write (G1)", async () => {
+    const captured = lines();
+    const writes: string[] = [];
+    const llm = script()
+      .outline(plan)
+      .fail(
+        "distill",
+        new LlmProviderError(
+          "rate_limit",
+          true,
+          "429 Too Many Requests sk-ant-api03-SECRETSECRETSECRET",
+        ),
+      )
+      .build();
+    const code = await runCompile(
+      { paths: ["manual.md"], target: "claude", noGate: false, force: false },
+      baseDeps({
+        out: captured.out,
+        llm,
+        writeSkill: (dir) => {
+          writes.push(dir);
+          return Promise.resolve();
+        },
+      }),
+    );
+    expect(code).toBe(1);
+    expect(writes).toEqual([]);
+    const text = captured.all.join("\n");
+    expect(text).toContain(
+      "컴파일 실패 — 증류 중 LLM 호출 실패: 요청 한도 초과(rate limit)(rate_limit, 재시도 가능)",
+    );
+    expect(text).toContain("LLM 호출 2회");
+    expect(text).toContain("수정 방법: 잠시 뒤 같은 명령을 다시 실행하세요.");
+    expect(text).toContain("제공자 메시지: 429 Too Many Requests sk-***");
+    expect(text).not.toContain("SECRET");
+    expect(text.replace(/\n/gu, "")).not.toMatch(/\p{Cc}/u); // 줄바꿈 말고는 제어문자 없음
+    llm.assertExhausted();
   });
 
   it("refuses oversized input before reading a single file, with the adapter's fix message (D3)", async () => {

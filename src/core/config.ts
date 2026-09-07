@@ -39,6 +39,14 @@ const configSchema = z.object({
   budgets: budgetsSchema,
 });
 
+/** 사용자 설정(env) 오류 — CLI 최상위 경계가 "설정 오류"로 보고한다(G1). 메시지는 원인 + 수정 방법. */
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigError";
+  }
+}
+
 export type Budgets = z.infer<typeof budgetsSchema>;
 export type Config = z.infer<typeof configSchema>;
 
@@ -62,7 +70,7 @@ function parseNumberEnv(name: string, raw: string | undefined): number | undefin
   if (trimmed === undefined || trimmed === "") return undefined;
   const n = Number(trimmed);
   if (!Number.isFinite(n)) {
-    throw new Error(
+    throw new ConfigError(
       `${name} must be a number, got "${trimmed}". Fix: set ${name} to a valid number in .env, or remove it to use the default.`,
     );
   }
@@ -89,7 +97,7 @@ export function loadConfig(env: EnvLike): Config {
     const detail = result.error.issues
       .map((i) => `${i.path.join(".") || "config"}: ${i.message}`)
       .join("; ");
-    throw new Error(`invalid configuration — ${detail}`);
+    throw new ConfigError(`invalid configuration — ${detail}`);
   }
   return result.data;
 }

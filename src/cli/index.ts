@@ -16,6 +16,7 @@ import { createExtractors } from "../adapters/extractors/index.js";
 import { loadConfig } from "../core/index.js";
 import { PACKAGE_VERSION } from "../version.js";
 import { runCompile } from "./compile.js";
+import { describeTopLevelError } from "./errorBoundary.js";
 import { runEval } from "./eval.js";
 import { runReport } from "./report.js";
 import { runValidate } from "./validate.js";
@@ -120,4 +121,11 @@ program
     process.exitCode = await runReport(skillDir, { out, readManifest, readSkillDir });
   });
 
-await program.parseAsync(process.argv);
+// G1: 여기까지 올라오는 예외는 설정 오류(종료 1)거나 버그(종료 2) — 스택 대신 한 줄과 수정 방법.
+try {
+  await program.parseAsync(process.argv);
+} catch (e) {
+  const failure = describeTopLevelError(e);
+  console.error(failure.message);
+  process.exitCode = failure.exitCode;
+}

@@ -26,6 +26,8 @@ export class UnknownRoleError extends Error {
 interface ScriptEntry {
   label?: string | undefined;
   value: string;
+  /** 있으면 이 차례에 응답 대신 이 오류로 거부한다(G1 — provider 실패 주입). */
+  error?: Error | undefined;
 }
 
 export interface RecordedCall {
@@ -57,6 +59,7 @@ export class ScriptedLlm implements LlmProvider {
     this.calls.push({ role, ...req });
     const entry = this.queues[role].shift();
     if (entry === undefined) return Promise.reject(new ScriptExhaustedError(role));
+    if (entry.error !== undefined) return Promise.reject(entry.error);
     return Promise.resolve(entry.value);
   }
 
@@ -119,6 +122,12 @@ export class ScriptBuilder {
 
   grade(verdict: "correct" | "wrong", label?: string): this {
     this.queues.grader.push({ label, value: verdict.toUpperCase() });
+    return this;
+  }
+
+  /** 해당 역할의 다음 차례에 응답 대신 error로 거부한다 — provider 실패(rate limit 등)를 흉내낼 때(G1). */
+  fail(role: PromptRole, error: Error, label?: string): this {
+    this.queues[role].push({ label: label ?? `fail:${error.name}`, value: "", error });
     return this;
   }
 

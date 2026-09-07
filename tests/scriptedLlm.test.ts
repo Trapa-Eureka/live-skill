@@ -95,3 +95,21 @@ describe("ScriptedLlm — assertExhausted", () => {
     }).not.toThrow();
   });
 });
+
+describe("ScriptBuilder.fail (G1 — provider 실패 주입)", () => {
+  it("rejects with the given error at that turn, records the call, and continues with later entries", async () => {
+    const boom = new Error("simulated provider failure");
+    boom.name = "LlmProviderError";
+    const llm = script()
+      .outline({ slug: "a", title: "A", chapters: [] })
+      .fail("outline", boom)
+      .outline({ slug: "b", title: "B", chapters: [] })
+      .build();
+    const req = { system: "[live-skill:outline] tag", prompt: "p", maxTokens: 10 };
+    await expect(llm.complete(req)).resolves.toContain('"a"');
+    await expect(llm.complete(req)).rejects.toBe(boom);
+    await expect(llm.complete(req)).resolves.toContain('"b"');
+    expect(llm.calls).toHaveLength(3);
+    llm.assertExhausted();
+  });
+});

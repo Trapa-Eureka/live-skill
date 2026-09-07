@@ -11,6 +11,21 @@ export function stripControlChars(text: string): string {
 }
 
 /** 한 줄 필드(제목·id) 검사용 — 제어문자(개행 포함)가 하나도 없어야 한다. */
+/** 바깥에서 온 오류 문구를 출력에 싣기 전 다듬는다(G1, AUD-015): 제어문자·개행은 공백으로, 키처럼 보이는 토큰은 가리고,
+ * 길이를 제한한다 — API가 돌려준 문장이 터미널 제어 시퀀스나 키를 실어 나르지 못하게. */
+export const MAX_EXTERNAL_TEXT_CHARS = 200;
+const KEY_LIKE = /\bsk-[A-Za-z0-9_-]{8,}/gu;
+const CREDENTIAL_FIELD = /\b(api[_-]?key|authorization|bearer|token)\b(\s*[:=]\s*)(?:bearer\s+)?\S+/giu;
+export function sanitizeExternalText(text: string, maxChars = MAX_EXTERNAL_TEXT_CHARS): string {
+  const cleaned = stripControlChars(text)
+    .replace(/[\n\r\t]+/gu, " ")
+    .replace(KEY_LIKE, "sk-***")
+    .replace(CREDENTIAL_FIELD, "$1$2***")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return cleaned.length > maxChars ? `${cleaned.slice(0, maxChars)}…` : cleaned;
+}
+
 export const SINGLE_LINE_PATTERN = /^[^\p{Cc}]+$/u;
 
 /** 여러 줄 필드(질문·답변·인용) 검사용 — 개행·탭만 허용, 다른 제어문자는 거부. */

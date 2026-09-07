@@ -1,6 +1,8 @@
 // 게이트/검증 리포트를 사람이 읽을 텍스트로 바꾼다 — 순수 문자열 포맷팅, 외부 IO 없음. `report`/`validate`/
 // `compile`/`eval` CLI가 전부 이 함수들만 호출한다("cli는 조립만", DESIGN §6).
 import type { OutputIntegrity } from "./integrity.js";
+import type { LlmErrorKind, LlmProviderError } from "./llmError.js";
+import { sanitizeExternalText } from "./modelText.js";
 import type { PipelineError } from "./pipeline.js";
 import type { PopulationMatch } from "./sources.js";
 import type { GateReport } from "./types.js";
@@ -102,8 +104,64 @@ export function formatSkippedGate(): string {
   return "게이트: SKIPPED (--no-gate) — 산출물은 unverified 표시로 배포됐습니다.";
 }
 
-/** 파이프라인 실패 한 줄 + (구조 검증 실패면) 어느 파일이 왜 걸렸는지 리포트까지(E1). compile·smoke 공용. */
+const LLM_ERROR_KO: Record<LlmErrorKind, { what: string; fix: string }> = {
+  auth: { what: "인증 실패", fix: ".env의 ANTHROPIC_API_KEY를 확인하세요(.env.example 참고)." },
+  rate_limit: {
+    what: "요청 한도 초과(rate limit)",
+    fix: "잠시 뒤 같은 명령을 다시 실행하세요. 호출 수를 줄이려면 QA_PER_SECTION을 낮추세요.",
+  },
+  network: { what: "네트워크 오류", fix: "네트워크·프록시를 확인하고 다시 실행하세요." },
+  server: { what: "제공자 서버 오류", fix: "제공자 장애입니다 — 잠시 뒤 다시 실행하세요." },
+  bad_response: {
+    what: "응답 형식 이상",
+    fix: "다시 실행하세요. 반복되면 MODEL을 바꿔 보세요.",
+  },
+  refusal: {
+    what: "모델 거부",
+    fix: "모델이 이 내용을 거부했습니다 — 원문을 검토하세요(재시도하지 않습니다).",
+  },
+  unknown: {
+    what: "알 수 없는 오류",
+    fix: "다시 실행하세요. 반복되면 아래 메시지와 함께 이슈로 제보해 주세요.",
+  },
+};
+
+export interface LlmFailureInfo {
+  kind: LlmErrorKind;
+  retryable: boolean;
+  /** 이미 sanitizeExternalText를 거친 문구, 또는 원문(여기서 다시 다듬는다). */
+  detail: string;
+}
+
+/** LLM 실패를 사람 말로(G1): 어느 단계에서 무엇이, 재시도 가능한지, 그때까지 호출 수, 수정 방법. 키·원문은 싣지 않는다. */
+export function formatLlmFailure(stage: string, info: LlmFailureInfo, calls: number): string {
+  const ko = LLM_ERROR_KO[info.kind];
+  const detail = sanitizeExternalText(info.detail);
+  const lines = [
+    `${stage} 중 LLM 호출 실패: ${ko.what}(${info.kind}, ${info.retryable ? "재시도 가능" : "재시도 불가"}) — 그때까지 LLM 호출 ${String(calls)}회, 아무것도 쓰지 않았습니다.`,
+    `수정 방법: ${ko.fix}`,
+  ];
+  if (detail !== "" && detail !== info.kind) lines.push(`제공자 메시지: ${detail}`);
+  return lines.join("\n");
+}
+
+/** LlmProviderError 인스턴스에서 바로(eval처럼 파이프라인 밖에서 잡은 경우). */
+export function formatLlmProviderError(stage: string, e: LlmProviderError, calls: number): string {
+  return formatLlmFailure(
+    stage,
+    { kind: e.kind, retryable: e.retryable, detail: e.message },
+    calls,
+  );
+}
+
+const STAGE_KO: Record<string, string> = { outline: "아웃라인", distill: "증류", gate: "게이트" };
+
+/** 파이프라인 실패 한 줄 + (구조 검증 실패면) 어느 파일이 왜 걸렸는지 리포트까지(E1), (LLM 실패면) 단계·종류·
+ * 재시도 가능 여부·호출 수·수정 방법(G1). compile·smoke 공용. */
 export function formatCompileFailure(error: PipelineError): string {
+  if (error.kind === "llm_failed") {
+    return `컴파일 실패 — ${formatLlmFailure(STAGE_KO[error.stage] ?? error.stage, error.error, error.calls)}`;
+  }
   const head = `컴파일 실패: ${error.message}`;
   if (error.kind !== "validation_failed") return head;
   return `${head}\n${formatValidationReport(error.report)}`;
