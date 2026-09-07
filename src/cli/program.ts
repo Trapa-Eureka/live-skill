@@ -1,6 +1,7 @@
-// commander 프로그램 정의 — 로직 없음(CLAUDE.md 컨벤션: cli/는 조립만). 실제 IO는 adapters/, 실제 파이프라인·게이트
-// 판단은 core/에 있다. index.ts가 .env 로드·오류 경계를 두르고 이 프로그램을 실행한다. 정의를 여기로 뽑은 이유(I1):
-// 옵션 검증(`--target`의 choices)을 프로세스를 띄우지 않고 테스트하기 위해.
+// commander program definition, no logic (CLAUDE.md convention: cli/ is assembly only). Real IO lives
+// in adapters/, and the real pipeline/gate decisions in core/. index.ts loads .env, wraps the error
+// boundary, and runs this program. The definition was pulled out here (I1) so option validation
+// (the `--target` choices) can be tested without spawning a process.
 import { Command, Option } from "commander";
 import { ClaudeLlmProvider } from "../adapters/llmProvider.js";
 import {
@@ -31,7 +32,7 @@ function requireApiKey(): string {
   const key = process.env.ANTHROPIC_API_KEY;
   if (key === undefined || key === "") {
     console.error(
-      "ANTHROPIC_API_KEY가 설정되지 않았습니다. 수정 방법: .env.example을 .env로 복사하고 키를 채우세요.",
+      "ANTHROPIC_API_KEY is not set. Fix: copy .env.example to .env and fill in the key.",
     );
     process.exit(1);
   }
@@ -42,22 +43,25 @@ export function buildProgram(): Command {
   const program = new Command();
   program
     .name("live-skill")
-    .description("문서·폴더·URL을 검증된 에이전트 스킬로 컴파일하는 CLI")
+    .description("Compile documents, folders, and URLs into verified agent skills")
     .version(PACKAGE_VERSION);
 
   program
     .command("compile")
-    .description("문서/폴더/글롭을 Agent Skills 표준 스킬로 컴파일 + 품질 게이트")
-    .argument("<paths...>", "컴파일할 파일/폴더")
-    .option("--out <dir>", "출력 디렉터리")
-    // I1(001-018): 예전엔 오탈자("claud")가 조용히 claude로 처리됐다 — choices가 실행 전에 거부한다.
+    .description(
+      "Compile files/folders/globs into an Agent Skills-standard skill and run the quality gate",
+    )
+    .argument("<paths...>", "files or folders to compile")
+    .option("--out <dir>", "output directory")
+    // I1(001-018): a typo ("claud") used to be silently treated as claude; choices reject it before
+    // anything runs.
     .addOption(
-      new Option("--target <target>", "타깃 스킬 디렉터리")
+      new Option("--target <target>", "target skill directory")
         .choices([...SKILL_TARGETS])
         .default("claude"),
     )
-    .option("--no-gate", "품질 게이트 건너뛰기 (산출물에 unverified 표시)")
-    .option("--force", "기존 스킬 디렉터리 덮어쓰기 허용")
+    .option("--no-gate", "skip the quality gate (the output is marked unverified)")
+    .option("--force", "allow overwriting an existing skill directory")
     .action(
       async (
         paths: string[],
@@ -90,8 +94,8 @@ export function buildProgram(): Command {
 
   program
     .command("validate")
-    .description("스킬 디렉터리 구조 검증만 (LLM 0회)")
-    .argument("<skillDir>", "검증할 스킬 디렉터리")
+    .description("Validate a skill directory's structure only (no LLM calls)")
+    .argument("<skillDir>", "skill directory to validate")
     .action(async (skillDir: string) => {
       const config = loadConfig(process.env);
       process.exitCode = await runValidate(skillDir, {
@@ -103,9 +107,12 @@ export function buildProgram(): Command {
 
   program
     .command("eval")
-    .description("기존 스킬 재채점")
-    .argument("<skillDir>", "재채점할 스킬 디렉터리")
-    .option("--source <paths...>", "재채점에 쓸 원문 경로 (미지정 시 manifest의 QA 재사용)")
+    .description("Re-grade an existing skill")
+    .argument("<skillDir>", "skill directory to re-grade")
+    .option(
+      "--source <paths...>",
+      "source documents to re-grade against (default: reuse the QA in the manifest)",
+    )
     .action(async (skillDir: string, options: { source?: string[] }) => {
       const config = loadConfig(process.env);
       process.exitCode = await runEval(
@@ -125,8 +132,8 @@ export function buildProgram(): Command {
 
   program
     .command("report")
-    .description("마지막 GateReport 사람용 출력")
-    .argument("[skillDir]", "스킬 디렉터리 (미지정 시 현재 디렉터리)")
+    .description("Print the last GateReport in human-readable form")
+    .argument("[skillDir]", "skill directory (default: current directory)")
     .action(async (skillDir: string | undefined) => {
       process.exitCode = await runReport(skillDir, { out, readManifest, readSkillDir });
     });

@@ -1,7 +1,9 @@
-// 제한된 동시성 map(DESIGN §6 D3). 순수 스케줄링만 — 실제 IO는 호출자가 fn으로 넘긴다.
-// 입력 순서를 보존하고, 하나가 실패하면 새 작업은 더 시작하지 않는다(진행 중인 것은 끝나도록 둔다).
+// Bounded-concurrency map (DESIGN §6 D3). Pure scheduling only: the caller passes the actual IO
+// as fn. Preserves input order, and once one item fails no new item is started (in-flight items
+// are allowed to finish).
 
-/** items를 입력 순서대로 fn에 넘기되 동시에 최대 limit개만 진행한다. 결과는 입력 순서. */
+/** Passes items to fn in input order with at most `limit` in flight at once. Results are in input
+ * order. */
 export async function mapConcurrent<T, R>(
   items: readonly T[],
   limit: number,
@@ -11,7 +13,7 @@ export async function mapConcurrent<T, R>(
     throw new RangeError(`mapConcurrent: limit must be a positive integer, got ${String(limit)}`);
   }
   const results: R[] = [];
-  const queue = items.entries(); // 워커들이 공유하는 단일 이터레이터 — 각 항목은 정확히 한 워커가 집는다
+  const queue = items.entries(); // one iterator shared by all workers: each item is taken by exactly one worker
   let failed = false;
 
   async function worker(): Promise<void> {

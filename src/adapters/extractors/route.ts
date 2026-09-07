@@ -1,4 +1,4 @@
-// MIME/확장자 기반 라우팅 — 결정론, 외부 IO 없음.
+// MIME/extension based routing: deterministic, no external IO.
 import type { DocumentExtractor } from "../../core/index.js";
 
 export function hasExtension(name: string, exts: readonly string[]): boolean {
@@ -6,7 +6,8 @@ export function hasExtension(name: string, exts: readonly string[]): boolean {
   return exts.some((ext) => lower.endsWith(ext));
 }
 
-/** MIME이 먼저 이긴다 — MIME이 불명(application/octet-stream 등)이면 확장자로 폴백. */
+/** MIME wins first; when the MIME type is uninformative (application/octet-stream etc.), fall back
+ * to the extension. */
 export function findExtractor(
   extractors: readonly DocumentExtractor[],
   mime: string,

@@ -1,11 +1,13 @@
-// LLM 호출 수·추정 토큰 합계를 세고, 상한이 주어지면 실행 중에 강제하는 순수 래퍼(DESIGN §9 T10, §5.1 D1).
-// 감싸인 LlmProvider가 실제 IO를 하고, 여기는 위임 + 카운팅 + 상한 검사만 한다(외부 IO 0 — core 컨벤션 유지).
+// Pure wrapper that counts LLM calls and the estimated token total, and enforces a cap during the run
+// when one is given (DESIGN §9 T10, §5.1 D1). The wrapped LlmProvider does the real IO; this only
+// delegates, counts, and checks the cap (zero external IO, keeping the core convention).
 import { estimateTokens } from "./tokenEstimate.js";
 import type { LlmProvider } from "./types.js";
 
 export interface CostSummary {
   calls: number;
-  /** 실 토크나이저 값이 아니라 tokenEstimate.ts와 같은 근사치 — 대략의 규모 파악용. */
+  /** Not a real tokenizer value but the same approximation as tokenEstimate.ts; for a rough sense of
+   * scale. */
   estimatedTokens: number;
 }
 
@@ -15,11 +17,13 @@ export interface TrackedLlm {
 }
 
 export interface CostTrackerOptions {
-  /** 이 수를 넘기는 호출은 감싸인 LlmProvider에 닿기 전에 LlmCallCapError로 막는다(D1, 가드레일 6). */
+  /** Calls beyond this number are blocked with LlmCallCapError before they reach the wrapped
+   * LlmProvider (D1, guardrail 6). */
   maxCalls?: number;
 }
 
-/** 실행 중 호출 상한에 걸렸을 때 — 상한까지의 호출은 이미 일어났고, 이 호출은 일어나지 않았다. */
+/** Raised when the call cap is hit during the run: the calls up to the cap have already happened, this
+ * one has not. */
 export class LlmCallCapError extends Error {
   readonly calls: number;
   readonly limit: number;
@@ -33,8 +37,9 @@ export class LlmCallCapError extends Error {
   }
 }
 
-/** llm.complete() 호출마다 요청(system+prompt)과 응답 텍스트를 합쳐 추정 토큰에 더한다. maxCalls가 있으면 그
- * 수를 넘기는 호출을 **하기 전에** 막는다 — 사전 추정(§5.1)과 별개로 실제 호출 수를 세는 두 번째 방어선. */
+/** On every llm.complete() call, adds the request (system + prompt) and the response text to the
+ * estimated tokens. When maxCalls is set, a call that would exceed it is blocked **before** it happens:
+ * a second line of defense that counts actual calls, independent of the upfront estimate (§5.1). */
 export function trackCost(llm: LlmProvider, opts: CostTrackerOptions = {}): TrackedLlm {
   let calls = 0;
   let estimatedTokens = 0;

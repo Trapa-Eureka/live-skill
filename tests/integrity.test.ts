@@ -1,4 +1,4 @@
-// E3(DESIGN §5): checkOutputs — manifest가 해시한 파일 집합과 현재 파일을 대조한다. 순수 계산, IO 없음.
+// E3 (DESIGN §5): checkOutputs compares the set of files the manifest hashed against the current files. Pure computation, no IO.
 import { describe, expect, it } from "vitest";
 import {
   checkOutputs,
@@ -57,7 +57,7 @@ describe("checkOutputs", () => {
   it("reports a deleted file as missing → STALE", () => {
     const result = checkOutputs(manifest, [skill, manifestFile]);
     expect(result).toMatchObject({ status: "stale", missing: [chapter.path], modified: [] });
-    expect(formatOutputIntegrity(result)).toContain("없는 파일");
+    expect(formatOutputIntegrity(result)).toContain("Missing files");
   });
 
   it("reports a file the manifest never hashed as unexpected → TAMPERED, which wins over stale", () => {
@@ -69,13 +69,13 @@ describe("checkOutputs", () => {
       modified: [],
       unexpected: [injected.path],
     });
-    const both = checkOutputs(manifest, [skill, injected]); // 챕터 없음 + 침입 파일
+    const both = checkOutputs(manifest, [skill, injected]); // chapter missing + injected file
     expect(both.status).toBe("tampered");
     expect(both.missing).toEqual([chapter.path]);
     const text = formatOutputIntegrity(both);
     expect(text).toContain("TAMPERED");
-    expect(text).toContain("없는 파일");
-    expect(text).toContain("manifest에 없는 파일");
+    expect(text).toContain("Missing files");
+    expect(text).toContain("Files not in manifest");
   });
 
   it("compares content byte-for-byte: a one-character change is a different hash", () => {

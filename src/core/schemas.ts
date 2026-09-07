@@ -1,6 +1,7 @@
-// zod 스키마 — LLM 응답·manifest 파일 IO 경계에서만 쓴다(CLAUDE.md 컨벤션: "LLM 응답·CLI 인자·manifest는
-// 경계에서 zod 파싱"). DistilledChapter는 LLM의 원본 markdown 본문 + 결정론적 앵커 추출 결과라 별도 스키마가
-// 필요 없다.
+// zod schemas, used only at the IO boundaries for LLM responses and the manifest file (CLAUDE.md
+// convention: "LLM responses, CLI args, and the manifest are zod-parsed at the boundary").
+// DistilledChapter needs no schema of its own: it is the LLM's raw markdown body plus deterministic
+// anchor extraction.
 import { z } from "zod";
 import { GATE_THRESHOLD_FLOOR, PASS_EPSILON, decidePassed } from "./gateVerdict.js";
 import { MULTI_LINE_PATTERN, SINGLE_LINE_PATTERN } from "./modelText.js";
@@ -13,8 +14,10 @@ function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   return a.size === b.size && [...a].every((x) => b.has(x));
 }
 
-// C1(DESIGN §4): 모델 출력 필드의 길이·제어문자 제한 — 제목은 프롬프트 데이터 블록과 SKILL.md에, id는 manifest에,
-// QA 문구는 프롬프트·manifest에 그대로 실린다. 개행이 낀 "한 줄 필드"나 제어문자는 형식을 깨는 통로라 경계에서 막는다.
+// C1 (DESIGN §4): length and control-character limits on model output fields. Titles land in prompt
+// data blocks and SKILL.md, ids in the manifest, and QA text in prompts and the manifest, all verbatim.
+// A "single-line field" with an embedded newline, or any control character, is a channel for breaking
+// the format, so it is rejected at the boundary.
 export const MAX_TITLE_CHARS = 200;
 export const MAX_ID_CHARS = 200;
 export const MAX_QA_FIELD_CHARS = 2000;
@@ -31,7 +34,7 @@ const multiLine = (max: number) =>
     .max(max)
     .regex(MULTI_LINE_PATTERN, "control characters other than newline/tab are not allowed");
 
-/** ChapterPlan — outline(SkillPlan)의 챕터 하나. */
+/** ChapterPlan: one chapter of the outline (SkillPlan). */
 export const chapterPlanSchema = z.object({
   id: singleLine(MAX_ID_CHARS),
   file: z.string().min(1),
@@ -39,8 +42,9 @@ export const chapterPlanSchema = z.object({
   sectionIds: z.array(singleLine(MAX_ID_CHARS)).min(1),
 });
 
-/** slug 형식 — 소문자·숫자·하이픈 단일 경로 구성요소(DESIGN §2, A1). `/`·`.`·`..`·절대 경로가 여기서 걸러진다.
- * Agent Skills 표준의 name 규칙(소문자·숫자·하이픈, 64자 이하)과 같다. */
+/** slug format: a single path component of lowercase letters, digits, and hyphens (DESIGN §2, A1).
+ * `/`, `.`, `..`, and absolute paths are filtered here. Same as the Agent Skills standard's name rule
+ * (lowercase, digits, hyphens, at most 64 chars). */
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 export const SLUG_MAX_LENGTH = 64;
 export const slugSchema = z
@@ -48,16 +52,17 @@ export const slugSchema = z
   .max(SLUG_MAX_LENGTH)
   .regex(SLUG_PATTERN, "slug must be lowercase letters, digits and single hyphens only");
 
-/** SkillPlan — outline 단계 LLM 응답. */
+/** SkillPlan: the outline-stage LLM response. */
 export const skillPlanSchema = z.object({
   slug: slugSchema,
   title: singleLine(MAX_TITLE_CHARS),
   chapters: z.array(chapterPlanSchema).min(1),
 });
 
-/** 챕터 파일 경로 형식 — assembler의 `chapterFilePath()`가 만드는 형태만(B3, 가드레일 2): `chapters/` 바로
- * 아래의 슬러그 문자 + `.md`. `manifest.json`·`SKILL.md`·상위 경로·하위 디렉터리는 여기서 걸러진다 — answerer가
- * 로드할 수 있는 파일의 형식적 경계를 manifest가 아니라 코드가 쥔다. */
+/** Chapter file path format: only what the assembler's `chapterFilePath()` produces (B3, guardrail 2),
+ * i.e. slug characters directly under `chapters/` plus `.md`. `manifest.json`, `SKILL.md`, parent
+ * paths, and subdirectories are filtered here, so the code, not the manifest, holds the format boundary
+ * of what the answerer may load. */
 export const CHAPTER_FILE_PATTERN = /^chapters\/[\p{L}\p{N}-]+\.md$/u;
 export const chapterFileSchema = z
   .string()
@@ -66,7 +71,7 @@ export function isChapterFilePath(path: string): boolean {
   return CHAPTER_FILE_PATTERN.test(path);
 }
 
-/** qaGen 단계 LLM 응답 한 항목(id 없음) — gate.ts가 파싱하고 id를 붙인다. */
+/** One item of the qaGen-stage LLM response (no id); gate.ts parses it and assigns the id. */
 export const qaGenItemSchema = z.object({
   question: multiLine(MAX_QA_FIELD_CHARS),
   refAnswer: multiLine(MAX_QA_FIELD_CHARS),
@@ -74,7 +79,7 @@ export const qaGenItemSchema = z.object({
 });
 export const qaGenResponseSchema = z.object({ items: z.array(qaGenItemSchema) });
 
-/** GoldenQA — 검증된 골든 Q&A(manifest.goldenQa). */
+/** GoldenQA: a verified golden Q&A (manifest.goldenQa). */
 export const goldenQaSchema = qaGenItemSchema.extend({
   id: singleLine(MAX_ID_CHARS),
   sectionId: singleLine(MAX_ID_CHARS),
@@ -87,13 +92,14 @@ export const gateFailureReasonSchema = z.enum([
   "qa_generation_failed",
 ]);
 
-/** GateReport — 품질 게이트 최종 리포트, manifest.gate에 내장된다. 형식 검사 뒤 의미 검사(B6, AUD-011):
- * 집계가 서로 맞고, `passed`가 gateVerdict의 판정 규칙과 일치하며, 실패 목록이 로드 이력·coverage와 대응해야
- * 한다 — 조작된 manifest가 `passed=true, passRate=0` 같은 모순으로 report/eval을 속이지 못하게. */
+/** GateReport: the quality gate's final report, embedded as manifest.gate. Semantic checks follow the
+ * shape check (B6, AUD-011): the aggregates must agree with each other, `passed` must match the
+ * gateVerdict rule, and the failure list must correspond to the load history and coverage, so a
+ * tampered manifest cannot fool report/eval with a contradiction like `passed=true, passRate=0`. */
 export const gateReportSchema = z
   .object({
     passRate: z.number().min(0).max(1),
-    threshold: z.number().min(GATE_THRESHOLD_FLOOR).max(1), // 정책 하한(B4) — 하한 아래 임계치로 "통과"한 리포트는 무효
+    threshold: z.number().min(GATE_THRESHOLD_FLOOR).max(1), // policy floor (B4): a report that "passed" against a threshold below it is invalid
     passed: z.boolean(),
     perChapter: z.array(
       z.object({
@@ -208,18 +214,19 @@ export const gateReportSchema = z
     }
   });
 
-/** manifest.goldenQa 개수 상한(D2, SEC-008): 외부 manifest가 문항을 무한정 실어 eval 비용·메모리를 키우지 못하게.
- * 필드 길이 상한(2,000자)과 합쳐 최악 ~6MB. 컴파일 산출물은 섹션 수 × k라 이 값에 한참 못 미친다. */
+/** Cap on the number of manifest.goldenQa entries (D2, SEC-008): an external manifest must not inflate
+ * eval cost and memory with unbounded questions. Combined with the field length cap (2,000 chars), the
+ * worst case is about 6 MB. Compile output is sections × k, far below this. */
 export const MAX_GOLDEN_QA_ENTRIES = 1000;
 
-/** 소문자 16진수 64자 — core/hash.ts sha256Hex의 출력 형식 그대로(B6). */
+/** 64 lowercase hex characters, exactly the output format of core/hash.ts sha256Hex (B6). */
 export const sha256Schema = z
   .string()
   .regex(/^[0-9a-f]{64}$/u, "must be a 64-character lowercase hex SHA-256");
 
-/** Manifest — 컴파일 산출 manifest.json, 파일 IO 경계에서 파싱한다. 의미 검사(B6): 섹션·산출물·골든 QA·
- * 게이트 리포트가 서로를 정확히 가리켜야 한다(chapterFile ∈ outputs, loadHistory ⊆ goldenQa, coverage = 섹션 집합,
- * perChapter = 챕터 파일 집합). */
+/** Manifest: the compiled manifest.json, parsed at the file IO boundary. Semantic checks (B6):
+ * sections, outputs, golden QA, and the gate report must point at each other exactly (chapterFile ∈
+ * outputs, loadHistory ⊆ goldenQa, coverage = the section set, perChapter = the chapter file set). */
 export const manifestSchema = z
   .object({
     version: z.literal(1),
@@ -243,7 +250,8 @@ export const manifestSchema = z
     };
 
     if (!unique(m.outputs)) issue("outputs must be unique", ["outputs"]);
-    // E3: 해시 목록은 outputs와 정확히 같은 파일 집합을 덮어야 한다 — 빠진 파일은 대조 없이 통과할 구멍이 된다.
+    // E3: the hash list must cover exactly the same file set as outputs; a file missing from it is a
+    // hole that passes without being compared.
     const hashPaths = m.outputHashes.map((h) => h.path);
     if (!unique(hashPaths)) issue("outputHashes paths must be unique", ["outputHashes"]);
     if (!sameSet(new Set(hashPaths), new Set(m.outputs))) {

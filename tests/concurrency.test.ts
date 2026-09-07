@@ -1,8 +1,9 @@
-// mapConcurrent — 제한된 동시성 map(core/concurrency.ts, D3). 순수 스케줄링이라 실 IO 없이 검증한다.
+// mapConcurrent: bounded-concurrency map (core/concurrency.ts, D3). Pure scheduling, so it is
+// verified without real IO.
 import { describe, expect, it } from "vitest";
 import { mapConcurrent } from "../src/core/concurrency.js";
 
-/** 이벤트 루프를 한 바퀴 돌려 대기 중인 워커가 다음 항목을 집게 한다. */
+/** Spins the event loop once so a waiting worker picks up the next item. */
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 interface Controlled {
@@ -12,7 +13,8 @@ interface Controlled {
   fn: (n: number) => Promise<number>;
 }
 
-/** 각 항목을 호출자가 명시적으로 풀어줄 때까지 붙잡아 두는 fn — 동시 진행 수를 관찰한다. */
+/** An fn that holds each item until the caller explicitly releases it, to observe how many run at
+ * once. */
 function controlled(): Controlled {
   const started: number[] = [];
   const resolvers = new Map<number, () => void>();
@@ -44,11 +46,11 @@ describe("mapConcurrent", () => {
   it("runs at most `limit` items at once, starts the next as soon as one finishes, keeps input order", async () => {
     const c = controlled();
     const done = mapConcurrent([1, 2, 3, 4, 5], 2, c.fn);
-    expect(c.started).toEqual([1, 2]); // 첫 limit개는 즉시 시작
+    expect(c.started).toEqual([1, 2]); // the first `limit` items start immediately
 
     c.release(2);
     await tick();
-    expect(c.started).toEqual([1, 2, 3]); // 하나 끝나면 하나 더 — 여전히 2개만 진행 중
+    expect(c.started).toEqual([1, 2, 3]); // one finishes, one more starts; still only 2 in flight
 
     c.release(1);
     c.release(3);
@@ -57,7 +59,7 @@ describe("mapConcurrent", () => {
     c.release(5);
     c.release(4);
 
-    expect(await done).toEqual([10, 20, 30, 40, 50]); // 끝난 순서(2,1,3,5,4)가 아니라 입력 순서
+    expect(await done).toEqual([10, 20, 30, 40, 50]); // input order, not completion order (2,1,3,5,4)
     expect(c.peak).toBe(2);
   });
 
@@ -66,9 +68,9 @@ describe("mapConcurrent", () => {
     const boom = new Error("boom");
     const done = mapConcurrent([1, 2, 3, 4], 2, (n) => (n === 2 ? Promise.reject(boom) : c.fn(n)));
     await expect(done).rejects.toBe(boom);
-    c.release(1); // 진행 중이던 1은 끝나도록 두되
+    c.release(1); // the in-flight item 1 is allowed to finish,
     await tick();
-    expect(c.started).toEqual([1]); // 3·4는 시작하지 않는다
+    expect(c.started).toEqual([1]); // but 3 and 4 never start
   });
 
   it("handles an empty input and a limit larger than the input", async () => {

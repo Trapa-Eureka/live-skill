@@ -1,5 +1,6 @@
-// 순수 Result<T, E> 유틸리티 — 외부 IO(추출·LLM 등)의 실패를 예외 대신 값으로 표현한다.
-// msg-agent(../msg-agent/src/adapters/extractors/*.ts)에서 이미 검증된 패턴 (DESIGN.md §2).
+// Pure Result<T, E> utility: failures of external IO (extraction, LLM, ...) are values, not
+// exceptions. A pattern already proven in msg-agent (../msg-agent/src/adapters/extractors/*.ts),
+// DESIGN.md §2.
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 export function ok<T>(value: T): Result<T, never> {

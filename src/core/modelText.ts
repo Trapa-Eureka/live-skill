@@ -1,18 +1,21 @@
-// 모델 출력 텍스트 위생(C1, DESIGN §4). 순수 함수, 외부 IO 없음. 제어문자 범위는 눈에 보이지 않으므로 반드시
-// \u 이스케이프로만 쓴다(리터럴 제어문자를 소스에 넣지 않는다 — 과거 BOM 리터럴 사고와 같은 이유).
+// Model output text hygiene (C1, DESIGN §4). Pure functions, no external IO. Control-character ranges
+// are invisible, so they are written only as \u escapes (never put a literal control character in the
+// source; same reason as the past BOM-literal incident).
 
-// C0 제어문자(개행 U+000A·탭 U+0009 제외)와 DEL(U+007F).
-// eslint-disable-next-line no-control-regex -- 제어문자 제거가 목적이다
+// C0 control characters (except newline U+000A and tab U+0009) and DEL (U+007F).
+// eslint-disable-next-line no-control-regex -- the purpose is to strip control characters
 const CONTROL_EXCEPT_NEWLINE_TAB = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/gu;
 
-/** 개행·탭을 제외한 C0 제어문자와 DEL을 제거한다 — 증류 본문처럼 파일에 그대로 쓰이는 모델 출력에 적용. */
+/** Removes C0 control characters (except newline and tab) and DEL; applied to model output that is
+ * written to files as-is, such as distilled bodies. */
 export function stripControlChars(text: string): string {
   return text.replace(CONTROL_EXCEPT_NEWLINE_TAB, "");
 }
 
-/** 한 줄 필드(제목·id) 검사용 — 제어문자(개행 포함)가 하나도 없어야 한다. */
-/** 바깥에서 온 오류 문구를 출력에 싣기 전 다듬는다(G1, AUD-015): 제어문자·개행은 공백으로, 키처럼 보이는 토큰은 가리고,
- * 길이를 제한한다 — API가 돌려준 문장이 터미널 제어 시퀀스나 키를 실어 나르지 못하게. */
+/** For single-line fields (titles, ids): no control characters at all, newline included. */
+/** Trims an error message coming from outside before putting it into output (G1, AUD-015): control
+ * characters and newlines become spaces, key-like tokens are masked, and the length is capped, so a
+ * sentence returned by the API cannot carry terminal control sequences or keys. */
 export const MAX_EXTERNAL_TEXT_CHARS = 200;
 const KEY_LIKE = /\bsk-[A-Za-z0-9_-]{8,}/gu;
 const CREDENTIAL_FIELD =
@@ -29,6 +32,7 @@ export function sanitizeExternalText(text: string, maxChars = MAX_EXTERNAL_TEXT_
 
 export const SINGLE_LINE_PATTERN = /^[^\p{Cc}]+$/u;
 
-/** 여러 줄 필드(질문·답변·인용) 검사용 — 개행·탭만 허용, 다른 제어문자는 거부. */
-// eslint-disable-next-line no-control-regex -- 제어문자 검사가 목적이다
+/** For multi-line fields (question, answer, quote): only newline and tab are allowed; any other
+ * control character is rejected. */
+// eslint-disable-next-line no-control-regex -- the purpose is to check for control characters
 export const MULTI_LINE_PATTERN = /^[^\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]*$/u;

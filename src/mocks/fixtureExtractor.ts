@@ -1,5 +1,5 @@
-// FixtureExtractor — 확장자를 고정된 ExtractedDoc으로 매핑한다(TESTING §2). 실제 파싱은 하지 않는다.
-// 이식 출처: ../msg-agent/src/mocks/fixtureExtractor.ts.
+// FixtureExtractor maps a file extension to a fixed ExtractedDoc (TESTING §2). It does no real
+// parsing. Ported from ../msg-agent/src/mocks/fixtureExtractor.ts.
 import type { DocumentExtractor, ExtractError, ExtractedDoc, Result } from "../core/index.js";
 import { err, ok, structureText, toExtractedDoc } from "../core/index.js";
 
@@ -15,7 +15,7 @@ export class FixtureExtractor implements DocumentExtractor {
   }
 
   extract(bytes: Uint8Array): Promise<Result<ExtractedDoc, ExtractError>> {
-    // 이 목에서는 "파일명"이 bytes 안에 들어온다: 테스트가 이름을 내용으로 인코딩해 넘긴다.
+    // In this mock the "file name" arrives inside bytes: tests encode the name as the content.
     const name = new TextDecoder().decode(bytes);
     const key = this.keyFor(name);
     const entry = key === undefined ? undefined : this.byExt[key];
@@ -31,7 +31,9 @@ export class FixtureExtractor implements DocumentExtractor {
   }
 }
 
-/** 대략 chars자 분량, sections개 헤딩을 가진 ExtractedDoc을 만든다(예산 초과 등 크기 기반 테스트용). */
+/** Builds an ExtractedDoc of roughly `chars` characters spread over `sections` headings, for
+ * size-based tests such as budget overflow. The "ko" variant is deliberate Korean-language content
+ * (it exercises CJK handling such as token estimation), so its sentence and heading stay Korean. */
 export function syntheticDoc(chars: number, sections = 4, lang: "en" | "ko" = "en"): ExtractedDoc {
   const sentence =
     lang === "en"

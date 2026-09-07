@@ -1,5 +1,6 @@
-// Validator — 구조 검증(DESIGN §3.1), LLM 0회. AssembledFile[]과 형태만 같은 {path, content}[]를 받아
-// assembler 산출물이든 디스크에서 읽은 기존 스킬 디렉터리(파일 읽기는 어댑터 몫, T8)든 똑같이 검사한다.
+// Validator: structural validation (DESIGN §3.1), zero LLM calls. Takes a {path, content}[] that
+// merely shares its shape with AssembledFile[], so it checks assembler output and an existing skill
+// directory read from disk (file reading belongs to the adapter, T8) exactly the same way.
 import { parseFrontmatter } from "./frontmatter.js";
 import { estimateTokens } from "./tokenEstimate.js";
 import type { Budgets } from "./config.js";
@@ -26,7 +27,7 @@ export interface ValidationIssue {
 }
 
 export interface ValidationReport {
-  /** error가 하나도 없을 때만 true — warning은 통과를 막지 않는다(DESIGN §3.1). */
+  /** true only when there is no error at all; warnings do not block passing (DESIGN §3.1). */
   passed: boolean;
   issues: ValidationIssue[];
 }
@@ -60,8 +61,9 @@ function checkBudgets(files: readonly SkillFile[], budgets: Budgets): Validation
   return issues;
 }
 
-/** E2(DESIGN §3.1): 키 존재를 정규식으로 보던 검사를 실제 YAML 파싱 + 타입·값·키 검사로 바꿨다 — 손수 고친 SKILL.md든
- * assembler 산출물이든 Agent Skills 소비자가 읽는 방식 그대로 판정한다. */
+/** E2 (DESIGN §3.1): the old regex check for key presence became real YAML parsing plus type,
+ * value and key checks. A hand-edited SKILL.md and assembler output are both judged exactly the way
+ * an Agent Skills consumer reads them. */
 function checkFrontmatter(files: readonly SkillFile[]): ValidationIssue[] {
   const skillMd = files.find((f) => f.path === "SKILL.md");
   const error = (code: ValidationCode, message: string): ValidationIssue[] => [
@@ -116,7 +118,7 @@ const CHAPTER_LINK_RE = /`(chapters\/[^`\s]+\.md)`/gu;
 
 function checkChapterLinks(files: readonly SkillFile[]): ValidationIssue[] {
   const skillMd = files.find((f) => f.path === "SKILL.md");
-  if (skillMd === undefined) return []; // 프런트매터 검사가 이미 이 경우를 지목한다
+  if (skillMd === undefined) return []; // the frontmatter check already reports this case
   const known = new Set(files.map((f) => f.path));
   const issues: ValidationIssue[] = [];
   const seen = new Set<string>();
@@ -136,7 +138,8 @@ function checkChapterLinks(files: readonly SkillFile[]): ValidationIssue[] {
   return issues;
 }
 
-/** 헤딩·빈 줄·인라인 표기(용어/패턴/규칙)만 있는 줄은 "주장"이 아니므로 앵커 비율 계산에서 뺀다. */
+/** A blank line or a heading is not a "claim", so it is left out of the anchor-ratio math. Every
+ * other line (inline term/pattern/rule markers included) counts and is expected to carry an anchor. */
 function isSubstantiveLine(line: string): boolean {
   const t = line.trim();
   if (t === "") return false;
@@ -165,11 +168,12 @@ function checkAnchorRatio(files: readonly SkillFile[], minAnchorRatio: number): 
 }
 
 export interface ValidateOptions {
-  /** 기본 0.5(DESIGN §3.1) — 챕터당 앵커 있는 줄의 최소 비율. 미달 시 warning. */
+  /** Defaults to 0.5 (DESIGN §3.1): the minimum share of anchored lines per chapter. Below it, a
+   * warning. */
   minAnchorRatio?: number;
 }
 
-/** DESIGN §3.1의 4가지 검사를 전부 돌려 하나의 리포트로 합친다. */
+/** Runs all four checks of DESIGN §3.1 and merges them into one report. */
 export function validateSkill(
   files: readonly SkillFile[],
   budgets: Budgets,

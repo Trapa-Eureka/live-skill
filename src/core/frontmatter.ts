@@ -1,17 +1,20 @@
-// SKILL.md YAML 프런트매터 — 직렬화와 파싱 한 쌍(DESIGN §3.1 E2). 예전엔 assembler가 `description: ${title}`처럼
-// 값을 그대로 이어 붙이고 validator는 `^name:` 키 존재만 봤다 — `Guide: Setup` 같은 제목은 YAML을 깨뜨리는데도
-// 자체 검증을 통과해 배포됐다. 이제 진짜 YAML 라이브러리로 쓰고(값은 항상 큰따옴표 — YAML 1.1 파서가 yes/no/null을
-// 불리언·null로 읽는 함정까지 차단) 진짜 YAML 파서로 읽어 타입·값·키를 검사한다. 순수 계산, IO 없음.
+// SKILL.md YAML frontmatter: a serialize/parse pair (DESIGN §3.1 E2). The assembler used to
+// concatenate values verbatim (`description: ${title}`) and the validator only looked for a
+// `^name:` key, so a title like `Guide: Setup` broke the YAML yet passed our own validation and got
+// deployed. Now we write with a real YAML library (values always double-quoted, which also closes
+// the trap of YAML 1.1 parsers reading yes/no/null as booleans/null) and read with a real YAML
+// parser that checks types, values and keys. Pure computation, no IO.
 import { z } from "zod";
 import { YAMLParseError, parse, stringify } from "yaml";
 import { MULTI_LINE_PATTERN } from "./modelText.js";
 import { err, ok, type Result } from "./result.js";
 import { slugSchema } from "./schemas.js";
 
-/** Agent Skills 표준의 description 상한. */
+/** The Agent Skills standard's description limit. */
 export const MAX_DESCRIPTION_CHARS = 1024;
 
-/** Agent Skills 표준이 정의한 프런트매터 키 — 그 밖의 키는 오류가 아니라 경고(표준이 자랄 수 있다). */
+/** Frontmatter keys defined by the Agent Skills standard. Any other key is a warning, not an
+ * error (the standard may grow). */
 export const FRONTMATTER_KNOWN_KEYS: readonly string[] = [
   "name",
   "description",
@@ -22,7 +25,7 @@ export const FRONTMATTER_KNOWN_KEYS: readonly string[] = [
 ];
 
 export interface SkillFrontmatter {
-  /** 스킬 디렉터리 이름과 같은 slug(소문자·숫자·하이픈, 64자 이하). */
+  /** Slug equal to the skill directory name (lowercase, digits, hyphens; at most 64 chars). */
   name: string;
   description: string;
 }
@@ -36,7 +39,8 @@ const frontmatterSchema = z.looseObject({
     .refine((s) => s.trim() !== "", "must not be blank"),
 });
 
-/** `---` 블록 하나를 만든다. 값은 전부 큰따옴표(JSON 호환 이스케이프) — 어떤 제목이든 파싱하면 그대로 돌아온다. */
+/** Builds one `---` block. Every value is double-quoted (JSON-compatible escapes), so any title
+ * parses back verbatim. */
 export function serializeFrontmatter(fields: SkillFrontmatter): string {
   const yaml = stringify(
     { name: fields.name, description: fields.description },
@@ -46,31 +50,34 @@ export function serializeFrontmatter(fields: SkillFrontmatter): string {
 }
 
 export type FrontmatterProblem =
-  /** 파일이 `---` 블록으로 시작하지 않는다. */
+  /** The file does not start with a `---` block. */
   | { kind: "missing_block" }
-  /** 블록은 있지만 YAML로 파싱되지 않는다(`description: Guide: Setup` 등). */
+  /** A block exists but does not parse as YAML (`description: Guide: Setup` and the like). */
   | { kind: "syntax"; detail: string }
-  /** YAML이긴 한데 키-값 맵이 아니다(문자열·목록·빈 블록). */
+  /** Valid YAML, but not a key-value map (a string, a list, an empty block). */
   | { kind: "not_a_map" }
-  /** 필수 키가 없다. */
+  /** A required key is missing. */
   | { kind: "missing_field"; fields: string[] }
-  /** 키는 있지만 타입·값이 틀렸다(숫자 name, 빈 description, slug 아닌 name, 너무 긴 description…). */
+  /** The key exists but its type or value is wrong (numeric name, empty description, non-slug
+   * name, over-long description, ...). */
   | { kind: "invalid_field"; field: string; detail: string };
 
 export interface ParsedFrontmatter {
   fields: SkillFrontmatter;
-  /** 표준에 없는 키 — 호출자가 경고로 보고한다. */
+  /** Keys not in the standard; the caller reports them as warnings. */
   unknownKeys: string[];
-  /** 프런트매터 블록 뒤의 본문. */
+  /** The body after the frontmatter block. */
   body: string;
 }
 
-// 여는 `---` 줄, 내용(없을 수도), 닫는 `---` 줄. 닫는 줄 뒤에는 개행이나 파일 끝.
+// Opening `---` line, content (possibly none), closing `---` line. After the closing line: a
+// newline or end of file.
 const FRONTMATTER_RE = /^---\r?\n(?:([\s\S]*?)\r?\n)?---(?:\r?\n|$)/u;
 
 const REQUIRED_KEYS = ["name", "description"] as const;
 
-/** SKILL.md 전체 내용을 받아 프런트매터를 실제 YAML로 파싱하고 Agent Skills 표준의 필수 키·타입·값을 검사한다. */
+/** Takes the full SKILL.md content, parses the frontmatter as real YAML and checks the required
+ * keys, types and values of the Agent Skills standard. */
 export function parseFrontmatter(content: string): Result<ParsedFrontmatter, FrontmatterProblem> {
   const match = FRONTMATTER_RE.exec(content);
   if (match === null) return err({ kind: "missing_block" });

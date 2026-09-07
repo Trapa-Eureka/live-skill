@@ -1,8 +1,10 @@
 #!/usr/bin/env sh
-# tarball 설치 스모크(H2, AUD-017) — `npm run verify:pack` / prepublishOnly / CI.
-# 소스 트리 테스트가 통과해도 배포된 dist가 빠졌거나(파일 화이트리스트), 실행 권한·shebang·런타임 의존성 문제로
-# `npx live-skill`이 죽을 수 있다. 실제 tgz를 깨끗한 임시 프로젝트에 --omit=dev로 설치해 CLI를 실행해 본다.
-# 레지스트리에 접속하므로(런타임 의존성 설치) vitest에는 넣지 않는다(CLAUDE.md 가드레일 3) — 릴리스 게이트 전용.
+# Tarball install smoke (H2, AUD-017), run by `npm run verify:pack` / prepublishOnly / CI.
+# Even when the source-tree tests pass, `npx live-skill` can still die because the published dist is
+# missing (files allowlist) or because of an executable bit, shebang, or runtime dependency problem.
+# This installs the real tgz into a clean temporary project with --omit=dev and runs the CLI.
+# It contacts the registry (runtime dependency install), so it is not part of vitest (CLAUDE.md
+# guardrail 3); release gate only.
 set -eu
 
 root=$(pwd)

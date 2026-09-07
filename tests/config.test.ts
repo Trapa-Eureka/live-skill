@@ -45,7 +45,8 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ GATE_THRESHOLD: "1.5" })).toThrow(/GATE_THRESHOLD/u);
   });
 
-  // B4 (SEC-007·AUD-008, 완료 기준): 하한 0.5는 정책 — 0으로 두면 질문 0개도 통과하던 구멍.
+  // B4 (SEC-007, AUD-008, completion criterion): the 0.5 floor is policy. Set to 0, even zero
+  // questions used to pass.
   it.each(["0", "0.49", "-1"])(
     "rejects GATE_THRESHOLD=%s below the policy floor with a cause+fix message",
     (value) => {

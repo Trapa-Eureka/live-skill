@@ -15,7 +15,7 @@ describe("normalizeText", () => {
 
 describe("normalizeText — HTML comments are not body text (B1)", () => {
   it("strips <!-- --> comments, including multi-line ones, so a comment-only preamble yields no section", () => {
-    const md = "<!-- 자체 제작 문서\n   두 줄 주석 -->\n\n# Title\n\nBody.";
+    const md = "<!-- self-made document\n   two-line comment -->\n\n# Title\n\nBody.";
     expect(normalizeText(md)).toBe("# Title\n\nBody.");
     const sections = structureText(md);
     expect(sections.map((s) => s.heading)).toEqual(["Title"]);
@@ -65,7 +65,8 @@ describe("structureText", () => {
     expect(sections[0]?.text).toBe("1. First step");
   });
 
-  // F5 (001-011, 완료 기준): 헤딩은 줄 단위 — 빈 줄이 없어도 인식하고, 코드 펜스 안의 `#`는 무시한다.
+  // F5 (001-011, completion criterion): headings are line-based. They are recognized without blank
+  // lines around them, and a `#` inside a code fence is ignored.
   it("recognizes ATX headings with no blank lines around them (F5)", () => {
     expect(structureText("# Title\nBody.\n## Sub\nDetail.\n### Deep\nMore.")).toEqual([
       { heading: "Title", level: 1, text: "Body." },
@@ -123,6 +124,7 @@ describe("pdfPagesToText", () => {
   });
 
   it("joins wrapped CJK lines with no inserted space", () => {
+    // Deliberately Korean: CJK text has no spaces at a line wrap, so the join must not insert one.
     const page = ["개요", "이 문장은 페이지 안에서", "두 줄로 줄바꿈됩니다."].join("\n");
     const text = pdfPagesToText([page]);
     expect(text).toContain("이 문장은 페이지 안에서두 줄로 줄바꿈됩니다.");

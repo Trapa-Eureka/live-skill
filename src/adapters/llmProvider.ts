@@ -1,5 +1,6 @@
-// Claude 어댑터 — 공식 SDK, fetch 주입(테스트는 목 fetch를 넣어 네트워크 0회, 가드레일 3).
-// 패턴 출처: ../msg-agent/src/adapters/providers/claude.ts (구조는 이식, 인터페이스는 live-skill 것).
+// Claude adapter: the official SDK with an injected fetch (tests inject a mock fetch, so zero network
+// calls, guardrail 3). Pattern from ../msg-agent/src/adapters/providers/claude.ts (the structure is
+// ported; the interface is live-skill's own).
 import Anthropic from "@anthropic-ai/sdk";
 import type { LlmProvider } from "../core/index.js";
 import { LlmProviderError } from "../core/index.js";
@@ -38,12 +39,14 @@ export class ClaudeLlmProvider implements LlmProvider {
     this.model = opts.model ?? CLAUDE_DEFAULT_MODEL;
     this.client = new Anthropic({
       apiKey: opts.apiKey,
-      // 가드레일과 무관하게 항상 명시: 환경변수가 엔드포인트를 몰래 바꾸거나 SDK 디버그 로그가 본문을 찍지 않게.
+      // Always explicit, regardless of guardrails: an env var must not silently redirect the
+      // endpoint, and SDK debug logging must not print request bodies.
       baseURL: CLAUDE_BASE_URL,
       logLevel: "off",
       timeout: CLAUDE_TIMEOUT_MS,
       ...(opts.fetch === undefined ? {} : { fetch: opts.fetch }),
-      // 재시도는 파이프라인(T6)의 몫 — SDK가 중복으로 재시도하면 비용 상한 계산이 어긋난다.
+      // Retries belong to the pipeline (T6): if the SDK also retried, the cost-cap accounting would
+      // be off.
       maxRetries: opts.maxRetries ?? 0,
     });
   }

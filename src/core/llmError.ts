@@ -1,9 +1,10 @@
-// LlmProvider 구현체가 던지는 에러 — DESIGN §2 LlmProvider.complete()는 예외로 실패를 알린다(추출기와
-// 달리 Result로 감싸지 않는다). retryable 플래그는 T6 파이프라인의 재시도 정책에 쓴다.
+// Error thrown by LlmProvider implementations. Per DESIGN §2, LlmProvider.complete() signals failure
+// by throwing (unlike the extractors, which wrap failures in a Result). The retryable flag drives the
+// T6 pipeline's retry policy.
 export type LlmErrorKind =
   "auth" | "rate_limit" | "network" | "server" | "bad_response" | "refusal" | "unknown";
 
-/** 종류별 수정 방법(영어 — PipelineError 메시지용). 한국어 CLI 문구는 reportFormat.ts에 있다. */
+/** Per-kind fix advice, used in PipelineError messages. The CLI wording lives in reportFormat.ts. */
 export function llmErrorAdvice(kind: LlmErrorKind): string {
   switch (kind) {
     case "auth":

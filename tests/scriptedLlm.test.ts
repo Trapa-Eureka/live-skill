@@ -58,7 +58,7 @@ describe("ScriptedLlm — role routing + sequential replay (TESTING §2)", () =>
   });
 });
 
-describe("ScriptedLlm — clear failure on exhaustion (완료 기준)", () => {
+describe("ScriptedLlm — clear failure on exhaustion (completion criteria)", () => {
   it("rejects with ScriptExhaustedError when a role's queue is empty", async () => {
     const llm = script().build();
     await expect(llm.complete(outlinePrompt(doc))).rejects.toThrow(ScriptExhaustedError);
@@ -72,7 +72,7 @@ describe("ScriptedLlm — clear failure on exhaustion (완료 기준)", () => {
   });
 });
 
-describe("ScriptedLlm — clear failure on role mismatch (완료 기준)", () => {
+describe("ScriptedLlm — clear failure on role mismatch (completion criteria)", () => {
   it("rejects with UnknownRoleError for a system prompt with no recognized role tag", async () => {
     const llm = script().build();
     await expect(
@@ -96,7 +96,7 @@ describe("ScriptedLlm — assertExhausted", () => {
   });
 });
 
-describe("ScriptBuilder.fail (G1 — provider 실패 주입)", () => {
+describe("ScriptBuilder.fail (G1 — provider failure injection)", () => {
   it("rejects with the given error at that turn, records the call, and continues with later entries", async () => {
     const boom = new Error("simulated provider failure");
     boom.name = "LlmProviderError";

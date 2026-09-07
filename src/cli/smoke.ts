@@ -1,7 +1,8 @@
-// smoke — 사람 전용 수동 확인(DESIGN §9, TESTING §5). 실 Claude로 표본 문서 1건을 컴파일해 게이트
-// 리포트 + 비용(호출 수·추정 토큰) 요약을 출력한다. compile CLI와 달리 아무 파일도 쓰지 않는다 — 진단만
-// 하고 끝난다. 로직은 여기(테스트 가능)에, 실 어댑터 조립은 scripts/smoke.ts에("cli는 조립만"과 같은 원칙
-// 을 스모크 스크립트에도 적용).
+// smoke: a manual, human-only check (DESIGN §9, TESTING §5). Compiles one sample document with the
+// real Claude and prints the gate report plus a cost summary (call count, estimated tokens). Unlike
+// the compile CLI it writes no files; it only diagnoses. The logic lives here (testable) and the real
+// adapter assembly is in scripts/smoke.ts (the "cli is assembly only" principle applied to the smoke
+// script as well).
 import {
   compile,
   formatCompileFailure,
@@ -34,7 +35,7 @@ export async function runSmoke(opts: SmokeOptions, deps: SmokeDeps): Promise<num
     source = await deps.readSourceFile(opts.path);
   } catch (e) {
     const detail = e instanceof Error ? e.message : "unknown error";
-    deps.out(`"${opts.path}"를 읽을 수 없습니다. 수정 방법: 경로를 확인하세요. (${detail})`);
+    deps.out(`Cannot read "${opts.path}". Fix: check the path. (${detail})`);
     return 1;
   }
 
@@ -48,11 +49,13 @@ export async function runSmoke(opts: SmokeOptions, deps: SmokeDeps): Promise<num
   });
   const { calls, estimatedTokens } = tracked.summary();
   const printCostSummary = (): void => {
-    deps.out(`비용 요약: LLM 호출 ${String(calls)}회, 추정 토큰 ~${String(estimatedTokens)}`);
+    deps.out(
+      `Cost summary: ${String(calls)} LLM calls, ~${String(estimatedTokens)} estimated tokens`,
+    );
   };
 
   if (!result.ok) {
-    deps.out(formatCompileFailure(result.error)); // E1: 구조 검증 실패면 리포트까지
+    deps.out(formatCompileFailure(result.error)); // E1: includes the report on a structural validation failure
     printCostSummary();
     return 1;
   }

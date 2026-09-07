@@ -1,6 +1,8 @@
-// 헤딩/문단 구조화 — 모든 추출기가 공유하는 순수 로직(DESIGN §3). 형식별 전처리(PDF의 페이지별 평문,
-// DOCX/HTML의 마크다운 변환)를 거친 텍스트를 여기서 섹션 목록으로 나눈다. 이식 출처: ../msg-agent
-// (src/core/sections.ts) — DESIGN §2에 맞춰 필드명(heading/level 항상 존재)과 섹션 id 결합만 조정했다.
+// Heading/paragraph structuring: pure logic shared by every extractor (DESIGN §3). Text that has
+// been through per-format preprocessing (per-page plain text for PDF, markdown conversion for
+// DOCX/HTML) is split into a section list here. Ported from ../msg-agent (src/core/sections.ts);
+// only the field names (heading/level always present) and the section-id coupling were adjusted
+// to match DESIGN §2.
 import { assignSectionIds, slugifyHeading } from "./sectionId.js";
 import type { ExtractedDoc } from "./types.js";
 
@@ -9,8 +11,9 @@ const TERMINAL_PUNCT = /[.!?:;,。．！？：；、]$/u;
 const MARKDOWN_HEADING = /^(#{1,6})\s+(.+?)\s*#*$/u;
 const ORDERED_LIST = /^(?:\d+[.)]|[-*+•])\s+/u;
 
-/** 줄바꿈·BOM을 정규화하고 빈 줄 3개 이상을 2개로 줄인다. HTML 주석(`<!-- … -->`)은 본문이 아니므로
- * 지운다(B1, DESIGN §5.1) — 마크다운 렌더러도 보여주지 않는 텍스트가 섹션·검증 모집단이 되면 안 된다. */
+/** Normalizes line endings and the BOM and collapses runs of 3+ blank lines to 2. HTML comments
+ * (`<!-- … -->`) are not body text, so they are removed (B1, DESIGN §5.1): text a markdown renderer
+ * would not even show must not become a section or part of the verification population. */
 export function normalizeText(raw: string): string {
   return raw
     .replace(/\uFEFF/gu, "")
@@ -26,7 +29,8 @@ interface HeadingBlock {
   level: number;
 }
 
-/** 블록이 헤딩인지 판별한다: 마크다운 ATX 헤딩이거나, 종결부호 없는 짧은 한 줄. */
+/** Decides whether a block is a heading: a markdown ATX heading, or a short single line with no
+ * terminal punctuation. */
 function asHeading(block: string): HeadingBlock | undefined {
   const md = MARKDOWN_HEADING.exec(block);
   const hashes = md?.[1];
@@ -38,7 +42,7 @@ function asHeading(block: string): HeadingBlock | undefined {
   if (block.length > MAX_TITLE_CHARS) return undefined;
   if (TERMINAL_PUNCT.test(block)) return undefined;
   if (ORDERED_LIST.test(block)) return undefined;
-  if (block.includes("](")) return undefined; // 헐벗은 마크다운 링크는 헤딩이 아니라 본문이다
+  if (block.includes("](")) return undefined; // a bare markdown link is body text, not a heading
   return { heading: block, level: 1 };
 }
 
@@ -48,20 +52,24 @@ export interface RawSection {
   text: string;
 }
 
-/** 코드 펜스 여는/닫는 줄(CommonMark: 들여쓰기 3칸까지, 백틱 또는 물결 3개 이상). */
+/** A code-fence opening/closing line (CommonMark: up to 3 spaces of indent, 3+ backticks or
+ * tildes). */
 const FENCE = /^ {0,3}(`{3,}|~{3,})/u;
-/** ATX 헤딩 줄 — `#`~`######` 뒤에 공백과 내용. `#hashtag`처럼 공백이 없으면 헤딩이 아니다. */
+/** An ATX heading line: `#` to `######` followed by whitespace and content. Without the space, as
+ * in `#hashtag`, it is not a heading. */
 const ATX_LINE = /^ {0,3}#{1,6}\s+\S/u;
 
 /**
- * 텍스트를 블록으로 나눈다(F5, DESIGN §5.1). 빈 줄이 블록을 가르는 건 그대로지만, (1) ATX 헤딩 줄은 앞뒤에 빈 줄이
- * 없어도 **혼자 한 블록**이 되고(`# Title\nBody.\n## Sub` 같은 빈 줄 없는 마크다운), (2) 코드 펜스 안은 빈 줄이
- * 있어도 갈라지지 않고 `#` 줄도 헤딩이 되지 않는다(펜스 전체가 한 블록). 닫히지 않은 펜스는 끝까지 한 블록이다.
+ * Splits text into blocks (F5, DESIGN §5.1). Blank lines still separate blocks, but (1) an ATX
+ * heading line is **a block on its own** even with no blank line around it (markdown written
+ * tightly, like `# Title\nBody.\n## Sub`), and (2) inside a code fence, blank lines do not split
+ * and `#` lines do not become headings (the whole fence is one block). An unclosed fence is one
+ * block to the end.
  */
 function splitBlocks(text: string): string[] {
   const blocks: string[] = [];
   let current: string[] = [];
-  let fence: string | undefined; // 열린 펜스 표식 — 같은 문자로 같은 길이 이상이어야 닫힌다
+  let fence: string | undefined; // the open fence marker; closes only on the same char, same length or longer
   const flush = (): void => {
     const block = current.join("\n").trim();
     current = [];
@@ -78,7 +86,7 @@ function splitBlocks(text: string): string[] {
         line.trim() === mark
       ) {
         fence = undefined;
-        flush(); // 닫는 펜스 뒤의 줄은 새 블록이다
+        flush(); // the line after a closing fence starts a new block
       }
       continue;
     }
@@ -105,8 +113,10 @@ function splitBlocks(text: string): string[] {
 }
 
 /**
- * 정규화된 텍스트를 섹션으로 나눈다: 블록(빈 줄·ATX 헤딩 줄·코드 펜스 기준, splitBlocks) 중 헤딩처럼 보이는
- * 블록은 새 섹션을 열며, 나머지는 현재 섹션 본문에 이어붙는다. 첫 헤딩 이전의 내용은 heading: ""인 섹션이 된다.
+ * Splits normalized text into sections: among the blocks (split on blank lines, ATX heading lines
+ * and code fences by splitBlocks), a heading-like block opens a new section and everything else is
+ * appended to the current section's body. Content before the first heading becomes a section with
+ * heading: "".
  */
 export function structureText(raw: string): RawSection[] {
   const text = normalizeText(raw);
@@ -132,7 +142,8 @@ export function structureText(raw: string): RawSection[] {
   return sections;
 }
 
-/** RawSection[]에 안정적인 섹션 id를 매겨 최종 ExtractedDoc으로 만든다(core/sectionId.ts 결합). */
+/** Assigns stable section ids to RawSection[] and produces the final ExtractedDoc (coupled with
+ * core/sectionId.ts). */
 export function toExtractedDoc(rawSections: readonly RawSection[]): ExtractedDoc {
   const ids = assignSectionIds(rawSections);
   const sections = rawSections.map((raw, i) => ({
@@ -151,14 +162,16 @@ const SHORT_LAST_LINE_RATIO = 0.7;
 function joinWrapped(a: string, b: string): string {
   const tail = a.at(-1) ?? "";
   const head = b.at(0) ?? "";
-  // 줄바꿈으로 잘린 CJK 텍스트는 공백이 없다; 그 외는 공백 하나로 잇는다.
+  // CJK text broken by a line wrap has no space at the seam; everything else is joined with one.
   return CJK.test(tail) && CJK.test(head) ? `${a}${b}` : `${a} ${b}`;
 }
 
 /**
- * PDF에서 뽑은, 시각적 줄마다 개행이 들어간 평문을 문단/헤딩으로 재구성한다. 짧고 종결부호 없는 줄은
- * 헤딩으로, 종결부호로 끝나며 페이지 최장 줄보다 뚜렷이 짧은 줄은 문단의 끝으로 본다. 그 외는 줄바꿈으로
- * 잘린 이어지는 줄로 보고 합친다. structureText가 읽을 수 있게 "# 헤딩" 마크다운 표기로 출력한다.
+ * Rebuilds paragraphs/headings from PDF plain text that has a newline after every visual line. A
+ * short line with no terminal punctuation is a heading; a line that ends in terminal punctuation
+ * and is clearly shorter than the page's longest line ends a paragraph. Anything else is a wrapped
+ * continuation and is joined. Output uses "# heading" markdown notation so structureText can read
+ * it.
  */
 export function pdfPagesToText(pages: readonly string[]): string {
   const out: string[] = [];
@@ -199,7 +212,7 @@ export function pdfPagesToText(pages: readonly string[]): string {
   return out.join("\n\n");
 }
 
-/** 공백을 뺀 전체 글자 수 — 예산·크기 가드에 쓴다. */
+/** Total character count excluding whitespace, used by budget and size guards. */
 export function countChars(text: string): number {
   return text.replace(/\s+/gu, "").length;
 }

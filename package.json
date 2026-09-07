@@ -1,7 +1,7 @@
 {
   "name": "live-skill",
   "version": "0.1.0",
-  "description": "Compile documents into verified Agent Skills, with a semantic quality gate over the compiled output (문서를 검증된 에이전트 스킬로 컴파일)",
+  "description": "Compile documents into verified Agent Skills, with a semantic quality gate over the compiled output",
   "license": "MIT",
   "type": "module",
   "engines": {

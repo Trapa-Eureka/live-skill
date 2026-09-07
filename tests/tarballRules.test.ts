@@ -1,4 +1,4 @@
-// H3(SEC-012·AUD-018): tarball 검사 규칙 — 합성 경로 목록·문자열로 검증한다(순수 함수, npm·네트워크 0건).
+// H3 (SEC-012·AUD-018): tarball check rules, verified with synthetic path lists and strings (pure functions, zero npm/network).
 import { describe, expect, it } from "vitest";
 import {
   findForbiddenPaths,

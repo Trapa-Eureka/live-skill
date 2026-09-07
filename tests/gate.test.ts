@@ -1,5 +1,5 @@
-// T7 완료 기준 — TESTING §4 "게이트 판별력" 5항목 전부(삭제·완화 금지, CLAUDE.md 가드레일 1) +
-// "answerer 격리" 2항목 전부.
+// T7 completion criteria: all 5 items of TESTING §4 "gate discrimination" (no deletion or relaxation,
+// CLAUDE.md guardrail 1) plus both "answerer isolation" items.
 import { describe, expect, it } from "vitest";
 import type { AssembledFile } from "../src/core/assembler.js";
 import {
@@ -48,7 +48,7 @@ const chapters: GateChapter[] = [
   { file: "chapters/ch02-troubleshooting.md", sectionIds: ["b"] },
 ];
 
-describe("runGate — normal script (게이트 판별력 1/5)", () => {
+describe("runGate — normal script (gate discrimination 1/5)", () => {
   it("passes with passRate 1.0 when every answer is graded correct", async () => {
     const llm = script()
       .qa([
@@ -81,9 +81,9 @@ describe("runGate — normal script (게이트 판별력 1/5)", () => {
   });
 });
 
-describe("runGate — 챕터 누락 주입 (게이트 판별력 2/5, 삭제·완화 금지)", () => {
+describe("runGate — missing chapter injection (gate discrimination 2/5, no deletion or relaxation)", () => {
   it("fails the section with not_found when its chapter is missing from assembly, and identifies the weak chapter", async () => {
-    const filesWithoutChapter2 = [skillMd, chapter1]; // chapter2가 조립 결과에서 빠졌다
+    const filesWithoutChapter2 = [skillMd, chapter1]; // chapter2 is missing from the assembled output
     const llm = script()
       .qa([
         { question: "How much current?", refAnswer: "500 mA", anchorQuote: "500 mA of current" },
@@ -98,7 +98,7 @@ describe("runGate — 챕터 누락 주입 (게이트 판별력 2/5, 삭제·완
       .selectChapter("chapters/ch01-installation.md")
       .answer("500 mA")
       .grade("correct")
-      // ch02는 SKILL.md 인덱스엔 여전히 있으니 LLM은 그대로 선택하지만, 실제 파일이 없다.
+      // ch02 is still in the SKILL.md index, so the LLM selects it as usual, but the file does not exist.
       .selectChapter("chapters/ch02-troubleshooting.md")
       .build();
 
@@ -108,20 +108,22 @@ describe("runGate — 챕터 누락 주입 (게이트 판별력 2/5, 삭제·완
     );
 
     expect(report.passRate).toBeCloseTo(0.5);
-    expect(report.passed).toBe(false); // 임계치(0.9) 미달
+    expect(report.passed).toBe(false); // below the threshold (0.9)
     expect(report.failures).toContainEqual({ qaId: "b-q1", reason: "not_found" });
     const weakChapter = report.perChapter.find(
       (c) => c.file === "chapters/ch02-troubleshooting.md",
     );
     expect(weakChapter).toEqual({ file: "chapters/ch02-troubleshooting.md", asked: 1, correct: 0 });
-    // 증거: not_found로 조기 종료됐으므로 answer/grade는 그 문항에 대해 전혀 호출되지 않았다(대본에도 안 줌).
+    // Evidence: the not_found early exit means answer/grade were never called for that question
+    // (none were scripted either).
     llm.assertExhausted();
   });
 });
 
-describe("runGate — 오답 증류 주입 (게이트 판별력 3/5, 삭제·완화 금지)", () => {
+describe("runGate — wrong distillation injection (gate discrimination 3/5, no deletion or relaxation)", () => {
   it("fails via the grader when a corrupted chapter leads to a contradicting answer", async () => {
-    // 앵커 문구("The fault LED blinks")는 훼손된 챕터에도 살아남지만, 핵심 사실(red→green)은 반전됐다.
+    // The anchor phrase ("The fault LED blinks") survives in the corrupted chapter, but the key fact
+    // is flipped (red → green).
     const corruptedChapter2: AssembledFile = {
       ...chapter2,
       content: "The fault LED blinks green when there is an error condition. [§b]",
@@ -141,8 +143,8 @@ describe("runGate — 오답 증류 주입 (게이트 판별력 3/5, 삭제·완
       .answer("500 mA")
       .grade("correct")
       .selectChapter("chapters/ch02-troubleshooting.md")
-      .answer("green") // 훼손된 챕터를 그대로 읽었다면 나올 법한 답
-      .grade("wrong") // grader가 refAnswer("red")와 모순됨을 잡아낸다
+      .answer("green") // the answer an agent would give after reading the corrupted chapter
+      .grade("wrong") // the grader catches the contradiction with refAnswer ("red")
       .build();
 
     const { report } = await runGate(
@@ -156,7 +158,7 @@ describe("runGate — 오답 증류 주입 (게이트 판별력 3/5, 삭제·완
   });
 });
 
-describe("runGate — anchor_missing: 선택된 챕터에 앵커 문구 자체가 사라진 경우", () => {
+describe("runGate — anchor_missing: the anchor phrase itself is gone from the selected chapter", () => {
   it("fails with anchor_missing without ever calling answer/grade", async () => {
     const brokenChapter2: AssembledFile = {
       ...chapter2,
@@ -171,7 +173,7 @@ describe("runGate — anchor_missing: 선택된 챕터에 앵커 문구 자체�
         },
       ])
       .selectChapter("chapters/ch02-troubleshooting.md")
-      .build(); // answer/grade는 대본에 없다 — 호출되면 테스트가 실패한다
+      .build(); // answer/grade are not scripted; the test fails if they are called
 
     const { report } = await runGate(
       {
@@ -187,7 +189,7 @@ describe("runGate — anchor_missing: 선택된 챕터에 앵커 문구 자체�
   });
 });
 
-describe("evaluateGoldenQa — reuse path (T8 eval, qaGen 생략)", () => {
+describe("evaluateGoldenQa — reuse path (T8 eval, qaGen skipped)", () => {
   it("grades already-generated QA without ever calling qaGen", async () => {
     const qas: GoldenQA[] = [
       {
@@ -212,7 +214,7 @@ describe("evaluateGoldenQa — reuse path (T8 eval, qaGen 생략)", () => {
       .selectChapter("chapters/ch02-troubleshooting.md")
       .answer("blinks red")
       .grade("correct")
-      .build(); // qa 대본은 아예 없다 — 호출되면 exhausted로 실패한다
+      .build(); // no qa script at all; a call would fail as exhausted
 
     const report = await evaluateGoldenQa(
       qas,
@@ -255,7 +257,7 @@ describe("generateGoldenQa — malformed qaGen response", () => {
   });
 });
 
-describe("runGate — 임계치 경계, 부동소수 처리 (게이트 판별력 4/5, 삭제·완화 금지)", () => {
+describe("runGate — threshold boundary and floating-point handling (gate discrimination 4/5, no deletion or relaxation)", () => {
   const tenSections: Section[] = Array.from({ length: 10 }, (_, i) => ({
     id: `s${String(i)}`,
     heading: `Section ${String(i)}`,
@@ -309,7 +311,7 @@ describe("runGate — 임계치 경계, 부동소수 처리 (게이트 판별력
   });
 });
 
-describe("runGate — answerer isolation (완료 기준: 격리 2항목 전부)", () => {
+describe("runGate — answerer isolation (completion criteria: both isolation items)", () => {
   const markedChapter1: AssembledFile = {
     ...chapter1,
     content: `UNIQUE_CHAPTER1_MARKER ${chapter1.content}`,
@@ -348,11 +350,11 @@ describe("runGate — answerer isolation (완료 기준: 격리 2항목 전부)"
     );
 
     const answererCalls = llm.calls.filter((c) => c.role === "answerer");
-    expect(answererCalls).toHaveLength(2); // 선택 1회 + 답변 1회
+    expect(answererCalls).toHaveLength(2); // 1 selection + 1 answer
     const answerCall = answererCalls[1];
     expect(answerCall?.prompt).not.toContain("UNIQUE_CHAPTER1_MARKER");
     expect(answerCall?.prompt).not.toContain("UNIQUE_GLOSSARY_MARKER");
-    expect(answerCall?.prompt).toContain("UNIQUE_CHAPTER2_MARKER"); // 선택된 챕터는 실제로 로드된다
+    expect(answerCall?.prompt).toContain("UNIQUE_CHAPTER2_MARKER"); // the selected chapter is actually loaded
   });
 
   it("2/2 — records the load history for every QA in the report", async () => {
@@ -381,8 +383,9 @@ describe("runGate — answerer isolation (완료 기준: 격리 2항목 전부)"
   });
 });
 
-// 게이트 판별력 5/5 ("--no-gate → 배포되지만 unverified 표시, manifest.gate = skipped")는
-// gate.ts 자체가 아니라 파이프라인 통합(T6 pipeline.ts)의 동작이라 tests/pipeline.test.ts에서 검증한다.
+// Gate discrimination 5/5 ("--no-gate → deployed but marked unverified, manifest.gate = skipped") is
+// pipeline integration behavior (T6 pipeline.ts), not gate.ts itself, so tests/pipeline.test.ts
+// covers it.
 
 describe("generateGoldenQa — anchor validation + one retry (TESTING §3)", () => {
   it("discards an item whose anchorQuote isn't in the section text, keeps a valid regenerated one", async () => {
@@ -403,7 +406,7 @@ describe("generateGoldenQa — anchor validation + one retry (TESTING §3)", () 
       .build();
     const qas = await generateGoldenQa(sectionA, 1, llm);
     expect(qas).toEqual([]);
-    llm.assertExhausted(); // 정확히 최초 1회 + 재생성 1회만 — 무한 재시도 없음
+    llm.assertExhausted(); // exactly one initial call + one regeneration; no unbounded retries
   });
 
   it("does not retry when the first batch already satisfies k", async () => {
@@ -416,14 +419,14 @@ describe("generateGoldenQa — anchor validation + one retry (TESTING §3)", () 
   });
 });
 
-describe("runGate — 문항 생성 실패 주입 (B2, SEC-005·AUD-005 — 완료 기준, 판별력 6/6)", () => {
+describe("runGate — question generation failure injection (B2, SEC-005/AUD-005, completion criteria, discrimination 6/6)", () => {
   it("fails when one chapter's qaGen fails twice even though every asked question is correct", async () => {
     const llm = script()
       .qa([
         { question: "How much current?", refAnswer: "500 mA", anchorQuote: "500 mA of current" },
       ])
-      .qaRaw("{not json") // b: 1차 실패
-      .qa([{ question: "LED?", refAnswer: "x", anchorQuote: "quote that is not in section b" }]) // b: 재생성도 앵커 불합격
+      .qaRaw("{not json") // b: first attempt fails
+      .qa([{ question: "LED?", refAnswer: "x", anchorQuote: "quote that is not in section b" }]) // b: the regeneration fails the anchor check too
       .selectChapter("chapters/ch01-installation.md")
       .answer("500 mA")
       .grade("correct")
@@ -434,9 +437,9 @@ describe("runGate — 문항 생성 실패 주입 (B2, SEC-005·AUD-005 — 완�
       { llm, k: 1 },
     );
 
-    expect(goldenQa.map((q) => q.sectionId)).toEqual(["a"]); // b의 문항은 없다
-    expect(report.passRate).toBe(1); // 물어본 문항 기준으로는 100% —
-    expect(report.passed).toBe(false); // — 그래도 미검증 섹션이 있으면 통과가 아니다
+    expect(goldenQa.map((q) => q.sectionId)).toEqual(["a"]); // no questions for b
+    expect(report.passRate).toBe(1); // 100% of the questions that were asked...
+    expect(report.passed).toBe(false); // ...but an unverified section still means no pass
     expect(report.coverage).toEqual([
       { sectionId: "a", requested: 1, generated: 1 },
       { sectionId: "b", requested: 1, generated: 0 },
@@ -446,17 +449,17 @@ describe("runGate — 문항 생성 실패 주입 (B2, SEC-005·AUD-005 — 완�
       { file: "chapters/ch01-installation.md", asked: 1, correct: 1 },
       { file: "chapters/ch02-troubleshooting.md", asked: 0, correct: 0 },
     ]);
-    llm.assertExhausted(); // b에 대해선 answer/grade를 부르지 않았다 — 물을 문항이 없으니
+    llm.assertExhausted(); // answer/grade were never called for b: there was no question to ask
   });
 
   it("records a shortfall (some but fewer than k valid items) in coverage without failing on it alone", async () => {
     const llm = script()
-      // a: k=2 요청, 1차에 1개 유효, 재생성에서 0개 유효 → generated 1/2
+      // a: k=2 requested, 1 valid on the first attempt, 0 valid on regeneration → generated 1/2
       .qa([
         { question: "How much current?", refAnswer: "500 mA", anchorQuote: "500 mA of current" },
       ])
       .qa([{ question: "junk", refAnswer: "x", anchorQuote: "not in a" }])
-      // b: 한 번에 2개 유효
+      // b: 2 valid in one go
       .qa([
         { question: "LED colour?", refAnswer: "red", anchorQuote: "blinks red" },
         { question: "When?", refAnswer: "error", anchorQuote: "error condition" },
@@ -517,7 +520,7 @@ describe("runGate — 문항 생성 실패 주입 (B2, SEC-005·AUD-005 — 완�
   });
 });
 
-describe("evaluateGoldenQa — 챕터 허용 목록은 코드가 쥔다 (B3, SEC-006·AUD-006, 가드레일 2 — 완료 기준)", () => {
+describe("evaluateGoldenQa — the code holds the chapter allow-list (B3, SEC-006/AUD-006, guardrail 2, completion criteria)", () => {
   const SECRET = "SECRET_REFERENCE_MARKER_7f3a";
   const qa: GoldenQA = {
     id: "a-q1",
@@ -528,14 +531,14 @@ describe("evaluateGoldenQa — 챕터 허용 목록은 코드가 쥔다 (B3, SEC
   };
   const manifestJson = {
     path: "manifest.json",
-    content: JSON.stringify({ goldenQa: [qa] }), // 정답이 든 파일 — answerer에게 절대 보이면 안 된다
+    content: JSON.stringify({ goldenQa: [qa] }), // the file holding the answers; the answerer must never see it
   };
 
   it("never loads manifest.json even when a (tampered) chapter list names it — not_found, no answer call, no leak", async () => {
     const tamperedChapters: GateChapter[] = [
-      { file: "manifest.json", sectionIds: ["a"] }, // 스키마를 우회해 직접 넣은 경우까지 가정
+      { file: "manifest.json", sectionIds: ["a"] }, // covers even a direct injection that bypassed the schema
     ];
-    const llm = script().selectChapter("manifest.json").build(); // answer/grade 대본 없음
+    const llm = script().selectChapter("manifest.json").build(); // no answer/grade scripted
 
     const report = await evaluateGoldenQa(
       [qa],
@@ -560,8 +563,8 @@ describe("evaluateGoldenQa — 챕터 허용 목록은 코드가 쥔다 (B3, SEC
     const report = await evaluateGoldenQa(
       [qa],
       {
-        files: [skillMd, chapter1, chapter2], // ch02는 디스크에 있지만
-        chapters: [{ file: "chapters/ch01-installation.md", sectionIds: ["a"] }], // 목록엔 없다
+        files: [skillMd, chapter1, chapter2], // ch02 is on disk,
+        chapters: [{ file: "chapters/ch01-installation.md", sectionIds: ["a"] }], // but not in the list
         qaPerSection: 1,
       },
       llm,
@@ -583,7 +586,7 @@ describe("evaluateGoldenQa — 챕터 허용 목록은 코드가 쥔다 (B3, SEC
   });
 });
 
-describe("evaluateGoldenQa — threshold floor and zero questions (B4, SEC-007·AUD-008, 완료 기준)", () => {
+describe("evaluateGoldenQa — threshold floor and zero questions (B4, SEC-007/AUD-008, completion criteria)", () => {
   it("fails with zero questions regardless of the threshold, even with an empty population", async () => {
     const llm = script().build();
     const report = await evaluateGoldenQa([], { files: [skillMd], chapters: [] }, llm, 0.5);
@@ -616,12 +619,13 @@ describe("evaluateGoldenQa — threshold floor and zero questions (B4, SEC-007·
 });
 
 describe("estimateGateCalls", () => {
-  it("computes sections*(2 + 3k) — one qaGen retry per section is part of the bound (DESIGN §4 D1 정정)", () => {
+  it("computes sections*(2 + 3k) — one qaGen retry per section is part of the bound (DESIGN §4 D1 correction)", () => {
     expect(estimateGateCalls(5, 3)).toBe(5 * (2 + 3 * 3));
   });
 
   it("is a true upper bound: a gate where every section needs the qaGen retry never exceeds it", async () => {
-    // 섹션 2개, k=1: 각 섹션 qaGen 2회(1차 실패 → 재생성) + 문항 2개 × 3 = 4 + 6 = 10 = estimateGateCalls(2, 1)
+    // 2 sections, k=1: 2 qaGen calls per section (first fails → regenerate) + 2 questions × 3
+    // = 4 + 6 = 10 = estimateGateCalls(2, 1)
     const llm = script()
       .qaRaw("{bad")
       .qa([
@@ -652,7 +656,7 @@ describe("estimateEvalCalls (D2)", () => {
   });
 });
 
-describe("runGate under a call cap (D1, 완료 기준: 상한 6에 7번째 호출 차단)", () => {
+describe("runGate under a call cap (D1, completion criteria: a cap of 6 blocks the 7th call)", () => {
   it("throws LlmCallCapError before the 7th call and never reaches the underlying provider for it", async () => {
     const inner = script()
       .qa([
@@ -663,7 +667,8 @@ describe("runGate under a call cap (D1, 완료 기준: 상한 6에 7번째 호�
       .answer("500 mA")
       .grade("correct")
       .selectChapter("chapters/ch02-troubleshooting.md")
-      // 7번째 호출(answer)부터는 대본을 아예 주지 않는다 — 상한이 막지 못했다면 exhausted로 실패했을 것이다
+      // nothing is scripted from the 7th call (answer) on; had the cap not blocked it, the test would
+      // have failed as exhausted
       .build();
     const capped = trackCost(inner, { maxCalls: 6 });
 
