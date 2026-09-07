@@ -610,6 +610,36 @@ describe("compile — outline schema violation", () => {
     llm.assertExhausted(); // outline 1 + distill 2
   });
 
+  it("accepts sectionIds copied with the [§id] prompt marker (L3) and keeps the § out of the output", async () => {
+    const extractor = new FixtureExtractor({ md: twoSectionDoc });
+    const [chA, chB] = twoChapterPlan.chapters;
+    if (chA === undefined || chB === undefined) throw new Error("fixture has two chapters");
+    const marked: SkillPlan = {
+      ...twoChapterPlan,
+      chapters: [
+        { ...chA, sectionIds: ["§a"] },
+        { ...chB, sectionIds: ["[§b]"] },
+      ],
+    };
+    const llm = script()
+      .outline(marked)
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .distill("b", "Check the fault LED. [§b]")
+      .build();
+    const result = await compile([{ path: "manual.md", bytes: nameAsBytes("manual.md") }], {
+      extractors: [extractor],
+      llm,
+      clock,
+      config,
+      gate: "skip",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.manifest.sections.map((s) => s.id).sort()).toEqual(["a", "b"]);
+    expect(JSON.stringify(result.value.manifest)).not.toContain("§");
+    llm.assertExhausted();
+  });
+
   it("names the violated schema rule when the JSON is fine but the plan is not", async () => {
     const extractor = new FixtureExtractor({ md: twoSectionDoc });
     const llm = script()

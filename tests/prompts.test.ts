@@ -46,6 +46,12 @@ describe("prompt role tagging (TESTING §2: role routing)", () => {
 });
 
 describe("outlinePrompt", () => {
+  it("tells the model to write section ids without the § marker (L3)", () => {
+    const { system } = outlinePrompt(doc);
+    expect(system).toContain("[§<id>]");
+    expect(system).toContain("without the § sign");
+  });
+
   it("includes every section id so the model can only reference real sections", () => {
     const { prompt } = outlinePrompt(doc);
     expect(prompt).toContain("[§installation]");
