@@ -174,4 +174,31 @@ describe("runSmoke — dry run (실 samples/manual.pdf + ScriptedLlm)", () => {
     expect(output).toContain("컴파일 실패");
     expect(output).toContain("비용 요약: LLM 호출 0회");
   });
+
+  it("구조 검증에 걸리면(챕터 예산 초과) 게이트를 부르지 않고 검증 리포트 + 비용 요약(호출 3회)을 찍고 1을 반환한다 (E1)", async () => {
+    const captured = lines();
+    const llm = script()
+      .outline(manualPlan)
+      .distill(
+        "ch01",
+        "The X200 is a fictional controller. [§skillsync-x200-user-manual-fixture] [§overview]",
+      )
+      .distill("ch02", "Mount it on a flat surface. [§installation] [§troubleshooting]")
+      .build(); // 게이트 대본 없음
+    const base = loadConfig({ QA_PER_SECTION: "1" });
+    const code = await runSmoke(
+      { path: samplePath },
+      baseDeps({
+        out: captured.out,
+        llm,
+        config: { ...base, budgets: { ...base.budgets, chapter: 5 } },
+      }),
+    );
+    expect(code).toBe(1);
+    llm.assertExhausted();
+    const output = captured.all.join("\n");
+    expect(output).toContain("검증: FAILED");
+    expect(output).toContain("[ERROR] chapters/ch01-overview.md (budget_exceeded)");
+    expect(output).toContain("비용 요약: LLM 호출 3회");
+  });
 });

@@ -541,6 +541,59 @@ describe("runCompile — exit codes + gate-fail temp dir (완료 기준)", () =>
     expect(captured.all.join("\n")).toContain("empty-dir");
   });
 
+  it("a structurally invalid assembly is not deployed: exit 1, no write, no gate call, report printed (E1)", async () => {
+    const captured = lines();
+    const writes: string[] = [];
+    const llm = script()
+      .outline(plan)
+      .distill("a", "Mount the unit on a flat surface. [§a]")
+      .build(); // 게이트 대본 없음 — 불리면 실패
+    const code = await runCompile(
+      { paths: ["manual.md"], target: "claude", noGate: false, force: false },
+      baseDeps({
+        out: captured.out,
+        llm,
+        config: {
+          ...loadConfig({ QA_PER_SECTION: "1" }),
+          budgets: { ...config.budgets, chapter: 5 },
+        },
+        writeSkill: (dir) => {
+          writes.push(dir);
+          return Promise.resolve();
+        },
+      }),
+    );
+    expect(code).toBe(1);
+    expect(writes).toEqual([]);
+    const text = captured.all.join("\n");
+    expect(text).toContain("컴파일 실패");
+    expect(text).toContain("검증: FAILED");
+    expect(text).toContain("[ERROR] chapters/ch01-a.md (budget_exceeded)");
+    llm.assertExhausted();
+  });
+
+  it("prints validation warnings after a successful compile, without blocking it (E1)", async () => {
+    const captured = lines();
+    const writes: string[] = [];
+    const llm = script().outline(plan).distill("a", "Mount the unit on a flat surface.").build(); // 앵커 없음
+    const code = await runCompile(
+      { paths: ["manual.md"], target: "claude", noGate: true, force: false },
+      baseDeps({
+        out: captured.out,
+        llm,
+        writeSkill: (dir) => {
+          writes.push(dir);
+          return Promise.resolve();
+        },
+      }),
+    );
+    expect(code).toBe(0);
+    expect(writes).toEqual(["/target/claude/manual"]);
+    const text = captured.all.join("\n");
+    expect(text).toContain("검증: PASSED");
+    expect(text).toContain("[WARNING] chapters/ch01-a.md (low_anchor_ratio)");
+  });
+
   it("refuses oversized input before reading a single file, with the adapter's fix message (D3)", async () => {
     const captured = lines();
     const reads: string[] = [];
