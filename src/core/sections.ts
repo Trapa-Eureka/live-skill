@@ -48,9 +48,65 @@ export interface RawSection {
   text: string;
 }
 
+/** 코드 펜스 여는/닫는 줄(CommonMark: 들여쓰기 3칸까지, 백틱 또는 물결 3개 이상). */
+const FENCE = /^ {0,3}(`{3,}|~{3,})/u;
+/** ATX 헤딩 줄 — `#`~`######` 뒤에 공백과 내용. `#hashtag`처럼 공백이 없으면 헤딩이 아니다. */
+const ATX_LINE = /^ {0,3}#{1,6}\s+\S/u;
+
 /**
- * 정규화된 텍스트를 섹션으로 나눈다: 빈 줄이 블록을 구분하고, 헤딩처럼 보이는 블록은 새 섹션을 열며,
- * 나머지는 현재 섹션 본문에 이어붙는다. 첫 헤딩 이전의 내용은 heading: ""인 섹션이 된다.
+ * 텍스트를 블록으로 나눈다(F5, DESIGN §5.1). 빈 줄이 블록을 가르는 건 그대로지만, (1) ATX 헤딩 줄은 앞뒤에 빈 줄이
+ * 없어도 **혼자 한 블록**이 되고(`# Title\nBody.\n## Sub` 같은 빈 줄 없는 마크다운), (2) 코드 펜스 안은 빈 줄이
+ * 있어도 갈라지지 않고 `#` 줄도 헤딩이 되지 않는다(펜스 전체가 한 블록). 닫히지 않은 펜스는 끝까지 한 블록이다.
+ */
+function splitBlocks(text: string): string[] {
+  const blocks: string[] = [];
+  let current: string[] = [];
+  let fence: string | undefined; // 열린 펜스 표식 — 같은 문자로 같은 길이 이상이어야 닫힌다
+  const flush = (): void => {
+    const block = current.join("\n").trim();
+    current = [];
+    if (block !== "") blocks.push(block);
+  };
+  for (const line of text.split("\n")) {
+    const mark = FENCE.exec(line)?.[1];
+    if (fence !== undefined) {
+      current.push(line);
+      if (
+        mark !== undefined &&
+        mark.startsWith(fence.slice(0, 1)) &&
+        mark.length >= fence.length &&
+        line.trim() === mark
+      ) {
+        fence = undefined;
+        flush(); // 닫는 펜스 뒤의 줄은 새 블록이다
+      }
+      continue;
+    }
+    if (mark !== undefined) {
+      flush();
+      fence = mark;
+      current.push(line);
+      continue;
+    }
+    if (line.trim() === "") {
+      flush();
+      continue;
+    }
+    if (ATX_LINE.test(line)) {
+      flush();
+      current.push(line);
+      flush();
+      continue;
+    }
+    current.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+/**
+ * 정규화된 텍스트를 섹션으로 나눈다: 블록(빈 줄·ATX 헤딩 줄·코드 펜스 기준, splitBlocks) 중 헤딩처럼 보이는
+ * 블록은 새 섹션을 열며, 나머지는 현재 섹션 본문에 이어붙는다. 첫 헤딩 이전의 내용은 heading: ""인 섹션이 된다.
  */
 export function structureText(raw: string): RawSection[] {
   const text = normalizeText(raw);
@@ -58,10 +114,7 @@ export function structureText(raw: string): RawSection[] {
 
   const sections: RawSection[] = [];
   let current: RawSection | undefined;
-  const blocks = text
-    .split(/\n\s*\n/u)
-    .map((b) => b.trim())
-    .filter((b) => b !== "");
+  const blocks = splitBlocks(text);
 
   for (const block of blocks) {
     const heading = asHeading(block);

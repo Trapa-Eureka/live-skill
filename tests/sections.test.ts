@@ -64,6 +64,54 @@ describe("structureText", () => {
     expect(sections[0]?.heading).toBe("");
     expect(sections[0]?.text).toBe("1. First step");
   });
+
+  // F5 (001-011, 완료 기준): 헤딩은 줄 단위 — 빈 줄이 없어도 인식하고, 코드 펜스 안의 `#`는 무시한다.
+  it("recognizes ATX headings with no blank lines around them (F5)", () => {
+    expect(structureText("# Title\nBody.\n## Sub\nDetail.\n### Deep\nMore.")).toEqual([
+      { heading: "Title", level: 1, text: "Body." },
+      { heading: "Sub", level: 2, text: "Detail." },
+      { heading: "Deep", level: 3, text: "More." },
+    ]);
+  });
+
+  it("keeps the heading-path ids of a tightly written document (the same as with blank lines)", () => {
+    const tight = toExtractedDoc(structureText("# A\nx.\n## B\ny.\n## C\nz."));
+    const spaced = toExtractedDoc(structureText("# A\n\nx.\n\n## B\n\ny.\n\n## C\n\nz."));
+    expect(tight.sections.map((s) => s.id)).toEqual(["a", "a/b", "a/c"]);
+    expect(tight).toEqual(spaced);
+  });
+
+  it("ignores '#' lines inside a ``` code fence, even across blank lines inside the fence (F5)", () => {
+    const sections = structureText("# Real\n```\n# not a heading\n\necho hi\n```\nAfter the code.");
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.heading).toBe("Real");
+    expect(sections[0]?.text).toBe("```\n# not a heading\n\necho hi\n```\n\nAfter the code.");
+  });
+
+  it("treats ~~~ fences and longer fences the same way, and closes only on a matching fence", () => {
+    const sections = structureText("~~~\n# still code\n```\n# still code too\n~~~\n## Next\nBody.");
+    expect(sections.map((s) => s.heading)).toEqual(["", "Next"]);
+    expect(sections[0]?.text).toContain("# still code too");
+  });
+
+  it("an unclosed fence swallows the rest of the document without creating headings", () => {
+    const sections = structureText("Intro.\n```\n# a\n\n# b");
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.heading).toBe("");
+    expect(sections[0]?.text).toBe("Intro.\n\n```\n# a\n\n# b");
+  });
+
+  it("a heading right after a closing fence still opens a section", () => {
+    const sections = structureText("```\nx\n```\n## Next\nBody.");
+    expect(sections.map((s) => s.heading)).toEqual(["", "Next"]);
+    expect(sections[1]?.text).toBe("Body.");
+  });
+
+  it("'#hashtag' without a space is not an ATX heading, and a lone '#' inside a paragraph stays text", () => {
+    const sections = structureText("Use the tag #release when you ship.\nThen #\nDone.");
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.heading).toBe("");
+  });
 });
 
 describe("pdfPagesToText", () => {

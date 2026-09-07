@@ -184,6 +184,22 @@ describe("HtmlExtractor — single-pass DOM walk keeps tables, container text, l
   });
 });
 
+describe("TextExtractor — Markdown headings without blank lines and fenced '#' (F5, 완료 기준)", () => {
+  it("splits a tightly written Markdown file into its real sections and leaves fenced '#' lines alone", async () => {
+    const md =
+      "# Title\nBody.\n## Sub\nDetail.\n```\n# not a heading\n\n# nor this\n```\n## After\nEnd.";
+    const result = await new TextExtractor().extract(new TextEncoder().encode(md));
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.value.sections.map((s) => [s.level, s.heading])).toEqual([
+      [1, "Title"],
+      [2, "Sub"],
+      [2, "After"],
+    ]);
+    expect(result.value.sections[1]?.text).toContain("# not a heading");
+    expect(result.value.sections[1]?.text).toContain("# nor this");
+  });
+});
+
 describe("edge cases (TESTING §4)", () => {
   it("rejects an empty document with empty_text", async () => {
     const x = findExtractor(createExtractors(), "application/octet-stream", "empty.txt");
