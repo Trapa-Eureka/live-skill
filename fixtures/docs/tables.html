@@ -1,0 +1,66 @@
+<!-- 자체 제작 문서 (CLAUDE.md 가드레일 4) — 가상의 실험실 냉동고 "FrostBox 40" 운영 메모. 실제 제품·기관과 무관. -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Lab Freezer Operating Notes</title>
+    <script>
+      console.log("this script tag must not leak into extracted text");
+    </script>
+  </head>
+  <body>
+    <h1>Lab Freezer Operating Notes</h1>
+    <div class="intro">
+      This fictional note describes the FrostBox 40 sample freezer used only as a test fixture.
+    </div>
+
+    <h2>Temperature Limits</h2>
+    <div>
+      Keep the chamber between the limits below.
+      <table>
+        <caption>Chamber limits by mode</caption>
+        <thead>
+          <tr>
+            <th>Mode</th>
+            <th>Minimum</th>
+            <th>Maximum</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Storage</td>
+            <td>-40 °C</td>
+            <td>-30 °C</td>
+          </tr>
+          <tr>
+            <td>Defrost</td>
+            <td>-5 °C</td>
+            <td>+4 °C</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Startup Procedure</h2>
+    <ol>
+      <li>Close the lid and latch it.</li>
+      <li>
+        Press <strong>POWER</strong> and wait for the status LED.
+        <ul>
+          <li>Green means ready.</li>
+          <li>Amber means still cooling.</li>
+        </ul>
+      </li>
+      <li>Log the start time on the sheet.</li>
+    </ol>
+
+    <h2>Alarm Codes</h2>
+    <pre>
+# E01 lid open longer than 90 seconds
+E02 compressor overload
+</pre>
+    <blockquote>Silence an alarm only after the cause is written down.</blockquote>
+    <p>First line of the note<br />Second line after a break.</p>
+    <footer><small>Fictional fixture — no real device.</small></footer>
+  </body>
+</html>
