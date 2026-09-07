@@ -320,6 +320,116 @@ describe("runEval — reuse path (완료 기준: eval이 manifest의 QA 재사�
     expect(captured.all.join("\n")).toContain("LLM 호출 3회");
   });
 
+  // F3 (001-008, 완료 기준): 다중 소스 스킬 — compile이 붙인 접두어(`a-readme/overview`)를 eval도 붙여야 문항이 생긴다.
+  it("with --source, a skill compiled from two same-named files in different folders generates QA and passes", async () => {
+    const text = "Overview text.";
+    const chapters: AssembledFile[] = [
+      { path: "chapters/ch01-a.md", content: `${text} [§a-readme/overview]`, estimatedTokens: 5 },
+      { path: "chapters/ch02-b.md", content: `${text} [§b-readme/overview]`, estimatedTokens: 5 },
+    ];
+    const multi: Manifest = {
+      ...manifest,
+      sections: [
+        { id: "a-readme/overview", sha256: sha256Hex(text), chapterFile: "chapters/ch01-a.md" },
+        { id: "b-readme/overview", sha256: sha256Hex(text), chapterFile: "chapters/ch02-b.md" },
+      ],
+      outputs: chapters.map((c) => c.path),
+      outputHashes: chapters.map((c) => ({ path: c.path, sha256: sha256Hex(c.content) })),
+      goldenQa: [],
+    };
+    const doc: ExtractedDoc = {
+      sections: [{ id: "overview", heading: "Overview", level: 1, text }],
+    };
+    const captured = lines();
+    const llm = script()
+      .qa([{ question: "A?", refAnswer: "Overview text.", anchorQuote: text }])
+      .qa([{ question: "B?", refAnswer: "Overview text.", anchorQuote: text }])
+      .selectChapter("chapters/ch01-a.md")
+      .answer("Overview text.")
+      .grade("correct")
+      .selectChapter("chapters/ch02-b.md")
+      .answer("Overview text.")
+      .grade("correct")
+      .build();
+    const code = await runEval(
+      { skillDir: "dir", source: ["/root/docs"] },
+      baseDeps({
+        out: captured.out,
+        llm,
+        readManifest: () => Promise.resolve(multi),
+        readSkillDir: () => Promise.resolve(chapters),
+        extractors: [new FixtureExtractor({ md: doc })],
+        collectInputFiles: () =>
+          Promise.resolve(["/root/docs/a/readme.md", "/root/docs/b/readme.md"]),
+        readSourceFiles: (paths) =>
+          Promise.resolve(
+            paths.map((p) => ({ path: p, bytes: new TextEncoder().encode("readme.md") })),
+          ),
+        config: loadConfig({ QA_PER_SECTION: "1" }),
+      }),
+    );
+    expect(code).toBe(0);
+    expect(captured.all.join("\n")).toContain("PASSED");
+    llm.assertExhausted(); // qaGen 2 + (선택+답변+채점) × 2 — 두 섹션 모두 문항이 생겼다
+  });
+
+  it("with --source, sources that do not match the manifest's sections fail explicitly before any LLM call (F3)", async () => {
+    const captured = lines();
+    const llm = script().build();
+    const doc: ExtractedDoc = {
+      sections: [{ id: "other", heading: "Other", level: 1, text: "Other text." }],
+    };
+    const code = await runEval(
+      { skillDir: "dir", source: ["other.md"] },
+      baseDeps({
+        out: captured.out,
+        llm,
+        extractors: [new FixtureExtractor({ md: doc })],
+        collectInputFiles: () => Promise.resolve(["other.md"]),
+        readSourceFiles: (paths) =>
+          Promise.resolve(
+            paths.map((p) => ({ path: p, bytes: new TextEncoder().encode("other.md") })),
+          ),
+        config: loadConfig({ QA_PER_SECTION: "1" }),
+      }),
+    );
+    expect(code).toBe(1);
+    const text = captured.all.join("\n");
+    expect(text).toContain("맞지 않습니다");
+    expect(text).toContain("manifest에는 있는데 원문에서 안 나온 섹션 1개: a");
+    expect(text).toContain("원문에는 있는데 manifest에 없는 섹션 1개: other");
+    expect(text).toContain("수정 방법");
+    llm.assertExhausted();
+  });
+
+  it("with --source, a section whose body changed since compile is reported but still re-graded (F3)", async () => {
+    const captured = lines();
+    const doc: ExtractedDoc = {
+      sections: [{ id: "a", heading: "A", level: 1, text: "Mount the unit." }], // manifest 해시("x"×64)와 다르다
+    };
+    const llm = script()
+      .qa([{ question: "Where?", refAnswer: "on the unit", anchorQuote: "Mount the unit" }])
+      .selectChapter(chapterFile.path)
+      .answer("on the unit")
+      .grade("correct")
+      .build();
+    const code = await runEval(
+      { skillDir: "dir", source: ["a.md"] },
+      baseDeps({
+        out: captured.out,
+        llm,
+        extractors: [new FixtureExtractor({ md: doc })],
+        collectInputFiles: () => Promise.resolve(["a.md"]),
+        readSourceFiles: (paths) =>
+          Promise.resolve(paths.map((p) => ({ path: p, bytes: new TextEncoder().encode("a.md") }))),
+        config: loadConfig({ QA_PER_SECTION: "1" }),
+      }),
+    );
+    expect(code).toBe(0);
+    expect(captured.all.join("\n")).toContain("본문이 바뀐 섹션 1개(a)");
+    llm.assertExhausted();
+  });
+
   it("with --source, refuses before any LLM call when the gate estimate exceeds MAX_LLM_CALLS (D2 preflight)", async () => {
     const captured = lines();
     const doc: ExtractedDoc = {

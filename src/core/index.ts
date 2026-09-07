@@ -17,6 +17,7 @@ export * from "./hash.js";
 export * from "./integrity.js";
 export * from "./anchors.js";
 export * from "./outlineCoverage.js";
+export * from "./sources.js";
 export * from "./pipeline.js";
 export * from "./gateVerdict.js";
 export * from "./gate.js";

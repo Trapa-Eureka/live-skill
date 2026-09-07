@@ -6,16 +6,11 @@ import type { Config } from "./config.js";
 import { LlmCallCapError, trackCost } from "./costTracker.js";
 import { estimateGateCalls, runGate, type GateChapter } from "./gate.js";
 import { sha256Hex } from "./hash.js";
-import {
-  checkOutlineCoverage,
-  formatOutlineCoverageIssues,
-  isSubstantiveSection,
-} from "./outlineCoverage.js";
+import { checkOutlineCoverage, formatOutlineCoverageIssues } from "./outlineCoverage.js";
 import { stripControlChars } from "./modelText.js";
 import { distillPrompt, outlinePrompt } from "./prompts.js";
 import { err, ok, type Result } from "./result.js";
 import { skillPlanSchema } from "./schemas.js";
-import { namespacePrefixes } from "./sectionId.js";
 import { MAX_INPUT_TOKENS, estimateTokens } from "./tokenEstimate.js";
 import type {
   Clock,
@@ -26,17 +21,12 @@ import type {
   GoldenQA,
   LlmProvider,
   Manifest,
-  Section,
   SkillPlan,
 } from "./types.js";
+import { buildPopulation, extractSources, type NamedSection, type SourceFile } from "./sources.js";
 import { validateSkill, type ValidationReport } from "./validator.js";
 
-export interface SourceFile {
-  path: string;
-  bytes: Uint8Array;
-  /** 없으면 "application/octet-stream" — 확장자 기반 라우팅으로 폴백(adapters/extractors/route.ts). */
-  mime?: string;
-}
+export type { SourceFile } from "./sources.js";
 
 export type PipelineError =
   | { kind: "unsupported_format"; path: string; message: string }
@@ -73,74 +63,6 @@ export interface CompileResult {
   llmCalls: number;
 }
 
-interface PerFileSections {
-  path: string;
-  sections: Section[];
-}
-
-interface NamedSection extends Section {
-  sourcePath: string;
-}
-
-const SUPPORTED_FORMATS = "PDF(텍스트형)·DOCX·MD/TXT·HTML";
-
-/** 소스가 여러 개면 파일마다 접두어(공통 상위 디렉터리를 뺀 상대 경로 슬러그, F2)를 붙여 섹션 id 충돌을 막는다
- * (DESIGN §5.1). 결과 id는 전부 유일해야 한다 — 겹치면 뒤의 Map이 앞 섹션을 조용히 덮어쓰므로 여기서 크게 실패한다. */
-function namespaceSections(perFile: readonly PerFileSections[]): NamedSection[] {
-  const prefixes = namespacePrefixes(perFile.map((f) => f.path));
-  const named = perFile.flatMap(({ path, sections }, i) => {
-    const prefix = prefixes[i];
-    return sections.map((s) => ({
-      ...s,
-      id: prefix === undefined ? s.id : `${prefix}/${s.id}`,
-      sourcePath: path,
-    }));
-  });
-  const seen = new Set<string>();
-  for (const s of named) {
-    if (seen.has(s.id)) {
-      throw new Error(
-        `section id collision: "${s.id}" appears twice after namespacing — this is a bug in core/sectionId.ts (ids must be unique by construction).`,
-      );
-    }
-    seen.add(s.id);
-  }
-  return named;
-}
-
-async function extractAll(
-  sources: readonly SourceFile[],
-  extractors: readonly DocumentExtractor[],
-): Promise<Result<PerFileSections[], PipelineError>> {
-  const perFile: PerFileSections[] = [];
-  for (const src of sources) {
-    const mime = src.mime ?? "application/octet-stream";
-    const extractor = extractors.find((e) => e.supports(mime, src.path));
-    if (extractor === undefined) {
-      return err({
-        kind: "unsupported_format",
-        path: src.path,
-        message: `"${src.path}": unsupported format. Fix: use one of ${SUPPORTED_FORMATS}.`,
-      });
-    }
-    const result = await extractor.extract(src.bytes);
-    if (!result.ok) {
-      const fix =
-        result.error.kind === "empty_text"
-          ? "the document has no extractable text — check it isn't a scanned image (OCR is not supported in v0.1)."
-          : "the file may be corrupt or password-protected — try re-exporting it.";
-      return err({
-        kind: "extract_failed",
-        path: src.path,
-        error: result.error,
-        message: `"${src.path}": extraction failed (${result.error.kind}). Fix: ${fix}`,
-      });
-    }
-    perFile.push({ path: src.path, sections: result.value.sections });
-  }
-  return ok(perFile);
-}
-
 export interface PipelineDeps {
   extractors: readonly DocumentExtractor[];
   llm: LlmProvider;
@@ -162,11 +84,12 @@ export async function compile(
     });
   }
 
-  const extracted = await extractAll(sources, deps.extractors);
+  const extracted = await extractSources(sources, deps.extractors);
   if (!extracted.ok) return extracted;
 
   // 검증 모집단(B1): 본문 있는 섹션 전부. 본문 없는 헤딩은 outline에 보여주지도, 배정을 요구하지도 않는다.
-  const sections = namespaceSections(extracted.value).filter(isSubstantiveSection);
+  // F3: eval --source도 같은 buildPopulation을 쓴다 — 접두어·필터 규칙이 두 군데로 갈라지지 않게.
+  const sections = buildPopulation(extracted.value);
   if (sections.length === 0) {
     return err({
       kind: "empty_input",
